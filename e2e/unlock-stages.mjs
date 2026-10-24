@@ -25,7 +25,10 @@ function parseStage(file) {
   };
 }
 
-const stages = readdirSync(stagesDir).filter((f) => f.endsWith(".md")).sort().map(parseStage);
+const stages = readdirSync(stagesDir)
+  .filter((f) => f.endsWith(".md"))
+  .sort()
+  .map(parseStage);
 const closed = new Set(
   JSON.parse(gh("issue", "list", "--state", "closed", "--limit", "1000", "--json", "number")).map((i) => i.number),
 );

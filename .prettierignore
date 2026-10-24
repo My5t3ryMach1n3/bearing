@@ -1,0 +1,5 @@
+dist
+coverage
+package-lock.json
+# Prose is wrapped by hand, so Prettier stays out of Markdown.
+*.md
