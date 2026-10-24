@@ -17,7 +17,7 @@ export const war = {
   sha256: "ac1a2806e246364b88261a542a36ca7f3006ef48e5de68830afa8672f58690f1",
 };
 
-// Workspace JSON as Structurizr exports it. The internal model (#4) gives it real types.
+// Workspace JSON as Structurizr exports it. modelFromWorkspace() in model.ts reads it into the internal model.
 export type Workspace = Record<string, unknown>;
 
 // Runs a command to completion. Rejects only if it can't start, e.g. ENOENT when it isn't installed.

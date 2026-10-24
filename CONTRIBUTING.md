@@ -32,7 +32,9 @@ CI runs these on every pull request, and they should pass locally first:
 - `src/program.ts` builds the command tree. A new subcommand goes in its own module under `src/` and is registered in the `commands` list there.
 - `src/config.ts` finds, validates and loads `.bearing/config.yaml`. Commands get their settings from `loadConfig()` rather than reading the file themselves.
 - `src/structurizr.ts` turns the model's DSL into workspace JSON with the pinned Structurizr release, via Docker or Java as `structurizr.runner` says, and caches the result by a hash of the model directory. It is the only code that runs Structurizr.
-- `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both.
+- `src/model.ts` reads workspace JSON into the internal model that the target, the as-built model and claims share. Elements, relationships, dynamic views and deployment elements are keyed by stable IDs (DSL identifiers, not Structurizr's numeric IDs), so editing a description reads as drift rather than a removal.
+- `src/diff.ts` diffs two models into added, removed and drifted items, and is the `bearing diff <before> <after>` command, which prints that diff as JSON.
+- `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both. It also checks that `test/fixtures/diff/{before,after}.json` are still what Structurizr exports from the DSL beside them; after editing that DSL, re-export the JSON with the pinned Docker image.
 
 ## Pull requests
 
