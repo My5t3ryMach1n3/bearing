@@ -12,6 +12,7 @@ Pre-code. The design is written up and the build is planned as GitHub issues; no
 
 - [Product spec](docs/product-spec.md): the problem, the proposed solution, how it works, and a walkthrough on a greenfield service.
 - [Build plan](docs/build-plan.md): the three milestones, how the issues sequence, and the open questions they settle.
+- [E2E scenario](e2e/README.md): Shelf, a test app built with Bearing stage by stage as Bearing's issues close.
 
 ## Tracking
 
