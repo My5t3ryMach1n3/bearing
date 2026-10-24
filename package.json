@@ -38,7 +38,9 @@
     "cli"
   ],
   "dependencies": {
-    "commander": "^15.0.0"
+    "ajv": "^8.20.0",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
