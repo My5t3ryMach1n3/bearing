@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      # Install the packed tarball globally, as a user would from npm, and run the bin from outside the repo.
+      - name: Smoke-test a global install
+        run: |
+          npm pack
+          npm install -g ./bearing-cli-*.tgz
+          cd "$RUNNER_TEMP"
+          bearing --version
+          bearing --help

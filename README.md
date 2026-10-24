@@ -6,13 +6,31 @@ The as-built state comes from deterministic analysis of code, infrastructure and
 
 ## Status
 
-Pre-code. The design is written up and the build is planned as GitHub issues; nothing is implemented yet.
+Early. The CLI is scaffolded but has no subcommands yet; the build is planned as GitHub issues.
+
+## Install
+
+Bearing needs Node.js 22 or later. It isn't on npm yet, so install it from a checkout:
+
+```sh
+npm install
+npm pack
+npm install -g ./bearing-cli-*.tgz
+bearing --help
+```
+
+The npm package is `bearing-cli`; the command it installs is `bearing`.
 
 ## Docs
 
 - [Product spec](docs/product-spec.md): the problem, the proposed solution, how it works, and a walkthrough on a greenfield service.
 - [Build plan](docs/build-plan.md): the three milestones, how the issues sequence, and the open questions they settle.
 - [E2E scenario](e2e/README.md): Shelf, a test app built with Bearing stage by stage as Bearing's issues close.
+- [Contributing](CONTRIBUTING.md): setup, checks and how changes land.
+
+## Licence
+
+[MIT](LICENSE).
 
 ## Tracking
 
