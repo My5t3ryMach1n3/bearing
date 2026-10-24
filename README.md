@@ -10,12 +10,10 @@ Early. The CLI is scaffolded but has no subcommands yet; the build is planned as
 
 ## Install
 
-Bearing needs Node.js 22 or later. It isn't on npm yet, so install it from a checkout:
+Bearing needs Node.js 22 or later.
 
 ```sh
-npm install
-npm pack
-npm install -g ./bearing-cli-*.tgz
+npm install -g bearing-cli
 bearing --help
 ```
 
