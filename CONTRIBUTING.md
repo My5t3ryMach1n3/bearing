@@ -24,13 +24,15 @@ CI runs these on every pull request, and they should pass locally first:
 | `npm run format:check` | Prettier (`npm run format` fixes it) |
 | `npm run typecheck` | TypeScript over `src/` and `test/` |
 | `npm test` | Vitest unit tests |
+| `BEARING_STRUCTURIZR_RUNNER=docker npx vitest run test/structurizr.integration.test.ts` | Converts the fixture models with the real Structurizr (needs Docker, or Java 21 with `=java`) |
 
 ## Layout
 
 - `src/cli.ts` is the `bearing` bin. It only parses the command line.
 - `src/program.ts` builds the command tree. A new subcommand goes in its own module under `src/` and is registered in the `commands` list there.
 - `src/config.ts` finds, validates and loads `.bearing/config.yaml`. Commands get their settings from `loadConfig()` rather than reading the file themselves.
-- `test/` holds the unit tests.
+- `src/structurizr.ts` turns the model's DSL into workspace JSON with the pinned Structurizr release, via Docker or Java as `structurizr.runner` says, and caches the result by a hash of the model directory. It is the only code that runs Structurizr.
+- `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both.
 
 ## Pull requests
 
