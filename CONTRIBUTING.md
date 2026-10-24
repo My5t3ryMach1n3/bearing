@@ -29,6 +29,7 @@ CI runs these on every pull request, and they should pass locally first:
 
 - `src/cli.ts` is the `bearing` bin. It only parses the command line.
 - `src/program.ts` builds the command tree. A new subcommand goes in its own module under `src/` and is registered in the `commands` list there.
+- `src/config.ts` finds, validates and loads `.bearing/config.yaml`. Commands get their settings from `loadConfig()` rather than reading the file themselves.
 - `test/` holds the unit tests.
 
 ## Pull requests
