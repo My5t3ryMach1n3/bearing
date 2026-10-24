@@ -1,6 +1,6 @@
 # E2E scenario: Shelf
 
-Shelf is a small test app you build with Bearing as Bearing itself gets built. It's an office book-lending API in TypeScript with Postgres: colleagues borrow and return books, and a librarian sees what's overdue. It is deliberately not the basket fixture ([#5](https://github.com/My5t3ryMach1n3/bearing/issues/5)), so it tests Bearing on something it wasn't tuned against.
+Shelf is a small test app you build with Bearing as Bearing itself gets built. It's an office book-lending API in TypeScript with Postgres: librarians borrow and return books and see what's overdue. Everyone who uses it is a librarian; there are no separate roles. It is deliberately not the basket fixture ([#5](https://github.com/My5t3ryMach1n3/bearing/issues/5)), so it tests Bearing on something it wasn't tuned against.
 
 The scenario follows the spec's walkthrough. Shelf goes through each loop for real: design from requirements, governed PRs with planted mistakes, a target change, human drift, a new requirement, and finally a second language.
 
@@ -26,7 +26,7 @@ File these in Shelf with the `requirement` label in stage 0. Bearing's issue for
 ### shelf#1 Add a book
 
 **Story**
-As a librarian, I want to add a book to the shelf, so that colleagues can borrow it.
+As a librarian, I want to add a book to the shelf, so that other librarians can borrow it.
 
 **Acceptance criteria**
 1. Given a librarian, when they add a book with a title and ISBN, then it is listed as available.
@@ -35,19 +35,19 @@ As a librarian, I want to add a book to the shelf, so that colleagues can borrow
 ### shelf#2 Borrow a book
 
 **Story**
-As a colleague, I want to borrow an available book, so that I can read it.
+As a librarian, I want to borrow an available book, so that I can read it.
 
 **Acceptance criteria**
-1. Given an available book, when a colleague borrows it, then a loan is recorded with a due date 14 days from today and the book is marked as on loan.
-2. Given a book that is on loan, when another colleague tries to borrow it, then the request is rejected.
+1. Given an available book, when a librarian borrows it, then a loan is recorded with a due date 14 days from today in local time and the book is marked as on loan.
+2. Given a book that is on loan, when another librarian tries to borrow it, then the request is rejected.
 
 ### shelf#3 Return a book
 
 **Story**
-As a colleague, I want to return a book I borrowed, so that someone else can borrow it.
+As a librarian, I want to return a book I borrowed, so that someone else can borrow it.
 
 **Acceptance criteria**
-1. Given a book on loan to a colleague, when they return it, then the loan is closed and the book is available.
+1. Given a book on loan to a librarian, when they return it, then the loan is closed and the book is available.
 2. Given a book that is not on loan, when someone tries to return it, then the request is rejected.
 
 ### shelf#4 List overdue loans
@@ -57,15 +57,15 @@ As a librarian, I want to see which loans are overdue, so that I can chase them.
 
 **Acceptance criteria**
 1. Given a loan past its due date, when the librarian lists overdue loans, then it appears with the borrower and the number of days overdue.
-2. Given a loan due today, when the librarian lists overdue loans, then it does not appear.
+2. Given a loan due today in local time, when the librarian lists overdue loans, then it does not appear.
 
 ### shelf#5 Search by title
 
 **Story**
-As a colleague, I want to search books by title, so that I can find one to borrow.
+As a librarian, I want to search books by title, so that I can find one to borrow.
 
 **Acceptance criteria**
-1. Given books on the shelf, when a colleague searches for part of a title, then the matching books are listed with their availability.
+1. Given books on the shelf, when a librarian searches for part of a title, then the matching books are listed with their availability.
 
 ### Filed later
 
@@ -73,9 +73,9 @@ These come in at the stage that needs them, not up front.
 
 - **shelf#6 Overdue reminder email** (stage 7). As a librarian, I want borrowers emailed when a loan goes overdue, so that I don't have to chase them.
   1. Given a loan that has just become overdue, when the daily reminder runs, then the borrower is emailed once.
-  2. Given the email provider is slow or down, when a colleague borrows a book, then the borrow still succeeds.
-- **shelf#7 Reserve a book** (stage 9). As a colleague, I want to reserve a book that's on loan, so that I get it next.
-  1. Given a book on loan, when a colleague reserves it, then they join the queue for it.
+  2. Given the email provider is slow or down, when a librarian borrows a book, then the borrow still succeeds.
+- **shelf#7 Reserve a book** (stage 9). As a librarian, I want to reserve a book that's on loan, so that I get it next.
+  1. Given a book on loan, when a librarian reserves it, then they join the queue for it.
   2. Given a reserved book, when it is returned, then it is held for the first person in the queue and they are emailed.
 
 ## Stages
