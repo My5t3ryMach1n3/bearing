@@ -330,7 +330,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   return { passed: checks.every((check) => check.status !== "failed"), checks };
 }
 
-const titles = {
+export const checkTitles = {
   claim: "Claim",
   boundaries: "Boundaries",
   deployment: "Deployment",
@@ -340,31 +340,34 @@ const titles = {
 };
 
 export function formatReport(report: CheckReport): string {
-  const sections = report.checks.map((check) => {
-    if (check.status === "skipped") return `${titles[check.check]}: skipped, ${check.reason}\n`;
-    switch (check.check) {
-      case "claim":
-        return formatClaimCheck(check);
-      case "boundaries":
-        return formatBoundaries(check);
-      case "deployment":
-        return formatDeployment(check);
-      case "coverage":
-        return formatCoverage(check.criteria, check.recorded);
-      case "paths":
-        return formatTracePaths(check.views);
-      case "surplus":
-        return formatSurplus(check);
-    }
-  });
-  const failed = report.checks.filter((check) => check.status === "failed").map((check) => titles[check.check]);
-  const flagged = report.checks.filter((check) => check.status === "flagged").map((check) => titles[check.check]);
+  const sections = report.checks.map(formatCheck);
+  const failed = report.checks.filter((check) => check.status === "failed").map((check) => checkTitles[check.check]);
+  const flagged = report.checks.filter((check) => check.status === "flagged").map((check) => checkTitles[check.check]);
   let verdict =
     failed.length === 0
       ? "All blocking checks passed."
       : `${failed.length} blocking ${failed.length === 1 ? "check" : "checks"} failed: ${failed.join(", ")}.`;
   if (flagged.length > 0) verdict += ` Advisory, not blocking: ${flagged.join(", ")} flagged.`;
   return [...sections, `${verdict}\n`].join("\n");
+}
+
+// One check's result as `bearing check` prints it.
+export function formatCheck(check: CheckReport["checks"][number]): string {
+  if (check.status === "skipped") return `${checkTitles[check.check]}: skipped, ${check.reason}\n`;
+  switch (check.check) {
+    case "claim":
+      return formatClaimCheck(check);
+    case "boundaries":
+      return formatBoundaries(check);
+    case "deployment":
+      return formatDeployment(check);
+    case "coverage":
+      return formatCoverage(check.criteria, check.recorded);
+    case "paths":
+      return formatTracePaths(check.views);
+    case "surplus":
+      return formatSurplus(check);
+  }
 }
 
 function formatClaimCheck(check: ClaimCheck): string {

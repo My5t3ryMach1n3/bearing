@@ -1,0 +1,380 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runChecks, type CheckReport } from "../src/check.js";
+import { loadConfig } from "../src/config.js";
+import { createProgram } from "../src/program.js";
+import {
+  buildOverlay,
+  formatComment,
+  formatMermaid,
+  gatherReport,
+  overlayLimit,
+  postComment,
+  pullRequestNumber,
+  reportMarker,
+  type Overlay,
+} from "../src/report.js";
+import { basketDir, basketRepo, basketVariants, git, variantRepo } from "./basket.js";
+
+beforeEach(() => vi.stubEnv("BEARING_ISSUES_FILE", join(basketDir, "issues.json")));
+afterEach(() => vi.unstubAllEnvs());
+
+async function report(root: string) {
+  const config = loadConfig(root);
+  const check = await runChecks(config);
+  const gathered = await gatherReport(config);
+  return {
+    check,
+    ...gathered,
+    comment: formatComment({ check, ...gathered }),
+    overlay: buildOverlay({ check, ...gathered }),
+  };
+}
+
+// Each edge as "source -> destination" with its mark, for comparing overlays.
+const edgesOf = (overlay: Overlay) =>
+  overlay.edges.map(
+    (edge) => `${edge.source} -> ${edge.destination}${edge.mark === undefined ? "" : ` (${edge.mark})`}`,
+  );
+const marked = (overlay: Overlay) =>
+  Object.fromEntries(overlay.nodes.flatMap((node) => (node.mark === undefined ? [] : [[node.id, node.mark]])));
+
+// The PR's target change in the walkthrough's Wednesday, in workspace JSON: a share component the controller calls,
+// a rewritten service description, and session restore no longer checking sign-ins itself.
+function changeTarget(root: string) {
+  const file = join(root, "architecture", "workspace.json");
+  const workspace = JSON.parse(readFileSync(file, "utf8"));
+  const basket = workspace.model.softwareSystems.find((system: { name: string }) => system.name === "Basket");
+  const api = basket.containers.find((container: { name: string }) => container.name === "Basket API");
+  const component = (name: string) => api.components.find((each: { name: string }) => each.name === name);
+  api.components.push({
+    id: "900",
+    name: "Share service",
+    description: "Emails a basket to a friend",
+    properties: { "structurizr.dsl.identifier": "shareService", "bearing.path": "src/basket-api/share-service" },
+    tags: "Element,Component",
+  });
+  component("Basket controller").relationships.push({
+    id: "901",
+    sourceId: component("Basket controller").id,
+    destinationId: "900",
+    description: "Shares baskets using",
+    tags: "Relationship",
+  });
+  component("Basket service").description = "Adds, removes and prices basket items";
+  const restore = component("Session restore");
+  const auth = component("Auth middleware");
+  restore.relationships = restore.relationships.filter(
+    (relationship: { destinationId: string }) => relationship.destinationId !== auth.id,
+  );
+  writeFileSync(file, JSON.stringify(workspace));
+}
+
+describe("the overlay on the basket fixture", () => {
+  // The issue's readability target: every seeded branch draws fewer than 15 elements.
+  it.each(basketVariants)("stays under %s's readability limit", async (variant) => {
+    const { overlay } = await report(variantRepo(variant));
+    expect(overlay.nodes.length).toBeLessThan(overlayLimit);
+  });
+
+  it("draws controller-imports-repository's undeclared relationship beside the routes the target declares", async () => {
+    const { overlay, comment } = await report(variantRepo("controller-imports-repository"));
+    expect(overlay.nodes.map((node) => node.id)).toEqual([
+      "basketController",
+      "basketRepository",
+      "basketService",
+      "sessionRestore",
+    ]);
+    expect(edgesOf(overlay)).toEqual([
+      "basketController -> basketRepository (drifted)",
+      "basketController -> basketService",
+      "basketService -> basketRepository",
+      "basketController -> sessionRestore",
+      "sessionRestore -> basketRepository",
+    ]);
+    expect(marked(overlay)).toEqual({});
+    expect(comment).toContain(
+      '  n0 -->|"imports, undeclared"| n1\n' +
+        '  n0 -->|"Reads and changes baskets using"| n2\n' +
+        '  n2 -->|"Loads and saves baskets using"| n1\n',
+    );
+    expect(comment).toContain("  linkStyle 0 stroke:#cf222e,stroke-width:2px\n");
+  });
+
+  it("draws redis-node's Redis cluster as a node the target doesn't have", async () => {
+    const { overlay } = await report(variantRepo("redis-node"));
+    expect(overlay.nodes).toEqual([
+      {
+        id: "aws_elasticache_cluster.basket",
+        name: "aws_elasticache_cluster.basket",
+        kind: "Not in the target: Amazon ElastiCache",
+        group: "Production",
+        mark: "drifted",
+      },
+    ]);
+    expect(overlay.edges).toEqual([]);
+  });
+
+  it("draws wrong-place's trace beside the steps of #2's view it missed", async () => {
+    const { overlay } = await report(variantRepo("wrong-place"));
+    expect(edgesOf(overlay)).toEqual([
+      "basketController -> basketService",
+      "basketService -> basketRepository",
+      "basketController -> sessionRestore (drifted)",
+      "sessionRestore -> basketRepository (drifted)",
+    ]);
+    expect(overlay.edges[2]?.label).toBe("#2/AC1, #2/AC2 trace: addItem()");
+  });
+
+  it("draws nothing when nothing drifted", async () => {
+    const { overlay, comment } = await report(variantRepo("untraced-helper"));
+    expect(overlay.nodes).toEqual([]);
+    expect(comment).toContain("Nothing is added to, removed from or drifted from the target.");
+    expect(comment).not.toContain("```mermaid");
+  });
+
+  it("colours what a target change adds, removes and drifts", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "share-basket");
+    changeTarget(root);
+    const { overlay } = await report(root);
+    expect(marked(overlay)).toEqual({ shareService: "added", basketService: "drifted" });
+    expect(edgesOf(overlay)).toContain("basketController -> shareService (added)");
+    expect(edgesOf(overlay)).toContain("sessionRestore -> authMiddleware (removed)");
+    const mermaid = formatMermaid(overlay);
+    expect(mermaid).toContain("classDef added fill:#dafbe1");
+    expect(mermaid).toMatch(/n\d+ -\.->\|"Checks the new sign-in using"\| n\d+/);
+  });
+});
+
+describe("the comment", () => {
+  it("summarises every check, then the overlay, then the failing checks' details", async () => {
+    const { comment } = await report(variantRepo("controller-imports-repository"));
+    expect(comment.startsWith(`${reportMarker}\n\n## Bearing: ❌ 2 blocking checks failed: Claim, Boundaries`)).toBe(
+      true,
+    );
+    expect(comment).toContain(
+      "| Claim | ❌ failed | 1 mismatch with `.bearing/claims/controller-imports-repository.yaml` |\n" +
+        "| Boundaries | ❌ failed | 1 relationship the target doesn't declare |\n" +
+        "| Deployment | ✅ passed | the Terraform matches the target's Production deployment |\n" +
+        "| Criteria coverage | ✅ passed | 2 of 2 criteria covered |\n" +
+        "| Trace paths | ✅ passed | 2 tagged tests follow their issue's dynamic view |\n" +
+        "| Surplus (advisory) | ⚠️ flagged | 6 exported functions no tagged test calls |\n",
+    );
+    const order = ["### Checks", "### Overlay", "<summary>Claim: failed", "<summary>Boundaries: failed"];
+    const positions = order.map((text) => comment.indexOf(text));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(comment).not.toContain("Target change");
+    expect(comment).toContain("| `src/basket-api/basket-controller/index.ts` | `basketController` |");
+  });
+
+  it("puts the model diff first in target-change mode", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "share-basket");
+    changeTarget(root);
+    const { comment } = await report(root);
+    expect(comment.indexOf("### ⚠️ Target change")).toBeGreaterThan(0);
+    expect(comment.indexOf("### ⚠️ Target change")).toBeLessThan(comment.indexOf("### Checks"));
+    expect(comment).toContain("Changed: `architecture/workspace.json`\n");
+    expect(comment).toContain(
+      "| | Added | Removed | Drifted |\n" +
+        "| --- | --- | --- | --- |\n" +
+        "| Elements | `shareService` |  | `basketService` (description) |\n" +
+        "| Relationships | `basketController->shareService` | `sessionRestore->authMiddleware` |  |\n" +
+        "| Dynamic views |  |  | `req-4` (steps) |\n",
+    );
+  });
+
+  it("is in target-change mode for a workflow change, though the model is unchanged", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "ci");
+    mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(root, ".github", "workflows", "bearing.yml"), "on: pull_request\n");
+    const { comment } = await report(root);
+    expect(comment).toContain("Changed: `.github/workflows/bearing.yml`\n\nThe model itself is unchanged.");
+  });
+
+  it("isn't in target-change mode for a claims file alone", async () => {
+    const { targetFiles } = await report(variantRepo("untraced-helper"));
+    expect(targetFiles).toEqual([]);
+  });
+
+  it("links to the Structurizr static site", async () => {
+    const root = variantRepo("untraced-helper");
+    const config = loadConfig(root);
+    const check = await runChecks(config);
+    const comment = formatComment({ check, ...(await gatherReport(config)), siteUrl: "https://example.com/run/1" });
+    expect(comment).toMatch(
+      /\[Every view of this PR's target in Structurizr\]\(https:\/\/example\.com\/run\/1\), as a static site\.\n$/,
+    );
+  });
+
+  it("keeps under GitHub's comment limit by dropping the details", async () => {
+    const root = variantRepo("untraced-helper");
+    const config = loadConfig(root);
+    const check = await runChecks(config);
+    const surplus = check.checks[5];
+    surplus.outside = Array.from({ length: 5000 }, (_, index) => `src/generated/file-${index}.ts`);
+    const comment = formatComment({ check, ...(await gatherReport(config)) });
+    expect(comment.length).toBeLessThan(65_536);
+    expect(comment).toContain("The details are too long for a comment; run `bearing check` to see them.");
+  });
+});
+
+describe("formatMermaid", () => {
+  it("escapes what Mermaid would read as syntax", () => {
+    const overlay: Overlay = {
+      nodes: [
+        { id: "a", name: 'The "A" <service>', kind: "Component" },
+        { id: "b", name: "B", kind: "" },
+      ],
+      edges: [{ source: "a", destination: "b", label: "#2/AC1 | x" }],
+    };
+    expect(formatMermaid(overlay)).toBe(
+      "flowchart LR\n" +
+        '  n0["The #34;A#34; #60;service#62;<br/>[Component]"]\n' +
+        '  n1["B"]\n' +
+        '  n0 -->|"#35;2/AC1 #124; x"| n1',
+    );
+  });
+});
+
+// A fake GitHub issue comments API, holding `existing` comments.
+function fakeGitHub(existing: Array<{ id: number; body: string }>) {
+  const requests: Array<{ method: string; url: string; body?: unknown }> = [];
+  const fetch = (async (url: string, init: RequestInit) => {
+    const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
+    requests.push({ method: init.method ?? "GET", url, ...(body === undefined ? {} : { body }) });
+    const page = Number(new URL(url).searchParams.get("page") ?? 1);
+    const json =
+      init.method === "GET"
+        ? existing.slice((page - 1) * 100, page * 100)
+        : { html_url: `https://github.com/acme/basket/pull/7#issuecomment-${init.method === "POST" ? 1 : 2}` };
+    return new Response(JSON.stringify(json), { status: init.method === "POST" ? 201 : 200 });
+  }) as typeof globalThis.fetch;
+  return { fetch, requests };
+}
+
+const api = "https://api.github.com/repos/acme/basket";
+
+describe("postComment", () => {
+  it("posts a new comment when the PR has none of Bearing's", async () => {
+    const github = fakeGitHub([{ id: 5, body: "LGTM" }]);
+    const posted = await postComment(`${reportMarker}\nhi`, {
+      repository: "acme/basket",
+      pr: 7,
+      token: "t",
+      env: {},
+      fetch: github.fetch,
+    });
+    expect(posted).toEqual({ url: "https://github.com/acme/basket/pull/7#issuecomment-1", updated: false });
+    expect(github.requests).toEqual([
+      { method: "GET", url: `${api}/issues/7/comments?per_page=100&page=1` },
+      { method: "POST", url: `${api}/issues/7/comments`, body: { body: `${reportMarker}\nhi` } },
+    ]);
+  });
+
+  it("updates Bearing's comment in place, looking past the first page", async () => {
+    const others = Array.from({ length: 100 }, (_, index) => ({ id: index, body: "LGTM" }));
+    const github = fakeGitHub([...others, { id: 321, body: `${reportMarker}\nold` }]);
+    const posted = await postComment(`${reportMarker}\nnew`, {
+      repository: "acme/basket",
+      pr: 7,
+      token: "t",
+      env: {},
+      fetch: github.fetch,
+    });
+    expect(posted.updated).toBe(true);
+    expect(github.requests.map(({ method, url }) => `${method} ${url}`)).toEqual([
+      `GET ${api}/issues/7/comments?per_page=100&page=1`,
+      `GET ${api}/issues/7/comments?per_page=100&page=2`,
+      `PATCH ${api}/issues/comments/321`,
+    ]);
+  });
+
+  it("says what GitHub refused", async () => {
+    const fetch = (async () => new Response("{}", { status: 403, statusText: "Forbidden" })) as typeof globalThis.fetch;
+    await expect(postComment("x", { repository: "acme/basket", pr: 7, token: "t", env: {}, fetch })).rejects.toThrow(
+      `GitHub returned 403 Forbidden for GET ${api}/issues/7/comments?per_page=100&page=1`,
+    );
+  });
+});
+
+describe("pullRequestNumber", () => {
+  it("reads the event's pull request, then the merge ref", async () => {
+    const event = join(mkdtempSync(join(tmpdir(), "bearing-event-")), "event.json");
+    writeFileSync(event, JSON.stringify({ pull_request: { number: 12 } }));
+    expect(await pullRequestNumber({ GITHUB_EVENT_PATH: event })).toBe(12);
+    expect(await pullRequestNumber({ GITHUB_REF: "refs/pull/34/merge" })).toBe(34);
+    expect(await pullRequestNumber({ GITHUB_REF: "refs/heads/main" })).toBeUndefined();
+  });
+});
+
+describe("bearing report", () => {
+  let root: string;
+  beforeEach(() => {
+    root = variantRepo("controller-imports-repository");
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    process.exitCode = undefined;
+  });
+
+  async function run(...args: string[]) {
+    let stdout = "";
+    let stderr = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((text) => ((stdout += String(text)), true));
+    vi.spyOn(process.stderr, "write").mockImplementation((text) => ((stderr += String(text)), true));
+    const program = createProgram();
+    for (const command of [program, ...program.commands]) {
+      command.exitOverride().configureOutput({ writeErr: (text) => (stderr += text) });
+    }
+    try {
+      await program.parseAsync(["report", ...args], { from: "user" });
+    } catch {
+      // Commander's exitOverride throws on this.error(); stderr has the message.
+    }
+    return { stdout, stderr };
+  }
+
+  it("prints the comment without failing, even when checks fail", async () => {
+    const { stdout } = await run();
+    expect(stdout.startsWith(`${reportMarker}\n\n## Bearing: ❌ 2 blocking checks failed`)).toBe(true);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("reads the results `bearing check --json` wrote", async () => {
+    const check: CheckReport = await runChecks(loadConfig(root));
+    check.checks[1].undeclared = [];
+    check.checks[1].status = "passed";
+    const file = join(root, "check.json");
+    writeFileSync(file, JSON.stringify(check));
+    const { stdout } = await run("--check", file);
+    expect(stdout).toContain("## Bearing: ❌ 1 blocking check failed: Claim");
+  });
+
+  it("posts the comment on the event's pull request", async () => {
+    const github = fakeGitHub([]);
+    vi.stubGlobal("fetch", github.fetch);
+    vi.stubEnv("GITHUB_TOKEN", "t");
+    vi.stubEnv("GITHUB_REPOSITORY", "acme/basket");
+    vi.stubEnv("GITHUB_REF", "refs/pull/7/merge");
+    // CI sets its own event, for this PR.
+    vi.stubEnv("GITHUB_EVENT_PATH", "");
+    const { stdout, stderr } = await run("--post");
+    expect(stderr).toBe("Posted https://github.com/acme/basket/pull/7#issuecomment-1\n");
+    expect(github.requests[1]).toEqual({ method: "POST", url: `${api}/issues/7/comments`, body: { body: stdout } });
+  });
+
+  it("says which pull request it needs outside Actions", async () => {
+    vi.stubEnv("GITHUB_REF", "");
+    vi.stubEnv("GITHUB_EVENT_PATH", "");
+    const { stderr } = await run("--post");
+    expect(stderr).toContain("error: can't tell which pull request to post on; pass --pr");
+  });
+});

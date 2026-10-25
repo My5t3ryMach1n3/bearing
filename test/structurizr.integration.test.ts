@@ -1,4 +1,4 @@
-import { appendFileSync, cpSync, mkdtempSync, readFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { parseConfig } from "../src/config.js";
 import { diffModels, loadModel } from "../src/diff.js";
 import { init } from "../src/init.js";
 import { modelFromWorkspace } from "../src/model.js";
-import { loadWorkspace } from "../src/structurizr.js";
+import { exportStaticSite, loadWorkspace } from "../src/structurizr.js";
 import { copyBasket } from "./basket.js";
 
 // Runs the real Structurizr. Opt in with BEARING_STRUCTURIZR_RUNNER=docker or java; CI runs both.
@@ -92,4 +92,18 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
       }
     },
   );
+
+  it("exports the basket fixture's target as a static site", { timeout: 600_000 }, async () => {
+    const root = copyBasket();
+    const config = parseConfig(
+      readFileSync(join(root, ".bearing", "config.yaml"), "utf8").replace("runner: docker", `runner: ${runner}`),
+      root,
+    );
+    const out = join(mkdtempSync(join(tmpdir(), "bearing-site-")), "site");
+    await exportStaticSite(config, out);
+    expect(existsSync(join(out, "index.html"))).toBe(true);
+    // The site embeds the workspace JSON in base64.
+    const embedded = /'([A-Za-z0-9+/=]+)'/.exec(readFileSync(join(out, "workspace.js"), "utf8"))?.[1] ?? "";
+    expect(Buffer.from(embedded, "base64").toString("utf8")).toContain('"key":"req-2"');
+  });
 });

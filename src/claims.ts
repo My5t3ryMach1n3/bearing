@@ -219,9 +219,18 @@ async function targetAt(config: Config, commit: string): Promise<Model> {
 }
 
 async function changedSince(root: string, commit: string, path: string): Promise<boolean> {
-  const tracked = await git(root, ["diff", "--name-only", "-z", commit, "--", path]);
-  const untracked = await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", path]);
-  return tracked !== "" || untracked !== "";
+  return (await changedPaths(root, commit, [path])).length > 0;
+}
+
+// Files added, changed or deleted since a commit that match any of the pathspecs, tracked or not, relative to the
+// repo root and sorted.
+export async function changedPaths(root: string, commit: string, pathspecs: string[]): Promise<string[]> {
+  const split = (output: string) => output.split("\0").filter((file) => file !== "");
+  const tracked = split(
+    await git(root, ["diff", "--name-only", "--no-renames", "--relative", "-z", commit, "--", ...pathspecs]),
+  );
+  const untracked = split(await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspecs]));
+  return [...new Set([...tracked, ...untracked])].sort();
 }
 
 // Files added or modified since a commit, relative to the repo root and sorted. Deleted files are left out.

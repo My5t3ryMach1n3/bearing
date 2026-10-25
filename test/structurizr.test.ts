@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig, type Config } from "../src/config.js";
-import { dockerImage, loadWorkspace, StructurizrError, type Run } from "../src/structurizr.js";
+import { dockerImage, exportStaticSite, loadWorkspace, StructurizrError, type Run } from "../src/structurizr.js";
 
 function repo(runner: "docker" | "java" = "docker"): Config {
   const root = mkdtempSync(join(tmpdir(), "bearing-structurizr-"));
@@ -129,5 +129,37 @@ describe("loadWorkspace", () => {
     await expect(loadWorkspace(config, { run: fakeRun().run, ...quiet })).rejects.toThrow(
       /^architecture\/missing\.dsl: model not found/,
     );
+  });
+});
+
+describe("exportStaticSite", () => {
+  it("exports the DSL as a static site into the directory given", async () => {
+    const config = repo();
+    const fake = fakeRun();
+    const out = join(mkdtempSync(join(tmpdir(), "bearing-site-")), "site");
+    await exportStaticSite(config, out, { run: fake.run, ...quiet });
+    const [call] = fake.exports();
+    expect(call).toContain(`${out}:/out`);
+    expect(call?.slice(call.indexOf(dockerImage))).toEqual([
+      dockerImage,
+      ...["export", "-w", "/workspace/workspace.dsl", "-f", "static", "-o", "/out"],
+    ]);
+  });
+
+  it("reports a DSL error as loading the workspace does", async () => {
+    const config = repo();
+    const run: Run = async (_command, args) =>
+      args.includes("export")
+        ? {
+            code: 1,
+            output:
+              "com.structurizr.dsl.StructurizrDslParserException: Unexpected tokens at line 2 of /workspace/workspace.dsl: oops",
+          }
+        : { code: 0, output: "" };
+    const out = mkdtempSync(join(tmpdir(), "bearing-site-"));
+    await expect(exportStaticSite(config, out, { run, ...quiet })).rejects.toMatchObject({
+      file: "architecture/workspace.dsl",
+      line: 2,
+    });
   });
 });

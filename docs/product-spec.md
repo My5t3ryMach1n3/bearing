@@ -491,6 +491,17 @@ The check fails if any criterion is missing or failing, listing each with its te
 - **Deployment** compares the nodes `bearing derive` reads from the Terraform with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when `iac.terraform` isn't set.
 - **Criteria coverage** is the check above.
 
+### How `bearing report` works
+
+`bearing report` writes the PR comment in Markdown and prints it; `--post` puts it on the PR, editing Bearing's comment from an earlier run rather than adding another, so each PR has one. It runs the checks itself, or reads what `bearing check --json` wrote with `--check <file>`, and never fails on a failing check: `bearing check` does that. The comment has, in order:
+
+- **Target change**, only in target-change mode: the files that put the PR in it, and the model diff from the target at the fork point, listing what is added, removed and drifted among elements, relationships, dynamic views and deployment. A PR is in target-change mode when it changes the model's folder, `.bearing/` other than claims files, or `.github/workflows/`.
+- **Checks**: one row per check with its result and what it found.
+- **Overlay**: one Mermaid flowchart of the affected elements only. Green is what the target change adds, grey and dashed what it removes, red what drifted: a changed element or relationship in the target, a relationship the code makes that the target doesn't declare, a deployment node the Terraform adds, lacks or counts differently, or a call a tagged test made that its issue's dynamic view doesn't have. Around them it draws the target's relationships between the elements shown, the steps a test's trace missed, and the component an undeclared relationship skips, stopping at 15 elements.
+- **Details** of each failing or flagged check, as `bearing check` prints them, and the changed source files with the component each landed in. They're dropped if the comment would be too long for GitHub.
+
+`--site <dir>` exports the PR's target as Structurizr's static site for the Action to upload as a build artifact, and the comment links to it: by default the Actions run's page, which lists its artifacts, or `--site-url`.
+
 ### The GitHub Action
 
 The Action's job is to prove the agent hasn't made things up or silently moved the target. CI re-derives everything and trusts nothing the branch provides: no committed as-built model, trace or test result is used.

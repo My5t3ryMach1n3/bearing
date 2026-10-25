@@ -70,22 +70,7 @@ export async function loadWorkspace(config: Config, options: LoadWorkspaceOption
 
   const out = await mkdtemp(join(tmpdir(), "bearing-structurizr-"));
   try {
-    let command: string;
-    let args: string[];
-    if (config.structurizr.runner === "docker") {
-      if ((await tryRun(run, "docker", ["image", "inspect", dockerImage])).code !== 0) {
-        log(`Pulling Structurizr ${structurizrVersion} (${dockerImage.split("@")[0]})...`);
-      }
-      const user = process.getuid && process.getgid ? ["--user", `${process.getuid()}:${process.getgid()}`] : [];
-      const workspace = `${mountPoint}/${basename(dsl)}`;
-      command = "docker";
-      args = ["run", "--rm", ...user, "-v", `${modelDir}:${mountPoint}:ro`, "-v", `${out}:/out`, dockerImage];
-      args.push("export", "-w", workspace, "-f", "json", "-o", "/out");
-    } else {
-      command = "java";
-      args = ["-jar", await ensureWar(cacheDir, options.fetch ?? fetch, log), "export", "-w", dsl];
-      args.push("-f", "json", "-o", out);
-    }
+    const { command, args } = await exportCommand(config, "json", out, { ...options, cacheDir, run, log });
     const { code, output } = await tryRun(run, command, args);
     if (code !== 0) throw failure(output, config, modelDir);
     const file = (await readdir(out)).find((name) => name.endsWith(".json"));
@@ -96,6 +81,48 @@ export async function loadWorkspace(config: Config, options: LoadWorkspaceOption
   } finally {
     await rm(out, { recursive: true, force: true });
   }
+}
+
+// Exports the configured DSL as Structurizr's static site, every view browsable offline, into `out`.
+export async function exportStaticSite(config: Config, out: string, options: LoadWorkspaceOptions = {}): Promise<void> {
+  const {
+    cacheDir = defaultCacheDir(),
+    run = spawnRun,
+    log = (message) => process.stderr.write(`${message}\n`),
+  } = options;
+  const dsl = resolve(config.root, config.model);
+  if (!existsSync(dsl)) {
+    throw new StructurizrError(`model not found; check "model" in .bearing/config.yaml`, config.model);
+  }
+  await mkdir(out, { recursive: true });
+  const { command, args } = await exportCommand(config, "static", resolve(out), { ...options, cacheDir, run, log });
+  const { code, output } = await tryRun(run, command, args);
+  if (code !== 0) throw failure(output, config, dirname(dsl));
+}
+
+// The Structurizr command that exports the configured DSL in a format into the directory `out`.
+async function exportCommand(
+  config: Config,
+  format: "json" | "static",
+  out: string,
+  options: Required<Pick<LoadWorkspaceOptions, "cacheDir" | "run" | "log">> & Pick<LoadWorkspaceOptions, "fetch">,
+): Promise<{ command: string; args: string[] }> {
+  const { cacheDir, run, log } = options;
+  const dsl = resolve(config.root, config.model);
+  const modelDir = dirname(dsl);
+  if (config.structurizr.runner === "docker") {
+    if ((await tryRun(run, "docker", ["image", "inspect", dockerImage])).code !== 0) {
+      log(`Pulling Structurizr ${structurizrVersion} (${dockerImage.split("@")[0]})...`);
+    }
+    const user = process.getuid && process.getgid ? ["--user", `${process.getuid()}:${process.getgid()}`] : [];
+    const workspace = `${mountPoint}/${basename(dsl)}`;
+    const args = ["run", "--rm", ...user, "-v", `${modelDir}:${mountPoint}:ro`, "-v", `${out}:/out`, dockerImage];
+    args.push("export", "-w", workspace, "-f", format, "-o", "/out");
+    return { command: "docker", args };
+  }
+  const args = ["-jar", await ensureWar(cacheDir, options.fetch ?? fetch, log), "export", "-w", dsl];
+  args.push("-f", format, "-o", out);
+  return { command: "java", args };
 }
 
 // Hashes everything under the model's directory, since the DSL can pull in files with !include, !docs and !adrs.
