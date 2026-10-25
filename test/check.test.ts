@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommanderError } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,14 +27,61 @@ function record(root: string, ...tests: TestRecord[]) {
   writeFileSync(join(root, tracesDir, "tests-1-0.jsonl"), tests.map((test) => `${JSON.stringify(test)}\n`).join(""));
 }
 
-// The basket repo with a variant committed on a branch of its name, and every criterion of #2 covered.
+// A call into a component, "<component>.<function>", with the calls it makes.
+type Call = [string, ...Call[]];
+
+// Writes the spans a test's calls would leave, as `bearing test` does. The real traces are checked in trace.test.ts.
+function trace(root: string, test: TestRecord, ...calls: Call[]) {
+  const spans: object[] = [];
+  const traceId = test.criterion!.replace(/\W/g, "").padStart(32, "0");
+  const add = ([call, ...children]: Call, parentSpanId?: string) => {
+    const [component, name] = call.split(".");
+    const spanId = (spans.length + 1).toString(16).padStart(16, "0");
+    spans.push({
+      traceId,
+      spanId,
+      ...(parentSpanId === undefined ? {} : { parentSpanId }),
+      name,
+      startTimeUnixNano: String(spans.length),
+      attributes: [
+        { key: "bearing.component", value: { stringValue: component } },
+        { key: "bearing.test", value: { stringValue: test.name } },
+        { key: "bearing.criterion", value: { stringValue: test.criterion } },
+      ],
+    });
+    for (const child of children) add(child, spanId);
+  };
+  for (const call of calls) add(call);
+  const request = { resourceSpans: [{ scopeSpans: [{ spans }] }] };
+  appendFileSync(
+    join(root, tracesDir, `spans-${test.criterion!.replace(/\W/g, "")}-0.jsonl`),
+    `${JSON.stringify(request)}\n`,
+  );
+}
+
+// Adding an item along #2's dynamic view, and along session restore as wrong-place does.
+const addItem: Call = [
+  "basketController.handle",
+  ["authMiddleware.authenticate"],
+  ["basketService.addItem", ["basketRepository.loadBasket"], ["basketRepository.saveBasket"]],
+];
+const addItemInSessionRestore: Call = [
+  "basketController.handle",
+  ["authMiddleware.authenticate"],
+  ["sessionRestore.addItem", ["basketRepository.loadBasket"], ["basketRepository.saveBasket"]],
+];
+
+// The basket repo with a variant committed on a branch of its name, and every criterion of #2 covered by a test
+// that adds an item the way the variant does.
 function variantRepo(variant: BasketVariant): string {
   const root = basketRepo();
   git(root, "checkout", "-q", "-b", variant);
   cpSync(join(basketDir, "variants", variant), root, { recursive: true });
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", variant);
-  record(root, passed("#2/AC1"), passed("#2/AC2"));
+  const tests = [passed("#2/AC1"), passed("#2/AC2")];
+  record(root, ...tests);
+  for (const test of tests) trace(root, test, variant === "wrong-place" ? addItemInSessionRestore : addItem);
   return root;
 }
 
@@ -44,16 +91,25 @@ beforeEach(() => vi.stubEnv("BEARING_ISSUES_FILE", issuesFile));
 afterEach(() => vi.unstubAllEnvs());
 
 describe("runChecks on the basket fixture", () => {
-  // Each seeded branch fails the checks its README names, and only those. Surplus and trace paths aren't blocking
-  // structural checks, so untraced-helper and wrong-place pass them all.
+  // Each seeded branch fails the checks its README names, and only those. Surplus is advisory, so untraced-helper
+  // passes them all.
   it.each([
     [
       "controller-imports-repository",
-      { claim: "failed", boundaries: "failed", deployment: "passed", coverage: "passed" },
+      { claim: "failed", boundaries: "failed", deployment: "passed", coverage: "passed", paths: "passed" },
     ],
-    ["redis-node", { claim: "skipped", boundaries: "passed", deployment: "failed", coverage: "skipped" }],
-    ["untraced-helper", { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed" }],
-    ["wrong-place", { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed" }],
+    [
+      "redis-node",
+      { claim: "skipped", boundaries: "passed", deployment: "failed", coverage: "skipped", paths: "skipped" },
+    ],
+    [
+      "untraced-helper",
+      { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed", paths: "passed" },
+    ],
+    [
+      "wrong-place",
+      { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed", paths: "failed" },
+    ],
   ] as const)("%s", async (variant, expected) => {
     const report = await runChecks(loadConfig(variantRepo(variant)));
     expect(statuses(report)).toEqual(expected);
@@ -67,6 +123,7 @@ describe("runChecks on the basket fixture", () => {
       boundaries: "passed",
       deployment: "passed",
       coverage: "skipped",
+      paths: "skipped",
     });
     expect(report.passed).toBe(true);
   });
@@ -116,6 +173,25 @@ describe("runChecks on the basket fixture", () => {
       "Deployment: failed, the Terraform doesn't match the target's Production deployment\n" +
         "  aws_elasticache_cluster.basket: Amazon ElastiCache in the Terraform, but not in the target (infra/cache.tf:",
     );
+  });
+
+  it("shows #2's expected path beside the one wrong-place takes", async () => {
+    const report = await runChecks(loadConfig(variantRepo("wrong-place")));
+    const paths = report.checks[4];
+    expect(paths).toMatchObject({ issues: ["#2"], views: [{ issue: "#2", view: "req-2", status: "failed" }] });
+    const text = formatReport(report);
+    expect(text).toContain(
+      "Trace paths: failed, 2 of 2 tagged tests don't follow their issue's dynamic view\n" +
+        "  #2/AC1 works (test/integration/basket.test.ts)\n" +
+        "    Expected (req-2)                    Observed\n" +
+        "                                        (test) -> basketController: handle()\n" +
+        "    basketController -> authMiddleware  basketController -> authMiddleware: authenticate()\n" +
+        "                                        basketController -> sessionRestore: addItem()  <- sessionRestore isn't in req-2\n" +
+        "                                        sessionRestore -> basketRepository: loadBasket(), saveBasket()  <- sessionRestore isn't in req-2\n" +
+        "    basketController -> basketService   missing\n" +
+        "    basketService -> basketRepository   missing\n",
+    );
+    expect(text).toMatch(/1 blocking check failed: Trace paths\.\n$/);
   });
 
   it("checks the issues given instead of the claim's", async () => {
@@ -291,6 +367,7 @@ describe("bearing check", () => {
       ["boundaries", "passed", true],
       ["deployment", "passed", true],
       ["coverage", "passed", true],
+      ["paths", "passed", true],
     ]);
   });
 

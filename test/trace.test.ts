@@ -8,7 +8,9 @@ import { loadConfig, parseConfig } from "../src/config.js";
 import { readTestRecords } from "../src/coverage.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { componentPaths } from "../src/paths.js";
-import { runTraced, tracesDir } from "../src/test.js";
+import { loadRequirements } from "../src/requirements.js";
+import { readSpanRecords, runTraced, tracesDir } from "../src/test.js";
+import { checkTracePaths, formatTracePaths } from "../src/trace-paths.js";
 import { basketDir, copyBasket } from "./basket.js";
 
 // The hook runs in the test command's own processes, so these tests preload a build of it rather than the source.
@@ -293,6 +295,69 @@ describe("bearing test", () => {
 });
 
 // Writes a plain Node repo to a temp directory and returns its root.
+// The basket's real traces against its dynamic views, for every requirement.
+describe("trace paths", () => {
+  async function tracePaths(root: string, issues?: number[]) {
+    const config = loadConfig(root);
+    await runTraced(config, basketComponents, [config.tests.integration!], quiet);
+    const dir = join(root, tracesDir);
+    const requirements = await loadRequirements(config, { issuesFile: join(basketDir, "issues.json") });
+    return checkTracePaths(config, {
+      target: basketTarget,
+      requirements,
+      issues: issues ?? requirements.map((requirement) => requirement.number),
+      tests: readTestRecords(dir),
+      spans: readSpanRecords(dir),
+    });
+  }
+
+  it("passes every requirement on main", { timeout: 60_000 }, async () => {
+    const views = await tracePaths(copyBasket());
+    expect(views.map((view) => [view.issue, view.status, view.tests.length])).toEqual([
+      ["#1", "passed", 2],
+      ["#2", "passed", 2],
+      ["#3", "passed", 2],
+      ["#4", "passed", 2],
+      ["#6", "passed", 2],
+      ["#7", "passed", 1],
+    ]);
+    expect(views[1]!.expected.map((step) => `${step.source}->${step.destination}`)).toEqual([
+      "basketController->authMiddleware",
+      "basketController->basketService",
+      "basketService->basketRepository",
+    ]);
+  });
+
+  // Its claim names #2. Other issues' tests that add an item as setup fail too, since adding goes through session
+  // restore between their views' steps, but a PR only checks the issues it touches.
+  it("fails #2 on wrong-place", { timeout: 60_000 }, async () => {
+    const views = await tracePaths(copyBasket("wrong-place"), [2]);
+    expect(views.map((view) => [view.issue, view.status])).toEqual([["#2", "failed"]]);
+    const added = views[0]!.tests.find((test) => test.criterion === "#2/AC1")!;
+    expect(added.status).toBe("unmatched");
+    // The read-back matches the view's steps between components, but adding went through session restore first.
+    expect(added.steps).not.toContain(null);
+    expect(added.undeclared.map((index) => added.observed[index])).toEqual([
+      { source: "basketController", destination: "sessionRestore", functions: ["addItem"] },
+      { source: "sessionRestore", destination: "basketRepository", functions: ["loadBasket", "saveBasket"] },
+    ]);
+    const text = formatTracePaths(views);
+    expect(text).toContain("Trace paths: failed, 2 of 2 tagged tests don't follow their issue's dynamic view\n");
+    expect(text).toContain(
+      "  #2 Add an item to the basket > #2/AC1 keeps an added item across sessions (test/integration/add-item.test.ts)\n" +
+        "    Expected (req-2)                    Observed\n" +
+        "                                        (test) -> basketController: handle()\n" +
+        "    basketController -> authMiddleware  basketController -> authMiddleware: authenticate()\n" +
+        "                                        basketController -> sessionRestore: addItem()  <- sessionRestore isn't in req-2\n" +
+        "                                        sessionRestore -> basketRepository: loadBasket(), saveBasket()  <- sessionRestore isn't in req-2\n" +
+        "                                        (test) -> basketController: handle()\n" +
+        "                                        basketController -> authMiddleware: authenticate()\n" +
+        "    basketController -> basketService   basketController -> basketService: getBasket()\n" +
+        "    basketService -> basketRepository   basketService -> basketRepository: loadBasket()\n",
+    );
+  });
+});
+
 function node(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "bearing-trace-"));
   for (const [path, text] of Object.entries(files)) {

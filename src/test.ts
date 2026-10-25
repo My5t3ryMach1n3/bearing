@@ -75,9 +75,30 @@ export async function runTraced(
 
 // Counts the spans in a traces directory and the criteria they carry.
 export function readSpans(dir: string): { spans: number; criteria: string[] } {
-  let spans = 0;
-  const criteria = new Set<string>();
-  if (!existsSync(dir)) return { spans, criteria: [] };
+  const spans = readSpanRecords(dir);
+  const criteria = new Set(spans.flatMap((span) => (span.criterion === undefined ? [] : [span.criterion])));
+  return { spans: spans.length, criteria: [...criteria].sort() };
+}
+
+// A span as Bearing reads it back: one call into a component's exports.
+export interface SpanRecord {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  // The function called.
+  name: string;
+  component: string;
+  // Nanoseconds since the epoch, as OTLP writes them.
+  start: bigint;
+  // The full name of the test that made the call, and its criterion tag.
+  test?: string;
+  criterion?: string;
+}
+
+// Reads every span in a traces directory.
+export function readSpanRecords(dir: string): SpanRecord[] {
+  if (!existsSync(dir)) return [];
+  const records: SpanRecord[] = [];
   for (const name of readdirSync(dir).filter((name) => spansFile.test(name))) {
     for (const line of readFileSync(join(dir, name), "utf8").split("\n")) {
       if (line === "") continue;
@@ -85,21 +106,42 @@ export function readSpans(dir: string): { spans: number; criteria: string[] } {
       for (const resource of request.resourceSpans) {
         for (const scope of resource.scopeSpans) {
           for (const span of scope.spans) {
-            spans++;
-            const tag = span.attributes.find((attribute) => attribute.key === attributes.criterion);
-            if (tag?.value.stringValue !== undefined) criteria.add(tag.value.stringValue);
+            const value = (key: string) =>
+              span.attributes.find((attribute) => attribute.key === key)?.value.stringValue;
+            const record: SpanRecord = {
+              traceId: span.traceId,
+              spanId: span.spanId,
+              name: span.name,
+              component: value(attributes.component) ?? "",
+              start: BigInt(span.startTimeUnixNano),
+            };
+            if (span.parentSpanId !== undefined) record.parentSpanId = span.parentSpanId;
+            const test = value(attributes.test);
+            if (test !== undefined) record.test = test;
+            const criterion = value(attributes.criterion);
+            if (criterion !== undefined) record.criterion = criterion;
+            records.push(record);
           }
         }
       }
     }
   }
-  return { spans, criteria: [...criteria].sort() };
+  return records;
 }
 
-// The parts of an OTLP JSON export `readSpans` reads.
+// The parts of an OTLP JSON export `readSpanRecords` reads.
 interface OtlpRequest {
   resourceSpans: Array<{
-    scopeSpans: Array<{ spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }> }>;
+    scopeSpans: Array<{
+      spans: Array<{
+        traceId: string;
+        spanId: string;
+        parentSpanId?: string;
+        name: string;
+        startTimeUnixNano: string;
+        attributes: Array<{ key: string; value: { stringValue?: string } }>;
+      }>;
+    }>;
   }>;
 }
 

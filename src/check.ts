@@ -25,7 +25,8 @@ import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
 import { loadRequirements, RequirementsError } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
-import { tracesDir } from "./test.js";
+import { readSpanRecords, tracesDir } from "./test.js";
+import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths.js";
 import {
   deriveTerraform,
   TerraformError,
@@ -34,13 +35,13 @@ import {
   type TerraformResource,
 } from "./terraform.js";
 
-// The blocking checks `bearing check` runs: Claim, Boundaries, Deployment and Criteria coverage. Each passes, fails
+// The blocking checks `bearing check` runs: Claim, Boundaries, Deployment, Criteria coverage and Trace paths. Each passes, fails
 // or is skipped when there's nothing for it to check. This is the JSON `bearing check --json` prints for
 // `bearing report`. See the Checks section of docs/product-spec.md.
 export interface CheckReport {
   // False if any blocking check failed.
   passed: boolean;
-  checks: [ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck];
+  checks: [ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck];
 }
 
 export type CheckStatus = "passed" | "failed" | "skipped";
@@ -99,6 +100,14 @@ export interface CoverageCheck extends CheckBase {
   criteria: CriterionCoverage[];
   // How many test results the last `bearing test` recorded.
   recorded: number;
+}
+
+export interface PathsCheck extends CheckBase {
+  check: "paths";
+  // The issues checked, as for coverage.
+  issues: string[];
+  // Each issue's dynamic view against the traces of its passing tagged tests.
+  views: ViewPaths[];
 }
 
 const pairOf = (relationship: { source: string; destination: string }) =>
@@ -253,28 +262,19 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
 
   const issues = options.issues?.map((issue) => `#${issue}`) ?? claim?.issues ?? issuesInBranch(branch);
   let coverage: CoverageCheck;
+  let paths: PathsCheck;
   if (issues.length === 0) {
-    coverage = {
-      check: "coverage",
-      status: "skipped",
-      blocking: true,
-      reason:
-        claim === undefined
-          ? "no issues: the branch has no claims file and its name names none"
-          : `no issues: ${toPosix(claimFile(branch))} lists none`,
-      issues,
-      criteria: [],
-      recorded: 0,
-    };
+    const reason =
+      claim === undefined
+        ? "no issues: the branch has no claims file and its name names none"
+        : `no issues: ${toPosix(claimFile(branch))} lists none`;
+    coverage = { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
+    paths = { check: "paths", status: "skipped", blocking: true, reason, issues, views: [] };
   } else {
     const requirements = await loadRequirements(config);
     const tests = readTestRecords(join(config.root, tracesDir));
-    const criteria = criteriaCoverage(
-      config,
-      requirements,
-      issues.map((issue) => Number(issue.slice(1))),
-      tests,
-    );
+    const numbers = issues.map((issue) => Number(issue.slice(1)));
+    const criteria = criteriaCoverage(config, requirements, numbers, tests);
     coverage = {
       check: "coverage",
       status: criteria.every((criterion) => criterion.status === "covered") ? "passed" : "failed",
@@ -283,13 +283,33 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       criteria,
       recorded: tests.length,
     };
+    const spans = readSpanRecords(join(config.root, tracesDir));
+    const views = checkTracePaths(config, { target, requirements, issues: numbers, tests, spans });
+    paths = views.some((view) => view.status === "failed")
+      ? { check: "paths", status: "failed", blocking: true, issues, views }
+      : views.some((view) => view.status === "passed")
+        ? { check: "paths", status: "passed", blocking: true, issues, views }
+        : {
+            check: "paths",
+            status: "skipped",
+            blocking: true,
+            reason: "no issue has a passing tagged test to compare with its dynamic view",
+            issues,
+            views,
+          };
   }
 
-  const checks: CheckReport["checks"] = [claimCheck, boundaries, deployment, coverage];
+  const checks: CheckReport["checks"] = [claimCheck, boundaries, deployment, coverage, paths];
   return { passed: checks.every((check) => check.status !== "failed"), checks };
 }
 
-const titles = { claim: "Claim", boundaries: "Boundaries", deployment: "Deployment", coverage: "Criteria coverage" };
+const titles = {
+  claim: "Claim",
+  boundaries: "Boundaries",
+  deployment: "Deployment",
+  coverage: "Criteria coverage",
+  paths: "Trace paths",
+};
 
 export function formatReport(report: CheckReport): string {
   const sections = report.checks.map((check) => {
@@ -303,6 +323,8 @@ export function formatReport(report: CheckReport): string {
         return formatDeployment(check);
       case "coverage":
         return formatCoverage(check.criteria, check.recorded);
+      case "paths":
+        return formatTracePaths(check.views);
     }
   });
   const failed = report.checks.filter((check) => check.status === "failed").map((check) => titles[check.check]);
@@ -395,7 +417,7 @@ function toPosix(path: string): string {
 export function checkCommand(): Command {
   return new Command("check")
     .description(
-      "run the blocking checks: the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), and criteria coverage from `bearing test`; exits non-zero if any fails",
+      "run the blocking checks: the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); exits non-zero if any fails",
     )
     .argument("[issues...]", "the issues to check coverage for, e.g. 2 4; defaults to the claims file's")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")
