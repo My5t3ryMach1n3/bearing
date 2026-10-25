@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Config } from "./config.js";
 import { githubRepository, githubToken, runCommand } from "./github.js";
@@ -83,6 +84,18 @@ export async function loadRequirements(config: Config, options: LoadRequirements
 // The open stories that each need exactly one dynamic view: everything open except epics.
 export function leafStories(requirements: Requirement[]): Requirement[] {
   return requirements.filter((requirement) => requirement.state === "open" && !requirement.epic);
+}
+
+// What a story's dynamic view pins as "bearing.criteria": a short digest of each criterion's text, e.g.
+// "AC1:3f2a9c1e,AC2:9b1c04d7". When the issue's criteria are edited, the pin stops matching and `bearing validate`
+// flags the view and the criteria's tests as stale until someone checks them and re-pins.
+export function criteriaPin(requirement: Requirement): string {
+  return requirement.criteria.map((criterion) => `AC${criterion.number}:${criterionDigest(criterion.text)}`).join(",");
+}
+
+// Whitespace is collapsed first, so rewrapping a criterion doesn't change it.
+export function criterionDigest(text: string): string {
+  return createHash("sha256").update(text.trim().replace(/\s+/g, " ")).digest("hex").slice(0, 8);
 }
 
 // A section heading as the issue form writes it (`### Story`) or as people write it by hand (`**Story**`).

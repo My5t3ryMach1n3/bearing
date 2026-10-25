@@ -11,7 +11,7 @@ import { deriveImports } from "../src/derive.js";
 import { componentPaths } from "../src/paths.js";
 import { loadRequirements } from "../src/requirements.js";
 import { readSpanRecords, runTraced, tracesDir } from "../src/test.js";
-import { checkSurplus } from "../src/surplus.js";
+import { checkSurplus, closedComponents } from "../src/surplus.js";
 import { checkTracePaths, formatTracePaths } from "../src/trace-paths.js";
 import { basketDir, copyBasket, type BasketVariant } from "./basket.js";
 
@@ -371,20 +371,37 @@ function node(files: Record<string, string>): string {
 
 // The basket's real traces against its code: every exported function on main is reached by a tagged test.
 describe("surplus", () => {
-  async function surplus(variant?: BasketVariant) {
+  async function surplus(variant?: BasketVariant, closed?: Map<string, string[]>) {
     const root = copyBasket(variant);
     const config = loadConfig(root);
     await runTraced(config, basketComponents, [config.tests.integration!], quiet);
-    return checkSurplus(root, deriveImports(config, basketTarget), readSpanRecords(join(root, tracesDir)));
+    return checkSurplus(root, deriveImports(config, basketTarget), readSpanRecords(join(root, tracesDir)), closed);
   }
 
   it("flags nothing on main", { timeout: 60_000 }, async () => {
-    expect(await surplus()).toEqual({ outside: [], untraced: [], traced: true });
+    expect(await surplus()).toEqual({ outside: [], closed: [], untraced: [], traced: true });
   });
+
+  it(
+    "flags the code of a component that serves only a closed requirement, whatever traces it",
+    { timeout: 60_000 },
+    async () => {
+      const issues = (
+        await loadRequirements(loadConfig(join(basketDir, "repo")), { issuesFile: join(basketDir, "issues.json") })
+      ).map((each) => (each.number === 4 ? { ...each, state: "closed" as const, stateReason: "not_planned" } : each));
+      expect(await surplus(undefined, closedComponents(basketTarget, issues))).toEqual({
+        outside: [],
+        closed: [{ component: "sessionRestore", issues: ["#4"], files: ["src/basket-api/session-restore/index.ts"] }],
+        untraced: [],
+        traced: true,
+      });
+    },
+  );
 
   it("flags the helper untraced-helper adds", { timeout: 60_000 }, async () => {
     expect(await surplus("untraced-helper")).toEqual({
       outside: [],
+      closed: [],
       untraced: [
         {
           file: "src/basket-api/basket-service/retryWithBackoff.ts",

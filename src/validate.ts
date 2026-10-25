@@ -4,28 +4,39 @@ import { ConfigError, loadConfig } from "./config.js";
 import { loadModel } from "./diff.js";
 import { dynamicViewKey, type Model } from "./model.js";
 import { normalizePath, within } from "./paths.js";
-import { leafStories, loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
+import {
+  criteriaPin,
+  criterionDigest,
+  leafStories,
+  loadRequirements,
+  RequirementsError,
+  type Requirement,
+} from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
+import { criterionTag } from "./trace/runtime.js";
 
 // One broken Bearing rule. This is the JSON `bearing validate --json` prints for `bearing check` to read.
 export interface Problem {
-  rule: "requirements" | "path" | "dynamic-view" | "step";
+  rule: "requirements" | "path" | "dynamic-view" | "criteria" | "step";
   // Stable ID of the element, relationship or dynamic view at fault, or the issue missing a view, e.g. "#2".
   id: string;
   message: string;
 }
 
 // Checks the target against Bearing's rules. Structurizr has already checked it against C4's while loading it.
-export function validateModel(model: Model, requirements: Requirement[]): Problem[] {
+// `tag` is `tests.tag`, for naming the tests a stale view's criteria are proven by.
+export function validateModel(model: Model, requirements: Requirement[], tag = "#<issue>/AC<n>"): Problem[] {
   return [
     ...checkRequirements(model, requirements),
     ...checkPaths(model),
     ...checkDynamicViews(model, requirements),
+    ...checkCriteria(model, requirements, tag),
     ...checkSteps(model),
   ];
 }
 
-// Every element and relationship lists at least one open requirement, and nothing that isn't a requirement.
+// Every element and relationship lists at least one open requirement, and only open requirements. What served only
+// issues closed as not planned is to be pruned, with its code.
 function checkRequirements(model: Model, requirements: Requirement[]): Problem[] {
   const byId = new Map(requirements.map((requirement) => [requirement.id, requirement]));
   const problems: Problem[] = [];
@@ -45,11 +56,27 @@ function checkRequirements(model: Model, requirements: Requirement[]): Problem[]
         message: `"bearing.requirements" lists ${unknown.map((id) => `"${id}"`).join(", ")}, which ${unknown.length === 1 ? "isn't a requirement" : "aren't requirements"}; list issues as "#<n>"`,
       });
     }
-    if (!item.requirements.some((id) => byId.get(id)?.state === "open")) {
+    const closed = item.requirements.filter((id) => byId.get(id)?.state === "closed");
+    const open = item.requirements.filter((id) => byId.get(id)?.state === "open");
+    const notPlanned = closed.filter((id) => byId.get(id)!.stateReason === "not_planned");
+    if (open.length === 0 && notPlanned.length > 0) {
+      const code = "path" in item && item.path !== undefined ? `, and delete its code under ${item.path}` : "";
+      problems.push({
+        rule: "requirements",
+        id: item.id,
+        message: `${what} served only ${closed.join(", ")}, closed as not planned; prune it from the target${code}`,
+      });
+    } else if (open.length === 0) {
       problems.push({
         rule: "requirements",
         id: item.id,
         message: `${what} serves no open requirement; set "bearing.requirements" to the open issues it serves, e.g. "#1,#2", or remove it`,
+      });
+    } else if (closed.length > 0) {
+      problems.push({
+        rule: "requirements",
+        id: item.id,
+        message: `"bearing.requirements" lists ${closed.join(", ")}, closed; drop ${closed.length === 1 ? "it" : "them"} and keep ${open.join(", ")}`,
       });
     }
   }
@@ -115,8 +142,65 @@ function checkDynamicViews(model: Model, requirements: Requirement[]): Problem[]
       message = `dynamic view is for #${number}, which isn't a requirement`;
     } else if (requirement.epic) {
       message = `dynamic view is for ${requirement.id}, an epic; epics get none, their stories each get one`;
+    } else if (requirement.state === "closed") {
+      message =
+        requirement.stateReason === "not_planned"
+          ? `dynamic view is for ${requirement.id}, closed as not planned; prune it from the target`
+          : `dynamic view is for ${requirement.id}, which is closed; only open stories get one, so remove it`;
     }
     if (message !== undefined) problems.push({ rule: "dynamic-view", id: view.id, message });
+  }
+  return problems;
+}
+
+// Every open story's view pins its criteria as they stood when the view and its tests were last checked against them.
+// An edit to the criteria unpins it: the view, and the tests tagged with what changed, are stale until re-checked.
+function checkCriteria(model: Model, requirements: Requirement[], tag: string): Problem[] {
+  const problems: Problem[] = [];
+  for (const story of leafStories(requirements)) {
+    const view = model.dynamicViews.get(dynamicViewKey(story.number));
+    if (view === undefined) continue;
+    const pin = criteriaPin(story);
+    if (view.criteria === undefined) {
+      problems.push({
+        rule: "criteria",
+        id: view.id,
+        message: `dynamic view doesn't pin ${story.id}'s criteria; once it and the tests tagged with them match the criteria, set "bearing.criteria" to "${pin}"`,
+      });
+      continue;
+    }
+    const pinned = new Map(
+      view.criteria
+        .split(",")
+        .map((each) => each.trim().split(":"))
+        .map(([criterion, digest]) => [criterion ?? "", digest ?? ""]),
+    );
+    const current = new Set(story.criteria.map((criterion) => criterion.number));
+    const changes: Array<{ number: number; how: string }> = [];
+    for (const criterion of story.criteria) {
+      const digest = pinned.get(`AC${criterion.number}`);
+      if (digest === undefined) changes.push({ number: criterion.number, how: "added" });
+      else if (digest !== criterionDigest(criterion.text)) changes.push({ number: criterion.number, how: "edited" });
+    }
+    for (const key of pinned.keys()) {
+      const number = Number(/^AC(\d+)$/.exec(key)?.[1]);
+      if (Number.isInteger(number) && !current.has(number)) changes.push({ number, how: "removed" });
+    }
+    if (changes.length === 0 && pinned.size === current.size) continue;
+    if (changes.length === 0) {
+      problems.push({
+        rule: "criteria",
+        id: view.id,
+        message: `"bearing.criteria" "${view.criteria}" isn't a pin Bearing writes; set it to "${pin}"`,
+      });
+      continue;
+    }
+    const tags = changes.map(({ number }) => criterionTag(tag, story.number, number));
+    problems.push({
+      rule: "criteria",
+      id: view.id,
+      message: `${story.id}'s criteria changed since the view was pinned (${changes.map(({ number, how }) => `AC${number} ${how}`).join(", ")}), so the view and the tests tagged ${tags.join(", ")} are stale; check them against the criteria, then set "bearing.criteria" to "${pin}"`,
+    });
   }
   return problems;
 }
@@ -159,7 +243,7 @@ export function validateCommand(): Command {
         const config = loadConfig();
         const requirements = await loadRequirements(config);
         const model = await loadModel(join(config.root, config.model), () => config);
-        const problems = validateModel(model, requirements);
+        const problems = validateModel(model, requirements, config.tests.tag);
         if (options.json === true) process.stdout.write(`${JSON.stringify({ problems }, null, 2)}\n`);
         if (problems.length > 0) {
           this.error(`error: ${formatProblems(config.model, problems)}`);

@@ -56,6 +56,7 @@ describe("designContext", () => {
     }
     expect(text).toContain("The model is architecture/workspace.dsl");
     expect(text).toContain('dynamic basketApi "req-2" "#2 Add an item to the basket"');
+    expect(text).toContain('\n  Its dynamic view pins these: "bearing.criteria" "AC1:c417b1ba,AC2:076fcca2"\n\n#6 ');
   });
 
   it("groups stories under their epic, which needs no view of its own", () => {
@@ -121,6 +122,7 @@ describe("issueContext", () => {
     const text = formatIssueContext(issueContext(config, model(), requirements, 2));
     expect(text).toMatch(/^#2 Add an item to the basket\n {2}As a shopper/);
     expect(text).toContain("  #2/AC2 Given a product that isn't in the catalogue");
+    expect(text).toContain('\n  Pinned in the dynamic view as "bearing.criteria" "AC1:e665a9d6,AC2:e984cf88"\n');
     expect(text).toContain(
       "Dynamic view req-2 in basketApi: the path #2's tests must take\n  1. webApp -> basketController  POST /basket/items\n",
     );

@@ -185,6 +185,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       basketRepository -> database "Selects the basket"
       basketService -> productCatalogue "Looks up current prices"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:886264ca,AC2:dcbb7ce8"
+      }
     }
     dynamic basketApi "req-2" "#2 Add an item to the basket" {
       webApp -> basketController "POST /basket/items"
@@ -195,6 +198,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       basketService -> basketRepository "loadBasket(), saveBasket()"
       basketRepository -> database "Selects and upserts the basket"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:e665a9d6,AC2:e984cf88"
+      }
     }
     dynamic basketApi "req-3" "#3 Remove an item from the basket" {
       webApp -> basketController "DELETE /basket/items/{sku}"
@@ -204,6 +210,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       basketService -> basketRepository "loadBasket(), saveBasket()"
       basketRepository -> database "Selects and upserts the basket"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:2bc23bfd,AC2:ecdaf7cc"
+      }
     }
     dynamic basketApi "req-4" "#4 Restore the basket after the session expires" {
       webApp -> basketController "POST /session/restore"
@@ -213,6 +222,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       sessionRestore -> basketRepository "loadBasket()"
       basketRepository -> database "Selects the saved basket"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:c417b1ba,AC2:076fcca2"
+      }
     }
     dynamic basketApi "req-6" "#6 Change an item's quantity" {
       webApp -> basketController "PATCH /basket/items/{sku}"
@@ -222,6 +234,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       basketService -> basketRepository "loadBasket(), saveBasket()"
       basketRepository -> database "Selects and upserts the basket"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:048afb29,AC2:ab3d5213"
+      }
     }
     dynamic basketApi "req-7" "#7 Empty the basket" {
       webApp -> basketController "DELETE /basket"
@@ -231,6 +246,9 @@ workspace "Basket" "The approved target for the basket service in the spec's wal
       basketService -> basketRepository "saveBasket()"
       basketRepository -> database "Upserts the empty basket"
       autoLayout
+      properties {
+        "bearing.criteria" "AC1:d4f93295"
+      }
     }
 
     deployment basket production "deployment" {

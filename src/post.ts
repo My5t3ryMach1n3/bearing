@@ -122,12 +122,14 @@ export function advisoryDescription(text: string | undefined): string {
   if (surplus === undefined || surplus.status === "skipped") return "Surplus skipped";
   if (surplus.status === "passed") return "Surplus: nothing flagged";
   const outside = Array.isArray(surplus.outside) ? surplus.outside.length : 0;
+  const closed = Array.isArray(surplus.closed) ? surplus.closed.length : 0;
   const untraced = Array.isArray(surplus.untraced)
     ? surplus.untraced.reduce((sum, file) => sum + (Array.isArray(file?.functions) ? file.functions.length : 0), 0)
     : 0;
   const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   const found = [
     ...(outside > 0 ? [`${count(outside, "file")} outside every component`] : []),
+    ...(closed > 0 ? [`${count(closed, "component")} serving only closed requirements`] : []),
     ...(untraced > 0 ? [`${count(untraced, "exported function")} no tagged test calls`] : []),
   ];
   const description = `Surplus flagged${found.length > 0 ? `: ${found.join(", ")}` : ""}. Advisory only`;

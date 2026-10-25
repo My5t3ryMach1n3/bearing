@@ -2,9 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 import type { ImportGraph } from "./derive.js";
+import type { Model } from "./model.js";
+import type { Requirement } from "./requirements.js";
 import type { SpanRecord } from "./test.js";
 
-// Surplus: code outside every component's path, and exported functions no criterion's trace reaches. Advisory only,
+// Surplus: code outside every component's path, code in components that serve only closed requirements, and exported
+// functions no criterion's trace reaches. Advisory only,
 // since a helper nothing traces may still be needed. See the Checks section of docs/product-spec.md.
 //
 // It reports files and exported functions, not lines. A function counts as reached when a test tagged with any
@@ -14,11 +17,21 @@ import type { SpanRecord } from "./test.js";
 export interface SurplusResult {
   // Source files under no component path.
   outside: string[];
+  // Components that serve only closed requirements, such as one closed as not planned, with their files: the target
+  // is to prune them, and their code goes with them.
+  closed: ClosedComponent[];
   // Files in components whose exported functions no tagged test called, with those functions.
   untraced: UntracedFile[];
   // Whether any tagged test's trace was recorded. Without one, nothing is reached, so untraced functions aren't
   // looked for.
   traced: boolean;
+}
+
+export interface ClosedComponent {
+  component: string;
+  // The closed issues it lists, e.g. ["#5"].
+  issues: string[];
+  files: string[];
 }
 
 export interface UntracedFile {
@@ -28,14 +41,24 @@ export interface UntracedFile {
   functions: string[];
 }
 
-export function checkSurplus(root: string, graph: ImportGraph, spans: SpanRecord[]): SurplusResult {
+// `closed` maps each component that serves only closed requirements to those requirements.
+export function checkSurplus(
+  root: string,
+  graph: ImportGraph,
+  spans: SpanRecord[],
+  closed: Map<string, string[]> = new Map(),
+): SurplusResult {
   const reached = new Set<string>();
   for (const span of spans) {
     if (span.criterion !== undefined) reached.add(`${span.file}#${span.name}`);
   }
+  const closedComponents = graph.components
+    .filter((component) => closed.has(component.id))
+    .map((component) => ({ component: component.id, issues: closed.get(component.id)!, files: component.files }));
   const untraced: UntracedFile[] = [];
   if (reached.size > 0) {
     for (const component of graph.components) {
+      if (closed.has(component.id)) continue;
       for (const file of component.files) {
         const code = readFileSync(join(root, file), "utf8");
         const functions = exportedFunctions(code, file).filter((name) => !reached.has(`${file}#${name}`));
@@ -43,7 +66,21 @@ export function checkSurplus(root: string, graph: ImportGraph, spans: SpanRecord
       }
     }
   }
-  return { outside: graph.unmapped, untraced, traced: reached.size > 0 };
+  return { outside: graph.unmapped, closed: closedComponents, untraced, traced: reached.size > 0 };
+}
+
+// The target's components that list closed requirements and no open one, each with the closed ones it lists.
+export function closedComponents(target: Model, requirements: Requirement[]): Map<string, string[]> {
+  const state = new Map(requirements.map((requirement) => [requirement.id, requirement.state]));
+  const closed = new Map<string, string[]>();
+  for (const element of target.elements.values()) {
+    if (element.type !== "component") continue;
+    const issues = element.requirements.filter((id) => state.get(id) === "closed");
+    if (issues.length > 0 && !element.requirements.some((id) => state.get(id) === "open")) {
+      closed.set(element.id, issues);
+    }
+  }
+  return closed;
 }
 
 // The names a module exports functions under, as the trace hook wraps them: function declarations with a body,
@@ -99,7 +136,7 @@ function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
 }
 
 export function formatSurplus(result: SurplusResult): string {
-  const flagged = result.outside.length + result.untraced.length;
+  const flagged = result.outside.length + result.closed.length + result.untraced.length;
   const lines = [
     flagged > 0
       ? "Surplus: flagged (advisory, doesn't block merge), code that may not be needed"
@@ -109,6 +146,12 @@ export function formatSurplus(result: SurplusResult): string {
   ];
   if (result.outside.length > 0) {
     lines.push("  Outside every component's path:", ...result.outside.map((file) => `    ${file}`));
+  }
+  if (result.closed.length > 0) {
+    lines.push("  In components that serve only closed requirements, to prune with them:");
+    for (const { component, issues, files } of result.closed) {
+      lines.push(`    ${component} (${issues.join(", ")}): ${files.length === 0 ? "no files" : files.join(", ")}`);
+    }
   }
   if (result.untraced.length > 0) {
     lines.push("  Exported but never called by a test tagged with a criterion:");
