@@ -156,7 +156,8 @@ describe("the comment", () => {
       true,
     );
     expect(comment).toContain(
-      "| Claim | ❌ failed | 1 mismatch with `.bearing/claims/controller-imports-repository.yaml` |\n" +
+      "| Target change | ⏭️ skipped | the branch doesn't change the target, so it's checked against main's |\n" +
+        "| Claim | ❌ failed | 1 mismatch with `.bearing/claims/controller-imports-repository.yaml` |\n" +
         "| Boundaries | ❌ failed | 1 relationship the target doesn't declare |\n" +
         "| Deployment | ✅ passed | the Terraform matches the target's Production deployment |\n" +
         "| Criteria coverage | ✅ passed | 2 of 2 criteria covered |\n" +
@@ -167,7 +168,7 @@ describe("the comment", () => {
     const positions = order.map((text) => comment.indexOf(text));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-    expect(comment).not.toContain("Target change");
+    expect(comment).not.toContain("### ⚠️ Target change");
     expect(comment).toContain("| `src/basket-api/basket-controller/index.ts` | `basketController` |");
   });
 
@@ -186,6 +187,27 @@ describe("the comment", () => {
         "| Relationships | `basketController->shareService` | `sessionRestore->authMiddleware` |  |\n" +
         "| Dynamic views |  |  | `req-4` (steps) |\n",
     );
+    expect(comment).toContain("No ADR in this PR gives the reason for the change or the alternatives considered.");
+  });
+
+  it("shows the ADRs that give the target change's reason, after the model diff", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "share-basket");
+    changeTarget(root);
+    mkdirSync(join(root, "architecture", "adrs"), { recursive: true });
+    writeFileSync(join(root, "architecture", "adrs", "template.md"), "# NNNN. Decision title\n");
+    writeFileSync(
+      join(root, "architecture", "adrs", "0002-share-service.md"),
+      "# 0002. Share baskets from their own component\n\n## Alternatives considered\n\n- In the basket service: it would send email.\n",
+    );
+    const { comment } = await report(root);
+    expect(comment).toContain(
+      "<details open><summary>0002. Share baskets from their own component (<code>architecture/adrs/0002-share-service.md</code>)</summary>\n\n" +
+        "# 0002. Share baskets from their own component\n\n## Alternatives considered\n\n- In the basket service: it would send email.\n\n</details>",
+    );
+    expect(comment).not.toContain("NNNN. Decision title");
+    expect(comment).not.toContain("No ADR in this PR");
+    expect(comment.indexOf("<details open>")).toBeLessThan(comment.indexOf("### Checks"));
   });
 
   it("is in target-change mode for a workflow change, though the model is unchanged", async () => {
@@ -216,7 +238,7 @@ describe("the comment", () => {
     const root = variantRepo("untraced-helper");
     const config = loadConfig(root);
     const check = await runChecks(config);
-    const surplus = check.checks[5];
+    const surplus = check.checks[6];
     surplus.outside = Array.from({ length: 5000 }, (_, index) => `src/generated/file-${index}.ts`);
     const comment = formatComment({ check, ...(await gatherReport(config)) });
     expect(comment.length).toBeLessThan(65_536);
@@ -350,8 +372,8 @@ describe("bearing report", () => {
 
   it("reads the results `bearing check --json` wrote", async () => {
     const check: CheckReport = await runChecks(loadConfig(root));
-    check.checks[1].undeclared = [];
-    check.checks[1].status = "passed";
+    check.checks[2].undeclared = [];
+    check.checks[2].status = "passed";
     const file = join(root, "check.json");
     writeFileSync(file, JSON.stringify(check));
     const { stdout } = await run("--check", file);

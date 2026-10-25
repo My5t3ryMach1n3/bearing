@@ -95,7 +95,7 @@ The design loop runs once per requirement set or change; the build loop runs on 
 
 **Phase 4: architecture change proposal**
 
-- When a requirement can't be met within the target, the agent proposes the target-model change in the same branch as its code, with the reason and the alternatives it considered. Any change to model files switches the PR into target-change mode: labelled and called out first in the PR comment, so whoever merges sees the model diff before anything else.
+- When a requirement can't be met within the target, the agent proposes the target-model change in the same branch as its code, with an ADR giving the reason and the alternatives it considered. Any change to model files switches the PR into target-change mode: labelled and called out first in the PR comment, so whoever merges sees the model diff before anything else.
 - The engineer approves, rejects or redirects; merging the PR is the approval. Code and target merge together.
 
 **New requirement: the change cycle**
@@ -363,6 +363,7 @@ checks:
 | Check | Compares | Blocks merge |
 | --- | --- | --- |
 | Target valid | Model against C4 and Bearing rules | Yes |
+| Target change | A proposed target against main's current target: first merged wins | Yes |
 | Claim | Claims file against the as-built model | Yes |
 | Boundaries | As-built relationships between components against the target | Yes |
 | Deployment | Terraform against the target deployment view | Yes |
@@ -409,7 +410,8 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
   of waiting.
 - Before pushing: `bearing claim`, `bearing test -- npm run test:integration`, `bearing check`.
 - If a check fails, fix the code within the target. After 3 failed attempts, propose a target change in
-  architecture/workspace.dsl with the reason and the alternatives you considered.
+  architecture/workspace.dsl on the same branch, with an ADR from architecture/adrs/template.md giving the reason
+  and the alternatives you considered. If another target change merges first, rebase onto it and rework yours on top.
 - Never edit .bearing/config.yaml or anything in .github/workflows/.
 ```
 
@@ -478,8 +480,11 @@ The check fails if any criterion is missing or failing, listing each with its te
 
 ### How `bearing check` works
 
-`bearing check` runs the four blocking checks below on the repo as it is on disk and exits non-zero if any fails. Each one passes, fails or is skipped when there's nothing for it to check; a skipped check never fails. `--json` prints every check's result, with the IDs, files and lines behind each failure, for `bearing report`.
+`bearing check` runs the blocking checks below on the code as it is on disk and exits non-zero if any fails. Each one passes, fails or is skipped when there's nothing for it to check; a skipped check never fails. `--json` prints every check's result, with the IDs, files and lines behind each failure, for `bearing report`.
 
+The target they compare against depends on the branch. A branch that changes the model's folder is checked against its own, proposed target. Any other branch is checked against main's current target, read from git, so a target change merged after it forked applies to it straight away.
+
+- **Target change** passes a branch that changes the model's folder when main's model folder hasn't changed since the branch forked, and fails it, listing main's changed files, when it has: the first target change to merge wins, and a later one must rebase onto it and rework its change on top. Two proposals can edit different parts of the model without a Git conflict, so this check, not Git, is what makes the later one rework its change. A branch that doesn't change the target skips it.
 - **Claim** reads the branch's claims file on top of the target as it stood where the branch forked from main, and fails on each mismatch with the as-built model:
   - a relationship the code makes that the target didn't have at the fork point and the claim doesn't add;
   - something the claim removes that the code still has: a relationship it still imports, or files left under a removed component's path;
@@ -494,7 +499,7 @@ The check fails if any criterion is missing or failing, listing each with its te
 
 `bearing report` writes the PR comment in Markdown and prints it; `--post` puts it on the PR, editing Bearing's comment from an earlier run rather than adding another, so each PR has one. It runs the checks itself, or reads what `bearing check --json` wrote with `--check <file>`, and never fails on a failing check: `bearing check` does that. The comment has, in order:
 
-- **Target change**, only in target-change mode: the files that put the PR in it, and the model diff from the target at the fork point, listing what is added, removed and drifted among elements, relationships, dynamic views and deployment. A PR is in target-change mode when it changes the model's folder, `.bearing/` other than claims files, or `.github/workflows/`.
+- **Target change**, only in target-change mode: the files that put the PR in it, the model diff from the target at the fork point, listing what is added, removed and drifted among elements, relationships, dynamic views and deployment, then the ADRs the PR adds or changes, in full, as the proposal's reason and alternatives. A model diff with no ADR says so. A PR is in target-change mode when it changes the model's folder, `.bearing/` other than claims files, or `.github/workflows/`.
 - **Checks**: one row per check with its result and what it found.
 - **Overlay**: one Mermaid flowchart of the affected elements only. Green is what the target change adds, grey and dashed what it removes, red what drifted: a changed element or relationship in the target, a relationship the code makes that the target doesn't declare, a deployment node the Terraform adds, lacks or counts differently, or a call a tagged test made that its issue's dynamic view doesn't have. Around them it draws the target's relationships between the elements shown, the steps a test's trace missed, and the component an undeclared relationship skips, stopping at 15 elements.
 - **Details** of each failing or flagged check, as `bearing check` prints them, and the changed source files with the component each landed in. They're dropped if the comment would be too long for GitHub.
@@ -511,7 +516,7 @@ The guard runs from the base branch and never executes PR code, so a PR can't di
 
 - **Guard job** (`pull_request_target`): reads the changed files through the API. Changes under architecture/, .bearing/ or .github/workflows/ label the PR `architecture-change`, put the model diff first in the comment, and say so in `bearing/target`.
 - **Conformance job** (`pull_request`): runs `bearing validate`, `bearing test`, `bearing derive`, `bearing check` and `bearing report`, then sets `bearing/conformance` and `bearing/advisory`.
-- **Target compared**: main's target normally; the PR's proposed target when it changes the model.
+- **Target compared**: main's target normally; the PR's proposed target when it changes the model. The conformance job checks out the PR's head with its history rather than GitHub's merge commit, so Bearing can find where the PR forked and tell whether main's target moved since.
 
 **Repo settings `bearing init` asks you to turn on**
 

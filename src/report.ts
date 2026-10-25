@@ -1,12 +1,13 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { Command } from "commander";
-import { changedPaths, changedSourceFiles, ClaimError, claimsDir, forkPoint, targetAtFork } from "./claims.js";
-import { checkTitles, formatCheck, runChecks, type CheckOptions, type CheckReport } from "./check.js";
+import { changedPaths, changedSourceFiles, ClaimError, claimsDir, modelPathspec } from "./claims.js";
+import { checkedTarget, checkTitles, formatCheck, runChecks, type CheckOptions, type CheckReport } from "./check.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { CoverageError } from "./coverage.js";
 import { DeriveError } from "./derive.js";
-import { diffModels, loadModel, type Changes, type Drift, type ModelDiff } from "./diff.js";
+import { diffModels, type Changes, type Drift, type ModelDiff } from "./diff.js";
 import { githubRepository, githubToken } from "./github.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
@@ -16,7 +17,8 @@ import { TerraformError } from "./terraform.js";
 
 // `bearing report`: the PR comment. A summary of every check comes first, then one Mermaid overlay of the elements
 // the PR affects, with what it adds, removes and drifts in colour, then each failing or flagged check's details. In
-// target-change mode the target's own diff comes before all of it, so whoever merges sees it first. See the How
+// target-change mode the target's own diff and the ADRs that give its reason come before all of it, so whoever
+// merges sees them first. See the How
 // `bearing report` works section of docs/product-spec.md.
 
 // Marks Bearing's comment, so each run updates it in place rather than adding another.
@@ -24,16 +26,23 @@ export const reportMarker = "<!-- bearing:report -->";
 
 export interface ReportInputs {
   check: CheckReport;
-  // The PR's target.
+  // The target the PR is checked against: its own when it changes it, otherwise the base branch's.
   target: Model;
   // The target at the fork point, before the PR: `target` itself, the same object, when the PR doesn't change it.
   forked: Model;
   // The files the PR changes that put it in target-change mode. Empty when it isn't in that mode.
   targetFiles: string[];
+  // The ADRs the PR adds or changes, which give a target change's reason and the alternatives considered.
+  adrs: Adr[];
   // The source files the PR changes, with the component whose path holds each.
   files: Array<{ path: string; component?: string }>;
   // Where the Structurizr static site of the PR's target can be found.
   siteUrl?: string;
+}
+
+export interface Adr {
+  path: string;
+  text: string;
 }
 
 // The overlay stops adding context, the elements around the affected ones, once it has this many. The affected
@@ -285,7 +294,7 @@ const commentLimit = 65_536;
 
 // The PR comment, in GitHub-flavoured Markdown.
 export function formatComment(inputs: ReportInputs): string {
-  const { check, target, forked, targetFiles, files, siteUrl } = inputs;
+  const { check, target, forked, targetFiles, adrs, files, siteUrl } = inputs;
   const failed = check.checks.filter((each) => each.status === "failed").map((each) => checkTitles[each.check]);
   const flagged = check.checks.filter((each) => each.status === "flagged").map((each) => checkTitles[each.check]);
   let verdict =
@@ -296,7 +305,7 @@ export function formatComment(inputs: ReportInputs): string {
   const sections = [reportMarker, `## Bearing: ${verdict}`];
 
   if (targetFiles.length > 0)
-    sections.push(formatTargetChange(forked === target ? undefined : diffModels(forked, target), targetFiles));
+    sections.push(formatTargetChange(forked === target ? undefined : diffModels(forked, target), targetFiles, adrs));
 
   const rows = check.checks.map((each) => {
     const title = each.blocking ? checkTitles[each.check] : `${checkTitles[each.check]} (advisory)`;
@@ -350,6 +359,10 @@ function summarise(check: CheckReport["checks"][number]): string {
   if (check.status === "skipped") return check.reason ?? "";
   const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   switch (check.check) {
+    case "target":
+      return check.status === "passed"
+        ? `proposed on ${check.base}'s current target`
+        : `${check.base}'s target changed since the branch forked; rebase onto it`;
     case "claim":
       return check.status === "passed"
         ? `\`${check.file}\` matches the code`
@@ -389,8 +402,9 @@ function summarise(check: CheckReport["checks"][number]): string {
   }
 }
 
-// In target-change mode, the model diff: what the PR adds to, removes from and changes in the target.
-function formatTargetChange(diff: ModelDiff | undefined, files: string[]): string {
+// In target-change mode, the model diff, what the PR adds to, removes from and changes in the target, then the ADRs
+// that say why. A model change without one is called out, since its reason is then nowhere a reviewer can see.
+function formatTargetChange(diff: ModelDiff | undefined, files: string[], adrs: Adr[]): string {
   const lines = [
     "### ⚠️ Target change",
     "",
@@ -423,6 +437,16 @@ function formatTargetChange(diff: ModelDiff | undefined, files: string[]): strin
       ? "The model itself is unchanged."
       : ["| | Added | Removed | Drifted |", "| --- | --- | --- | --- |", ...rows].join("\n"),
   );
+  for (const adr of adrs) {
+    const title = /^#\s+(.+)$/m.exec(adr.text)?.[1]?.trim() ?? adr.path;
+    lines.push(
+      "",
+      `<details open><summary>${title} (<code>${adr.path}</code>)</summary>\n\n${adr.text.trim()}\n\n</details>`,
+    );
+  }
+  if (rows.length > 0 && adrs.length === 0) {
+    lines.push("", "No ADR in this PR gives the reason for the change or the alternatives considered.");
+  }
   return lines.join("\n");
 }
 
@@ -442,15 +466,11 @@ export class ReportError extends Error {
 export async function gatherReport(
   config: Config,
   base?: string,
-): Promise<Pick<ReportInputs, "target" | "forked" | "targetFiles" | "files">> {
-  const target = await loadModel(join(config.root, config.model), () => config);
-  const fork = await forkPoint(config.root, base);
-  const forked = await targetAtFork(config, fork, target);
-  const model = posix.normalize(config.model.replaceAll("\\", "/"));
-  const modelDir = posix.dirname(model);
+): Promise<Pick<ReportInputs, "target" | "forked" | "targetFiles" | "adrs" | "files">> {
+  const { target, forked, fork, proposed } = await checkedTarget(config, base);
   // Claims files are in .bearing/ too, but a claim describes a change rather than making one.
   const targetFiles = await changedPaths(config.root, fork, [
-    modelDir === "." ? model : modelDir,
+    modelPathspec(config),
     ".bearing",
     `:(exclude)${claimsDir.replaceAll("\\", "/")}`,
     ".github/workflows",
@@ -460,7 +480,15 @@ export async function gatherReport(
     const component = componentOf(path, components);
     return component === undefined ? { path } : { path, component };
   });
-  return { target, forked, targetFiles, files };
+  // ADRs sit beside the model, from the template `bearing init` writes there.
+  const adrDir = posix.join(posix.dirname(posix.normalize(config.model.replaceAll("\\", "/"))), "adrs/");
+  const adrs: Adr[] = [];
+  for (const path of proposed) {
+    if (!path.startsWith(adrDir) || !path.endsWith(".md") || path === `${adrDir}template.md`) continue;
+    if (!existsSync(join(config.root, path))) continue;
+    adrs.push({ path, text: await readFile(join(config.root, path), "utf8") });
+  }
+  return { target, forked, targetFiles, adrs, files };
 }
 
 export interface PostOptions {
@@ -533,7 +561,7 @@ function runUrl(env: NodeJS.ProcessEnv): string | undefined {
 export function reportCommand(): Command {
   return new Command("report")
     .description(
-      "write the PR comment: a summary of every check, then one Mermaid overlay of the elements the PR adds, removes or drifts, then each failing check's details; in target-change mode the target's diff comes first. Prints it, and with --post puts it on the PR, updating Bearing's comment from an earlier run",
+      "write the PR comment: a summary of every check, then one Mermaid overlay of the elements the PR adds, removes or drifts, then each failing check's details; in target-change mode the target's diff and the PR's ADRs come first. Prints it, and with --post puts it on the PR, updating Bearing's comment from an earlier run",
     )
     .argument("[issues...]", "the issues to check coverage for, as for `bearing check`")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")
