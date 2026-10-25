@@ -6,6 +6,7 @@ import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
 import type { Model, Relationship } from "./model.js";
 import { StructurizrError } from "./structurizr.js";
+import { deriveTerraform, TerraformError, type TerraformGraph } from "./terraform.js";
 import { normalizePath, within } from "./validate.js";
 
 // What the TypeScript extractor finds in the code. This is the JSON `bearing derive` prints.
@@ -16,6 +17,11 @@ export interface ImportGraph {
   relationships: ImportRelationship[];
   // Source files under no component path: candidates for the surplus check.
   unmapped: string[];
+}
+
+// Everything `bearing derive` prints: the import graph, and the deployment from Terraform when `iac.terraform` is set.
+export interface AsBuilt extends ImportGraph {
+  deployment?: TerraformGraph;
 }
 
 export interface ImportRelationship {
@@ -260,15 +266,22 @@ function declaringFiles(symbol: ts.Symbol, checker: ts.TypeChecker): string[] {
 export function deriveCommand(): Command {
   return new Command("derive")
     .description(
-      "print, as JSON, the as-built model derived from the code: which component owns each file, the relationships its imports make, and the files no component owns",
+      "print, as JSON, the as-built model derived from the code: which component owns each file, the relationships its imports make, the files no component owns, and the deployment nodes in the Terraform",
     )
     .action(async function (this: Command) {
       try {
         const config = loadConfig();
         const target = await loadModel(join(config.root, config.model), () => config);
-        process.stdout.write(`${JSON.stringify(deriveImports(config, target), null, 2)}\n`);
+        const asBuilt: AsBuilt = deriveImports(config, target);
+        if (config.iac.terraform !== undefined) asBuilt.deployment = deriveTerraform(config, target);
+        process.stdout.write(`${JSON.stringify(asBuilt, null, 2)}\n`);
       } catch (error) {
-        if (error instanceof ConfigError || error instanceof StructurizrError || error instanceof DeriveError) {
+        if (
+          error instanceof ConfigError ||
+          error instanceof StructurizrError ||
+          error instanceof DeriveError ||
+          error instanceof TerraformError
+        ) {
           this.error(`error: ${error.message}`);
         }
         throw error;

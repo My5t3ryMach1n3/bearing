@@ -413,6 +413,34 @@ Imports are resolved the way TypeScript resolves them, `tsconfig` paths included
 
 Source files under no component path are listed for the surplus check. Tests (`*.test.ts`, `*.spec.ts` and anything under `test/`, `tests/` or `__tests__/`) and declaration files are left out: they make no relationships and are never surplus.
 
+### How Terraform maps to deployment nodes
+
+When `iac.terraform` is set, `bearing derive` also reads the `.tf` files in that directory, one root module as Terraform reads it, and prints the deployment nodes it finds under `deployment`. Kubernetes manifests follow later.
+
+Each resource of a type in this table is one node:
+
+| Resource type | Node | Technology | Matches a target node whose technology contains | Instances from |
+| --- | --- | --- | --- | --- |
+| `aws_cloudfront_distribution` | Infrastructure | Amazon CloudFront | CloudFront | |
+| `aws_lb`, `aws_alb` | Infrastructure | Elastic Load Balancing | Load balancer, ALB, NLB, GLB or ELB | |
+| `aws_api_gateway_rest_api`, `aws_apigatewayv2_api` | Infrastructure | Amazon API Gateway | API Gateway | |
+| `aws_sqs_queue` | Infrastructure | Amazon SQS | SQS | |
+| `aws_sns_topic` | Infrastructure | Amazon SNS | SNS | |
+| `aws_ecs_service` | Deployment | Amazon ECS | ECS or Fargate | `desired_count` |
+| `aws_lambda_function` | Deployment | AWS Lambda | Lambda | |
+| `aws_instance` | Deployment | Amazon EC2 | EC2 | `count` |
+| `aws_db_instance`, `aws_rds_cluster` | Deployment | Amazon RDS | RDS or Aurora | |
+| `aws_dynamodb_table` | Deployment | Amazon DynamoDB | DynamoDB | |
+| `aws_elasticache_cluster` | Deployment | Amazon ElastiCache | ElastiCache | `num_cache_nodes` |
+| `aws_elasticache_replication_group` | Deployment | Amazon ElastiCache | ElastiCache | `num_cache_clusters` |
+| `aws_s3_bucket` | Deployment | Amazon S3 | S3 | |
+
+These types configure, connect or secure a node rather than being one, so they make no node: `aws_acm_*`, `aws_api_gateway_*`, `aws_apigatewayv2_*`, `aws_appautoscaling_*`, `aws_cloudfront_cache_policy`, `aws_cloudfront_origin_access_control`, `aws_cloudfront_origin_access_identity`, `aws_cloudwatch_*`, `aws_db_parameter_group`, `aws_db_subnet_group`, `aws_ecs_cluster`, `aws_ecs_cluster_capacity_providers`, `aws_ecs_task_definition`, `aws_eip`, `aws_elasticache_parameter_group`, `aws_elasticache_subnet_group`, `aws_iam_*`, `aws_internet_gateway`, `aws_kms_*`, `aws_lambda_permission`, `aws_lb_*`, `aws_nat_gateway`, `aws_rds_cluster_instance`, `aws_route`, `aws_route_table`, `aws_route_table_association`, `aws_route53_*`, `aws_s3_bucket_*`, `aws_secretsmanager_*`, `aws_security_group`, `aws_security_group_rule`, `aws_sns_topic_*`, `aws_sqs_queue_*`, `aws_ssm_parameter`, `aws_subnet`, `aws_vpc` and `aws_vpc_*`. Any other resource, and every `module` block, is listed under `unknown` with its file and line rather than dropped. Modules aren't followed yet. `data` blocks deploy nothing and are skipped.
+
+Nodes are compared with the target's deployment view, which must have exactly one environment for now. A resource matches the target node whose `bearing.terraform` property names its address, e.g. `"bearing.terraform" "aws_ecs_service.basket_api"`. Failing that, it matches by technology when its kind has exactly one resource and one target node left. Two buckets and two S3 nodes stay unmatched until the nodes say which bucket is which. A matched node takes the target's ID; an unmatched resource keeps its address as its ID, so it reads as a node the target doesn't have. A target node of a mapped technology with no resource reads as removed. A node whose instances come from a plain number in the resource drifts when the number differs from the target's. Nodes of no mapped technology, such as a region grouping the others, and the container instances inside matched nodes aren't compared.
+
+`count` and `for_each` read as one node, and a node stops at the resource: an RDS instance is one node however many databases it holds, which is a known gap in v0.1.
+
 ### How traces map to components
 
 `bearing test` loads a Node module hook that wraps the exported functions of every file under a component path and emits a span tagged with that component. Because Bearing already knows the paths from the model, nobody adds instrumentation by hand. Spans are written to `.bearing/traces/` locally and regenerated from scratch in CI.
