@@ -1,8 +1,10 @@
-import { appendFileSync, cpSync, mkdtempSync } from "node:fs";
+import { appendFileSync, cpSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config.js";
+import { diffModels, loadModel } from "../src/diff.js";
+import { modelFromWorkspace } from "../src/model.js";
 import { loadWorkspace } from "../src/structurizr.js";
 
 // Runs the real Structurizr. Opt in with BEARING_STRUCTURIZR_RUNNER=docker or java; CI runs both.
@@ -34,5 +36,16 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
       line: 4,
       message: expect.stringContaining('The destination element "missing" does not exist'),
     });
+  });
+
+  it("exports the diff fixtures as committed, so the diff of their DSL matches", { timeout: 600_000 }, async () => {
+    const config = fixture("diff");
+    const dsl = (side: string) => join(config.root, "architecture", side, "workspace.dsl");
+    const json = (side: string) =>
+      modelFromWorkspace(JSON.parse(readFileSync(join(config.root, "architecture", `${side}.json`), "utf8")));
+    const before = await loadModel(dsl("before"), () => config);
+    const after = await loadModel(dsl("after"), () => config);
+    expect(before).toEqual(json("before"));
+    expect(diffModels(before, after)).toEqual(diffModels(json("before"), json("after")));
   });
 });
