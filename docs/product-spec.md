@@ -95,8 +95,8 @@ The design loop runs once per requirement set or change; the build loop runs on 
 
 **Phase 4: architecture change proposal**
 
-- When a requirement can't be met within the target, the agent proposes the target-model change in the same branch as its code, with the reason and the alternatives it considered. Any change to model files switches the PR into target-change mode: labelled, called out first in the PR comment, and blocked until a code owner approves the model diff.
-- The engineer approves, rejects or redirects. Only an approved model diff moves the desired state; code and target merge together.
+- When a requirement can't be met within the target, the agent proposes the target-model change in the same branch as its code, with the reason and the alternatives it considered. Any change to model files switches the PR into target-change mode: labelled and called out first in the PR comment, so whoever merges sees the model diff before anything else.
+- The engineer approves, rejects or redirects; merging the PR is the approval. Code and target merge together.
 
 **New requirement: the change cycle**
 
@@ -178,7 +178,7 @@ Your workflow is option C with option E for verification: a human-approved targe
 | Topic | Decision | Why |
 | --- | --- | --- |
 | Code-to-component mapping | Path convention: each level-3 component owns a folder or package, fixed in phase 1 | Simplest fully deterministic option; no annotations or extra mapping file |
-| Approving target changes | CODEOWNERS rule on the model files | Reuses existing Git permissions and review flow |
+| Approving target changes | Whoever merges the PR approves it. Target changes are labelled and shown first, so they can't be missed. Teams that want a second reviewer opt in to a CODEOWNERS rule on the model files | A required review is ceremony for a sole owner or small team, and a bad target change is one revert away; visibility is what makes the revert happen |
 | Sync strictness | Fail on undeclared relationships between components; anything goes inside a component | Guards boundaries without blocking normal refactoring |
 | Agent self-heal | Agent retries within bounds for a set number of attempts, then must file a change proposal | Keeps humans out of routine fixes but stops endless workarounds |
 | Evidence for dynamic views | At least one integration test per requirement, tagged with its requirement ID; traces from these are compared with the view | Unit tests rarely cross components; end-to-end tests are too slow and flaky to gate PRs |
@@ -189,7 +189,7 @@ Your workflow is option C with option E for verification: a human-approved targe
 | Conflicting change proposals | First merged wins; later proposals rebase on the new target | Ordinary Git conflict handling; no locks |
 | Requirement removal | Elements serving only that requirement are pruned from the target; their code is flagged as surplus | Requirement IDs on every element make orphans detectable |
 | Product shape | Open-source CLI, GitHub Action and agent skill on Structurizr | Fastest to adopt and to test the core assumption |
-| Trust in the model | As-built is derived deterministically; the target only moves with code-owner approval | Follows from the decisions above: the agent can't write a flattering model |
+| Trust in the model | As-built is derived deterministically; the target only moves through a merged PR that flags the change | Follows from the decisions above: the agent can't change the model without it being flagged |
 | Code vs model disagreement | The target wins; the code is fixed or a change proposal is filed | Desired state is authoritative, as in GitOps |
 | C4 level 4 (code) | Not modelled; code is tied to level-3 components by path | Level 4 churns on every commit; the path mapping gives the same traceability |
 | First language | TypeScript | Large share of agent-written code; mature import analysis to build on |
@@ -198,7 +198,7 @@ Your workflow is option C with option E for verification: a human-approved targe
 | Surplus code | Code outside any component path, or never exercised by any requirement's integration test; flagged for review rather than blocking | Catches both stray files and dead code inside components; untraced helpers can be false positives |
 | Where reviewers see drift | PR comment with a summary and changed-element images, linking to the full Structurizr view | Keeps review inside the PR |
 | Diff style | Single overlay of affected elements only, with added, removed and drifted shown in colour | Smallest picture that shows the change; counters diagram fatigue |
-| Changing the target | Proposed in the same branch as the code; model-file changes put the PR into labelled target-change mode, called out first and blocked until code-owner approval | No separate process, but the agent can never move the target silently |
+| Changing the target | Proposed in the same branch as the code; model-file changes put the PR into labelled target-change mode, called out first in the PR comment | No separate process, but the agent can never move the target silently |
 | Brownfield | Deferred; greenfield first | Prove the loop before tackling model extraction |
 | Model format | Structurizr DSL | Enforces the C4 hierarchy and rules, which is the point of a control system; validate and inspect run in CI |
 | Requirement source | GitHub Issues: user stories with numbered Given/When/Then acceptance criteria | Stable IDs, linkable from PRs, and each criterion maps to a test |
@@ -206,7 +206,7 @@ Your workflow is option C with option E for verification: a human-approved targe
 | Structurizr dependency | MVP requires the Structurizr CLI (Java or Docker); Bearing calls it once to turn the DSL into workspace JSON and does everything else in TypeScript | Keeps Structurizr's validation without spreading Java through the codebase; swappable later |
 | Claimed model diff | A file per branch at .bearing/claims/<branch>.yaml, kept after merge | Versioned with the code, can't be edited after checks run, no merge conflicts, and builds a history of each agent's accuracy |
 | Diagram rendering | Structurizr DSL is the source of truth; Bearing generates Mermaid overlays for the PR comment, plus a Structurizr static-site export as a build artifact | GitHub renders Mermaid natively; no headless browser or image hosting |
-| Protecting the checks | Guard job on pull_request_target reads changed paths only and never runs PR code; conformance job on pull_request with no secrets; CODEOWNERS on architecture/, .bearing/ and workflows | An agent can't edit or weaken the check that judges it without code-owner approval |
+| Protecting the checks | Guard job on pull_request_target reads changed paths only and never runs PR code; conformance job on pull_request with no secrets; a PR that edits the workflows is flagged as a target change. Teams that let agents or others merge gate .github/workflows/ with CODEOWNERS or a required workflow | A PR can't switch off the guard that flags it. The conformance workflow runs from the PR, so editing it is the one way to weaken a check: it is always flagged, and gated where the team opts in |
 
 ### Validation plan
 
@@ -225,7 +225,8 @@ The riskiest assumption is that people act on drift flags; test it first, on one
 
 | Risk | Why it matters | Mitigation |
 | --- | --- | --- |
-| Model becomes the agent's alibi | An agent-authored model can rationalise bad code | Deterministic model-vs-code check; human approval of model diffs |
+| Model becomes the agent's alibi | An agent-authored model can rationalise bad code | Deterministic model-vs-code check; model diffs flagged first in the PR for whoever merges |
+| Target change merged unread | With no required review, a flagged model diff can still be merged without anyone reading it | Label and diff-first comment make it hard to miss; a revert restores the old target; teams can opt in to code-owner review |
 | Diagram fatigue | Reviewers skim pictures as they skim code | Show only changed elements; highlight flags first |
 | Level-4 churn | Code diagrams change constantly and bloat PRs | Generate level 4; review levels 1–3 by default |
 | Language coverage | Import/call analysis is language-specific | Start with 2 languages; heuristic tier for others |
@@ -233,7 +234,7 @@ The riskiest assumption is that people act on drift flags; test it first, on one
 | Dynamic views are hand-drawn fiction | An agent may draw the path it intended, not the one built | Derive from test traces where possible |
 | Misplaced code | An agent puts code in whichever component's folder lets the import pass, keeping the boundary check green while breaking the design | Responsibility check flags overloaded components; the PR comment shows which component each new file landed in |
 | Test padding | An agent writes tests only to touch code and clear surplus flags | Only tests tagged with an acceptance criterion count as trace evidence |
-| Responsibility creep | An agent widens a component's description to cover new code | Responsibilities live in the target model, so changing them is a model diff needing approval |
+| Responsibility creep | An agent widens a component's description to cover new code | Responsibilities live in the target model, so changing them is a model diff, flagged as a target change |
 
 **Assumptions to validate**: reviewers will engage with diagrams; teams will accept authoring a model; boundary violations are a top-three pain in agent PRs.
 
@@ -289,7 +290,7 @@ architecture/
   claims/<branch>.yaml       # agent's claimed model diff, one per branch
   traces/                    # local trace output (git-ignored)
 .github/
-  CODEOWNERS                 # owners for architecture/, .bearing/, workflows
+  CODEOWNERS                 # optional: owners for architecture/, .bearing/, workflows
   ISSUE_TEMPLATE/requirement.yml
   workflows/bearing-guard.yml
   workflows/bearing-conformance.yml
@@ -345,7 +346,7 @@ checks:
 
 | Command | Who runs it | What it does |
 | --- | --- | --- |
-| `bearing init` | Engineer, once | Scaffolds the layout, issue form, workflows, CODEOWNERS and AGENTS.md section; prints the branch-protection settings to turn on |
+| `bearing init` | Engineer, once | Scaffolds the layout, issue form, workflows and AGENTS.md section, plus CODEOWNERS entries if given owners; prints the branch-protection settings to turn on |
 | `bearing context --issues` | Agent | Prints the open requirements, the C4 rules and the DSL conventions, for designing the target |
 | `bearing context #2` | Agent | Prints the slice of the model an issue touches: components, paths, relationships, its dynamic view and criteria |
 | `bearing impact #9` | Agent | Prints what a new or edited requirement touches, for proposing a target diff |
@@ -412,15 +413,15 @@ The Action's job is to prove the agent hasn't made things up or silently moved t
 
 The guard runs from the base branch and never executes PR code, so a PR can't disable it; the conformance job runs the PR's code but has no secrets.
 
-- **Guard job** (`pull_request_target`): reads the changed files through the API. Changes under architecture/, .bearing/ or .github/workflows/ label the PR `architecture-change`, put the model diff first in the comment, and hold `bearing/target` pending.
+- **Guard job** (`pull_request_target`): reads the changed files through the API. Changes under architecture/, .bearing/ or .github/workflows/ label the PR `architecture-change`, put the model diff first in the comment, and say so in `bearing/target`.
 - **Conformance job** (`pull_request`): runs `bearing validate`, `bearing test`, `bearing derive`, `bearing check` and `bearing report`, then sets `bearing/conformance` and `bearing/advisory`.
-- **Target compared**: main's target normally; the PR's proposed target when it changes the model, with merge still waiting on code-owner approval.
+- **Target compared**: main's target normally; the PR's proposed target when it changes the model.
 
 **Repo settings `bearing init` asks you to turn on**
 
-- [ ] CODEOWNERS entries for architecture/, .bearing/ and .github/workflows/.
-- [ ] Branch protection on main: require code-owner review.
+- [ ] Branch protection on main: require a pull request.
 - [ ] Required status checks: `bearing/target` and `bearing/conformance`.
+- [ ] Optional, for teams that want a second reviewer on target changes: CODEOWNERS entries for architecture/, .bearing/ and .github/workflows/ (`bearing init --owner`), with code-owner review required.
 - [ ] Optional, on organisation plans with rulesets: make the conformance workflow a required workflow sourced from main.
 
 
@@ -465,7 +466,7 @@ Issue #5 asks for sharing a basket with another shopper by email. The agent trie
 
 After its retries run out, the agent adds the change to the model in the same branch: a new share component, a new external email provider, and a relationship between them, with a short rationale and the alternative it rejected (building email sending into the basket service).
 
-Because model files changed, the PR switches into target-change mode. It gets the `architecture-change` label, the model diff sits at the top of the PR comment, and merge is blocked pending code-owner approval. Priya accepts the new component but asks for the email call to be asynchronous, so a slow provider can't hold up the basket API. The agent updates both the model and the code. She approves, and target and code merge together.
+Because model files changed, the PR switches into target-change mode. It gets the `architecture-change` label, the model diff sits at the top of the PR comment, and, because the team turned on code-owner review for the model, merge waits for Priya. Priya accepts the new component but asks for the email call to be asynchronous, so a slow provider can't hold up the basket API. The agent updates both the model and the code. She approves, and target and code merge together.
 
 ### Thursday: a human drifts too
 
