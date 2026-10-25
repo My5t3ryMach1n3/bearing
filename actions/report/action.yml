@@ -1,0 +1,36 @@
+# The report job's steps, for a `workflow_run` workflow that runs when the conformance workflow completes. It runs from
+# the default branch with a token that can write, which a fork's `pull_request` run never gets, and never checks out
+# or runs the PR's code: it downloads what the conformance job uploaded and posts it with `bearing post`, which treats
+# it as untrusted. See the GitHub Action section of docs/product-spec.md.
+name: Bearing report
+description: Post the conformance job's PR comment and set bearing/advisory.
+
+inputs:
+  token:
+    description: A token that can comment on the PR and set commit statuses, and read the run's artifacts.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Bearing
+      shell: bash
+      run: |
+        version="$(node -p 'require(process.argv[1]).version' "$GITHUB_ACTION_PATH/../../package.json")"
+        npm install --prefix "$RUNNER_TEMP/bearing-cli" --no-save --no-audit --no-fund "bearing-cli@$version"
+        echo "$RUNNER_TEMP/bearing-cli/node_modules/.bin" >> "$GITHUB_PATH"
+    - id: download
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        name: bearing-report
+        path: ${{ runner.temp }}/bearing/report
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ inputs.token }}
+    # No artifact: the conformance job stopped before writing one. Its own failure says why.
+    - if: steps.download.outcome == 'success'
+      name: bearing post
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: bearing post "$RUNNER_TEMP/bearing/report"

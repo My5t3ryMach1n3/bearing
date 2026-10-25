@@ -66,7 +66,9 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   const guardWorkflow = ".github/workflows/bearing-guard.yml";
   actions.push(createIfMissing(root, guardWorkflow, () => render(guardWorkflow, { version })));
   const conformanceWorkflow = ".github/workflows/bearing-conformance.yml";
-  actions.push(createIfMissing(root, conformanceWorkflow, () => template(conformanceWorkflow)));
+  actions.push(createIfMissing(root, conformanceWorkflow, () => render(conformanceWorkflow, { version })));
+  const reportWorkflow = ".github/workflows/bearing-report.yml";
+  actions.push(createIfMissing(root, reportWorkflow, () => render(reportWorkflow, { version })));
 
   actions.push(gitignore(root));
   actions.push(agentsSection(root, config, adrs, tagExample));

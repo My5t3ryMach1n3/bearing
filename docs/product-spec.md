@@ -294,6 +294,7 @@ architecture/
   ISSUE_TEMPLATE/requirement.yml
   workflows/bearing-guard.yml
   workflows/bearing-conformance.yml
+  workflows/bearing-report.yml     # posts the conformance job's comment, fork PRs included
 .agents/skills/bearing-design/SKILL.md   # optional: the design skill, from `bearing skill --install`
 AGENTS.md                    # includes the Bearing section
 src/basket-api/basket-service/   # owned by one level-3 component
@@ -358,6 +359,7 @@ checks:
 | `bearing check` | Agent, CI | Runs every check; exits non-zero on a blocking failure |
 | `bearing report` | CI | Writes the PR comment with Mermaid overlays |
 | `bearing guard` | CI | Flags a target change from the base branch: label, the changed files' diffs atop the comment, and `bearing/target` |
+| `bearing post <dir>` | CI | Posts the comment the conformance job uploaded and sets `bearing/advisory`, from the report workflow |
 
 ### Checks
 
@@ -518,8 +520,10 @@ The Action's job is to prove the agent hasn't made things up or silently moved t
 The guard runs from the base branch and never executes PR code, so a PR can't disable it; the conformance job runs the PR's code but has no secrets.
 
 - **Guard job** (`pull_request_target`): runs `bearing guard`, which reads the PR's changed files through the API, with no checkout. Changes under the model's folder (as the base branch's config sets it), `.bearing/` other than claims files, or `.github/workflows/` label the PR `architecture-change`, put each changed file's diff in a section at the top of Bearing's comment, and say so in `bearing/target`. The guard reports: `bearing/target` is always a success, so it never blocks a merge on its own; merging approves the change, and code-owner review is where a team holds one. When a later push stops changing the target, the label and the section go. The guard only edits a comment the Actions bot wrote, and the report keeps the guard's section when it updates the comment.
-- **Conformance job** (`pull_request`): runs `bearing validate`, `bearing test`, `bearing derive`, `bearing check` and `bearing report`, then sets `bearing/conformance` and `bearing/advisory`.
+- **Conformance job** (`pull_request`): runs `bearing validate`, `bearing test`, `bearing derive`, `bearing check` and `bearing report`, with a read-only token for reading the requirement issues. It clears any committed traces first, so `bearing test` writes them afresh. It fails, and with it `bearing/conformance`, when the target is invalid or a blocking check fails; a failing test fails it through Criteria coverage. It can't comment, since a PR from a fork never gets a token that can write, so it uploads the comment, the check results and the PR's number as the `bearing-report` artifact, and the Structurizr site as `bearing-site`.
+- **Report job** (`workflow_run`, once the conformance workflow completes): runs from the default branch with a token that can write and never checks out the PR. `bearing post` reads the upload as untrusted, since the PR's code wrote it: it posts only when the PR it names is still at the commit the conformance run checked, so an upload can't comment on another PR and an older run can't overwrite a newer one. It writes the report part of Bearing's comment, keeping the guard's section, and can't forge or close that section. It sets `bearing/advisory`, always a success, to what Surplus flagged.
 - **Target compared**: main's target normally; the PR's proposed target when it changes the model. The conformance job checks out the PR's head with its history rather than GitHub's merge commit, so Bearing can find where the PR forked and tell whether main's target moved since.
+- **The Action**: each job is a composite action in Bearing's repo, `actions/guard`, `actions/conformance` and `actions/report`, versioned by Bearing's release tags. Each runs the `bearing-cli` release its tag names. The workflows `bearing init` writes use the actions at init's own version, as in `My5t3ryMach1n3/bearing/actions/conformance@v0.1.0`; the conformance workflow checks out the PR and installs the project's dependencies before it.
 
 **Repo settings `bearing init` asks you to turn on**
 

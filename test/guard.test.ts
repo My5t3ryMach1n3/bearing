@@ -218,8 +218,11 @@ describe("the guard workflow", () => {
   const text = readFileSync(join(root, ".github/workflows/bearing-guard.yml"), "utf8");
   const workflow = parse(text) as {
     on: Record<string, unknown>;
-    jobs: { guard: { steps: Array<{ uses?: string; run?: string; with?: Record<string, unknown> }> } };
+    jobs: { guard: { steps: Step[] } };
   };
+  const actionText = readFileSync(new URL("../actions/guard/action.yml", import.meta.url), "utf8");
+  const action = parse(actionText) as { runs: { steps: Step[] } };
+  const steps = [...workflow.jobs.guard.steps, ...action.runs.steps];
 
   // pull_request_target runs the workflow as it is on the base branch, so a PR's edits to it don't apply to itself.
   it("runs only on pull_request_target", () => {
@@ -227,15 +230,20 @@ describe("the guard workflow", () => {
   });
 
   it("never checks out or runs the PR's code", () => {
-    expect(workflow.jobs.guard.steps.some((step) => step.uses?.startsWith("actions/checkout"))).toBe(false);
-    expect(text).not.toMatch(/head\.(sha|ref)|merge_commit_sha|refs\/pull/);
+    expect(steps.some((step) => step.uses?.startsWith("actions/checkout"))).toBe(false);
+    for (const each of [text, actionText]) expect(each).not.toMatch(/head\.(sha|ref)|merge_commit_sha|refs\/pull/);
     // Nothing from the PR is expanded into a script, where its title or branch name could inject a command.
-    for (const step of workflow.jobs.guard.steps) expect(step.run ?? "").not.toContain("${{");
+    for (const step of steps) expect(step.run ?? "").not.toContain("${{");
   });
 
-  it("runs this version of Bearing", () => {
-    expect(workflow.jobs.guard.steps.map((step) => step.run).filter(Boolean)).toEqual([
-      `npx --yes bearing-cli@${version} guard`,
-    ]);
+  it("runs this version's guard action, which runs `bearing guard`", () => {
+    expect(workflow.jobs.guard.steps.at(-1)?.uses).toBe(`My5t3ryMach1n3/bearing/actions/guard@v${version}`);
+    expect(action.runs.steps.at(-1)?.run).toBe("bearing guard");
   });
 });
+
+interface Step {
+  uses?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+}

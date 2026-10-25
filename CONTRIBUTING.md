@@ -41,6 +41,8 @@ CI runs these on every pull request, and they should pass locally first:
 - `src/claims.ts` is `bearing claim` and the claims file's schema. It drafts `.bearing/claims/<branch>.yaml` from git: the changed source files with their components, and the elements and relationships the target gains or loses, loading the target as the fork point had it from that commit's model folder. `readClaim()` reads a branch's file for the Claim check.
 - `src/test.ts` is `bearing test`, which runs the tests with the trace hook in `src/trace/` preloaded. `register.ts` is the preload: it installs the span runtime (`runtime.ts`) and a module hook that applies `transform.ts` to component files, adds the same transform to Vitest as a Vite plugin (`vite.ts`), and to Jest through a subclass of its runtime (`jest-runtime.ts`). The Vite plugin also adds a reporter that records each test's outcome, and `jest.ts` does the same for Jest by wrapping `runCLI`. The hook runs inside the test processes, so it imports only what it needs and loads TypeScript lazily. `test/trace.test.ts` builds it into `node_modules/.cache/` to preload it.
 - `src/coverage.ts` is the Criteria coverage check, run as `bearing check <issues...>` until `bearing check` gathers every check: it reads the test outcomes `bearing test` recorded and lists each criterion of the given issues as covered, missing or failing.
+- `src/guard.ts` is `bearing guard`, the guard job: it reads the PR through the GitHub API only. `src/post.ts` is `bearing post`, the report job: it posts what the conformance job uploaded, which it treats as untrusted.
+- `actions/` holds the GitHub Action, one composite action per job: `guard`, `conformance` and `report`. Each installs the `bearing-cli` version in the repo's `package.json` at the ref it's used at, so a release tag versions the Action too. The workflow templates `bearing init` writes use them at init's version.
 - `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both. It also checks that `test/fixtures/diff/{before,after}.json` and `test/fixtures/basket/workspace.json` are still what Structurizr exports from their DSL; after editing that DSL, re-export the JSON with the pinned Docker image.
 - `test/fixtures/basket/` is the basket service from the spec's walkthrough: a clean repo, its requirement issues, and seeded broken branches as overlays. M1 features are tested against it; its [README](test/fixtures/basket/README.md) says what each variant should trip. The root Vitest run skips its own tests; `test/basket.test.ts` runs them in a copy.
 
@@ -63,6 +65,6 @@ To cut a release:
    git tag v0.1.0
    git push origin v0.1.0
    ```
-3. Watch the Release run in the Actions tab; when it passes, the version is on npm.
+3. Watch the Release run in the Actions tab; when it passes, the version is on npm. The tag also versions the Action in `actions/`, which installs that npm release, so workflows that use `actions/<job>@v0.1.0` work once it's published.
 
 By contributing you agree that your contributions are licensed under the [MIT License](LICENSE).

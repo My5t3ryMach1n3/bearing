@@ -1,0 +1,25 @@
+# The guard job's steps, for a `pull_request_target` workflow. It never checks out or runs the PR's code: `bearing
+# guard` reads the PR through the API only. See the GitHub Action section of docs/product-spec.md.
+name: Bearing guard
+description: Flag a target change with the architecture-change label, its diffs atop Bearing's comment and bearing/target.
+
+inputs:
+  token:
+    description: A token that can label and comment on the PR and set commit statuses.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Bearing
+      shell: bash
+      run: |
+        version="$(node -p 'require(process.argv[1]).version' "$GITHUB_ACTION_PATH/../../package.json")"
+        npm install --prefix "$RUNNER_TEMP/bearing-cli" --no-save --no-audit --no-fund "bearing-cli@$version"
+        echo "$RUNNER_TEMP/bearing-cli/node_modules/.bin" >> "$GITHUB_PATH"
+    # The status is always a success: the guard reports, and merging approves the change.
+    - name: bearing guard
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: bearing guard

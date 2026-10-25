@@ -24,6 +24,7 @@ const scaffolded = [
   ".github/ISSUE_TEMPLATE/requirement.yml",
   ".github/workflows/bearing-guard.yml",
   ".github/workflows/bearing-conformance.yml",
+  ".github/workflows/bearing-report.yml",
   ".gitignore",
   "AGENTS.md",
 ];
