@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import type { Config } from "./config.js";
+import { githubRepository, githubToken, runCommand } from "./github.js";
 import type { Run } from "./structurizr.js";
 
 // A requirement is a GitHub issue labelled `requirements.label`; its number is the stable ID.
@@ -206,14 +206,14 @@ interface IssuesPage {
 async function fetchIssues(config: Config, label: string, options: LoadRequirementsOptions): Promise<IssueRecord[]> {
   const { env = process.env, run = runCommand, fetch: fetchFn = fetch } = options;
   const [owner, name] = (await repository(config, env, run)).split("/");
-  const token = await githubToken(env, run);
+  const bearer = await token(env, run);
   const url = env.GITHUB_GRAPHQL_URL || "https://api.github.com/graphql";
   const issues: IssueRecord[] = [];
   let after: string | null = null;
   do {
     const response = await fetchFn(url, {
       method: "POST",
-      headers: { authorization: `bearer ${token}`, "content-type": "application/json" },
+      headers: { authorization: `bearer ${bearer}`, "content-type": "application/json" },
       body: JSON.stringify({ query: issuesQuery, variables: { owner, name, label, after } }),
     });
     if (!response.ok) {
@@ -240,45 +240,22 @@ async function fetchIssues(config: Config, label: string, options: LoadRequireme
   return issues;
 }
 
-// "owner/name": $GITHUB_REPOSITORY in Actions, otherwise the origin remote.
 async function repository(config: Config, env: NodeJS.ProcessEnv, run: Run): Promise<string> {
-  if (env.GITHUB_REPOSITORY) return env.GITHUB_REPOSITORY;
-  let remote = "";
-  try {
-    const result = await run("git", ["-C", config.root, "remote", "get-url", "origin"]);
-    if (result.code === 0) remote = result.output.trim();
-  } catch {
-    // No git: fall through to the error below.
-  }
-  const match = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec(remote);
-  if (match === null) {
+  const found = await githubRepository(config.root, env, run);
+  if (found === undefined) {
     throw new RequirementsError([
       "can't tell which GitHub repository holds the requirements; set GITHUB_REPOSITORY=owner/name, or add a GitHub origin remote",
     ]);
   }
-  return match[1]!;
+  return found;
 }
 
-// $GITHUB_TOKEN or $GH_TOKEN in CI, otherwise the token `gh` is logged in with.
-async function githubToken(env: NodeJS.ProcessEnv, run: Run): Promise<string> {
-  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
-  if (token) return token;
-  try {
-    const result = await run("gh", ["auth", "token"]);
-    if (result.code === 0 && result.output.trim() !== "") return result.output.trim();
-  } catch {
-    // No gh: fall through to the error below.
+async function token(env: NodeJS.ProcessEnv, run: Run): Promise<string> {
+  const found = await githubToken(env, run);
+  if (found === undefined) {
+    throw new RequirementsError([
+      "no GitHub token to read requirements with; set GITHUB_TOKEN, or install the GitHub CLI and run `gh auth login`",
+    ]);
   }
-  throw new RequirementsError([
-    "no GitHub token to read requirements with; set GITHUB_TOKEN, or install the GitHub CLI and run `gh auth login`",
-  ]);
+  return found;
 }
-
-// Runs a command and returns its stdout alone, so a token or URL isn't mixed with warnings.
-const runCommand: Run = (command, args) =>
-  new Promise((resolvePromise, reject) => {
-    execFile(command, args, (error, stdout) => {
-      if (error !== null && typeof error.code === "string") reject(error);
-      else resolvePromise({ code: error === null ? 0 : Number(error.code ?? 1), output: stdout });
-    });
-  });

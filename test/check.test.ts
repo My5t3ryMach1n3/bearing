@@ -1,4 +1,4 @@
-import { appendFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommanderError } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,88 +8,10 @@ import { loadConfig } from "../src/config.js";
 import type { ImportGraph } from "../src/derive.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { createProgram } from "../src/program.js";
-import { tracesDir } from "../src/test.js";
-import type { TestRecord } from "../src/trace/runtime.js";
-import { basketDir, basketRepo, git, type BasketVariant } from "./basket.js";
+import { basketDir, basketRepo, git, passed, record, variantRepo } from "./basket.js";
 
 const issuesFile = join(basketDir, "issues.json");
 const target = modelFromWorkspace(JSON.parse(readFileSync(join(basketDir, "workspace.json"), "utf8")));
-
-const passed = (criterion: string): TestRecord => ({
-  name: `${criterion} works`,
-  file: "test/integration/basket.test.ts",
-  status: "passed",
-  criterion,
-});
-
-function record(root: string, ...tests: TestRecord[]) {
-  mkdirSync(join(root, tracesDir), { recursive: true });
-  writeFileSync(join(root, tracesDir, "tests-1-0.jsonl"), tests.map((test) => `${JSON.stringify(test)}\n`).join(""));
-}
-
-// A call into a component, "<component>.<function>", with the calls it makes.
-type Call = [string, ...Call[]];
-
-// The basket's components each keep their functions in their folder's index.ts: basketService is
-// src/basket-api/basket-service/index.ts.
-const fileOf = (component: string) =>
-  `src/basket-api/${component.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}/index.ts`;
-
-// Writes the spans a test's calls would leave, as `bearing test` does. The real traces are checked in trace.test.ts.
-function trace(root: string, test: TestRecord, ...calls: Call[]) {
-  const spans: object[] = [];
-  const traceId = test.criterion!.replace(/\W/g, "").padStart(32, "0");
-  const add = ([call, ...children]: Call, parentSpanId?: string) => {
-    const [component, name] = call.split(".");
-    const spanId = (spans.length + 1).toString(16).padStart(16, "0");
-    spans.push({
-      traceId,
-      spanId,
-      ...(parentSpanId === undefined ? {} : { parentSpanId }),
-      name,
-      startTimeUnixNano: String(spans.length),
-      attributes: [
-        { key: "bearing.component", value: { stringValue: component } },
-        { key: "code.file.path", value: { stringValue: fileOf(component!) } },
-        { key: "bearing.test", value: { stringValue: test.name } },
-        { key: "bearing.criterion", value: { stringValue: test.criterion } },
-      ],
-    });
-    for (const child of children) add(child, spanId);
-  };
-  for (const call of calls) add(call);
-  const request = { resourceSpans: [{ scopeSpans: [{ spans }] }] };
-  appendFileSync(
-    join(root, tracesDir, `spans-${test.criterion!.replace(/\W/g, "")}-0.jsonl`),
-    `${JSON.stringify(request)}\n`,
-  );
-}
-
-// Adding an item along #2's dynamic view, and along session restore as wrong-place does.
-const addItem: Call = [
-  "basketController.handle",
-  ["authMiddleware.authenticate"],
-  ["basketService.addItem", ["basketRepository.loadBasket"], ["basketRepository.saveBasket"]],
-];
-const addItemInSessionRestore: Call = [
-  "basketController.handle",
-  ["authMiddleware.authenticate"],
-  ["sessionRestore.addItem", ["basketRepository.loadBasket"], ["basketRepository.saveBasket"]],
-];
-
-// The basket repo with a variant committed on a branch of its name, and every criterion of #2 covered by a test
-// that adds an item the way the variant does.
-function variantRepo(variant: BasketVariant): string {
-  const root = basketRepo();
-  git(root, "checkout", "-q", "-b", variant);
-  cpSync(join(basketDir, "variants", variant), root, { recursive: true });
-  git(root, "add", ".");
-  git(root, "commit", "-q", "-m", variant);
-  const tests = [passed("#2/AC1"), passed("#2/AC2")];
-  record(root, ...tests);
-  for (const test of tests) trace(root, test, variant === "wrong-place" ? addItemInSessionRestore : addItem);
-  return root;
-}
 
 const statuses = (report: CheckReport) => Object.fromEntries(report.checks.map((check) => [check.check, check.status]));
 
