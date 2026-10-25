@@ -11,6 +11,9 @@ export interface TraceRuntime {
   module(component: string, file: string): TracedModule;
   // Records how a test ended. The runner's main process calls it once per test, from a reporter Bearing adds.
   test(outcome: TestOutcome): void;
+  // The runtime for code that runs with another global, such as a Jest test environment's, where the running test's
+  // name is kept.
+  within(global: object): TraceRuntime;
 }
 
 // A test as the runner reports it once it has finished: passed only if it ran to the end with no failure.
@@ -108,8 +111,8 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
   let fd: number | undefined;
   process.on("exit", flush);
 
-  const currentTest = (): string | undefined => {
-    const name = (globalThis as Record<symbol, { state?: { currentTestName?: unknown } } | undefined>)[matchers]?.state
+  const currentTest = (global: object): string | undefined => {
+    const name = (global as Record<symbol, { state?: { currentTestName?: unknown } } | undefined>)[matchers]?.state
       ?.currentTestName;
     return typeof name === "string" && name !== "" ? name : undefined;
   };
@@ -122,8 +125,8 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
     return info;
   };
 
-  const start = (name: string, component: string, file: string): Span => {
-    const test = currentTest();
+  const start = (name: string, component: string, file: string, global: object): Span => {
+    const test = currentTest(global);
     const parent = storage.getStore();
     const spanId = `${idPrefix}${(nextId++).toString(16).padStart(8, "0")}`;
     const begin = epoch + process.hrtime.bigint();
@@ -172,13 +175,13 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
 
   const traced = new WeakMap<object, unknown>();
   const wrappers = new WeakSet<object>();
-  const wrap = <T>(value: T, name: string, component: string, file: string): T => {
+  const wrap = <T>(value: T, name: string, component: string, file: string, global: object): T => {
     if (typeof value !== "function" || wrappers.has(value) || isClass(value)) return value;
     const known = traced.get(value);
     if (known !== undefined) return known as T;
     const fn = value as unknown as (...args: unknown[]) => unknown;
     const wrapper = function (this: unknown, ...args: unknown[]): unknown {
-      const span = start(name, component, file);
+      const span = start(name, component, file, global);
       let result: unknown;
       try {
         result = storage.run(span, () =>
@@ -211,31 +214,34 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
     return wrapper as T;
   };
 
-  const runtime: TraceRuntime = {
+  const test = (outcome: TestOutcome) => {
+    const tag = criterion.exec(outcome.name)?.[0];
+    const record: TestRecord = tag === undefined ? outcome : { ...outcome, criterion: tag };
+    mkdirSync(options.dir, { recursive: true });
+    appendFileSync(testsPath, `${JSON.stringify(record)}\n`);
+  };
+  const within = (global: object): TraceRuntime => ({
     module(component, file) {
       return {
-        wrap: (value, name) => wrap(value, name, component, file),
+        wrap: (value, name) => wrap(value, name, component, file, global),
         wrapExports(module) {
           if (typeof module.exports === "function") {
-            module.exports = wrap(module.exports, module.exports.name || "default", component, file);
+            module.exports = wrap(module.exports, module.exports.name || "default", component, file, global);
           }
           const exports = module.exports;
           if ((typeof exports !== "object" && typeof exports !== "function") || exports === null) return;
           for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(exports))) {
             // Getters are re-exports in compiled TypeScript; the module that declares the function wraps it.
             if (!descriptor.writable || typeof descriptor.value !== "function") continue;
-            (exports as Record<string, unknown>)[key] = wrap(descriptor.value, key, component, file);
+            (exports as Record<string, unknown>)[key] = wrap(descriptor.value, key, component, file, global);
           }
         },
       };
     },
-    test(outcome) {
-      const tag = criterion.exec(outcome.name)?.[0];
-      const record: TestRecord = tag === undefined ? outcome : { ...outcome, criterion: tag };
-      mkdirSync(options.dir, { recursive: true });
-      appendFileSync(testsPath, `${JSON.stringify(record)}\n`);
-    },
-  };
+    test,
+    within,
+  });
+  const runtime = within(globalThis);
   Object.defineProperty(globalThis, Symbol.for(runtimeKey), { value: runtime });
   return runtime;
 }
