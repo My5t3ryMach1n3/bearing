@@ -181,7 +181,7 @@ export function issuesInBranch(branch: string): string[] {
 }
 
 // The pathspec for the target's files: the model's folder, or the model file alone when it sits at the repo root.
-export function modelPathspec(config: Config): string {
+export function modelPathspec(config: Pick<Config, "model">): string {
   const model = posix.normalize(toPosix(config.model));
   const dir = posix.dirname(model);
   return dir === "." ? model : dir;

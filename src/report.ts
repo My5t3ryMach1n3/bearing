@@ -8,7 +8,7 @@ import { ConfigError, loadConfig, type Config } from "./config.js";
 import { CoverageError } from "./coverage.js";
 import { DeriveError } from "./derive.js";
 import { diffModels, type Changes, type Drift, type ModelDiff } from "./diff.js";
-import { githubRepository, githubToken } from "./github.js";
+import { GitHubError, githubApi, githubRepository, githubToken, type GitHubCall } from "./github.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
 import { RequirementsError } from "./requirements.js";
@@ -291,6 +291,8 @@ function escape(text: string): string {
 
 // GitHub rejects a comment longer than this.
 const commentLimit = 65_536;
+// The guard's section stops adding diffs at this length, and leaves the rest of the comment to the report.
+export const guardLimit = 16_384;
 
 // The PR comment, in GitHub-flavoured Markdown.
 export function formatComment(inputs: ReportInputs): string {
@@ -347,7 +349,7 @@ export function formatComment(inputs: ReportInputs): string {
 
   const comment = (parts: string[]) => `${[...sections, ...parts, ...footer].join("\n\n")}\n`;
   const full = comment(details);
-  return full.length <= commentLimit
+  return full.length <= commentLimit - guardLimit
     ? full
     : comment(["The details are too long for a comment; run `bearing check` to see them."]);
 }
@@ -497,43 +499,91 @@ export interface PostOptions {
   token: string;
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
+  // Only reuse a comment this user wrote, so nobody else's comment that starts with the marker is taken for Bearing's.
+  author?: string;
 }
 
-// Posts the comment on the PR, or edits Bearing's comment from an earlier run if it has one. Returns its URL.
-export async function postComment(body: string, options: PostOptions): Promise<{ url: string; updated: boolean }> {
-  const { repository, pr, token, env = process.env, fetch: fetchFn = fetch } = options;
-  const api = env.GITHUB_API_URL || "https://api.github.com";
-  const headers = {
-    accept: "application/vnd.github+json",
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  };
-  const call = async (method: string, url: string, payload?: object) => {
-    const response = await fetchFn(url, {
-      method,
-      headers,
-      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
-    });
-    if (!response.ok) {
-      throw new ReportError(`GitHub returned ${response.status} ${response.statusText} for ${method} ${url}`);
-    }
-    return response.json() as Promise<unknown>;
-  };
-  let existing: { id: number } | undefined;
-  for (let page = 1; existing === undefined; page++) {
+// Bearing's comment has two parts, each written by its own job: the guard's section on top, when the PR changes the
+// target, then the report. Each job rewrites its own part and keeps the other's. The guard's part sits between these
+// markers.
+export const guardStart = "<!-- bearing:guard -->";
+export const guardEnd = "<!-- /bearing:guard -->";
+
+export interface CommentParts {
+  guard?: string;
+  report?: string;
+}
+
+export function splitComment(body: string): CommentParts {
+  const rest = (body.startsWith(reportMarker) ? body.slice(reportMarker.length) : body).replace(/^\n+/, "");
+  const end = rest.indexOf(guardEnd);
+  const parts: CommentParts = {};
+  let report = rest;
+  if (rest.startsWith(guardStart) && end !== -1) {
+    parts.guard = rest.slice(0, end + guardEnd.length);
+    report = rest.slice(end + guardEnd.length).replace(/^\n+/, "");
+  }
+  if (report.trim() !== "") parts.report = report;
+  return parts;
+}
+
+export function joinComment(parts: CommentParts): string {
+  const text = [reportMarker, parts.guard, parts.report?.trimEnd()].filter((part) => part !== undefined).join("\n\n");
+  return `${text}\n`;
+}
+
+// Bearing's comment on the PR: the first that starts with the marker, from `author` when given.
+async function findComment(
+  call: GitHubCall,
+  options: Pick<PostOptions, "repository" | "pr" | "author">,
+): Promise<{ id: number; body: string } | undefined> {
+  for (let page = 1; ; page++) {
     const comments = (await call(
       "GET",
-      `${api}/repos/${repository}/issues/${pr}/comments?per_page=100&page=${page}`,
-    )) as Array<{ id: number; body?: string }>;
-    existing = comments.find((comment) => comment.body?.startsWith(reportMarker));
-    if (comments.length < 100) break;
+      `/repos/${options.repository}/issues/${options.pr}/comments?per_page=100&page=${page}`,
+    )) as Array<{ id: number; body?: string; user?: { login?: string } }>;
+    const found = comments.find(
+      (comment) =>
+        comment.body?.startsWith(reportMarker) &&
+        (options.author === undefined || comment.user?.login === options.author),
+    );
+    if (found !== undefined) return { id: found.id, body: found.body ?? "" };
+    if (comments.length < 100) return undefined;
   }
+}
+
+// Writes Bearing's comment from what's there now: `compose` gets the existing comment's parts and returns the new
+// ones. A comment left with no parts is deleted, and none is created for no parts. Returns the comment's URL.
+export async function writeComment(
+  compose: (existing: CommentParts) => CommentParts,
+  options: PostOptions,
+): Promise<{ url?: string; updated: boolean }> {
+  const { repository, env = process.env, fetch: fetchFn = fetch } = options;
+  const call = githubApi(options.token, env, fetchFn);
+  const existing = await findComment(call, options);
+  const parts = compose(existing === undefined ? {} : splitComment(existing.body));
+  if (parts.guard === undefined && parts.report === undefined) {
+    if (existing !== undefined) await call("DELETE", `/repos/${repository}/issues/comments/${existing.id}`);
+    return { updated: existing !== undefined };
+  }
+  const body = joinComment(parts);
   const posted = (
     existing === undefined
-      ? await call("POST", `${api}/repos/${repository}/issues/${pr}/comments`, { body })
-      : await call("PATCH", `${api}/repos/${repository}/issues/comments/${existing.id}`, { body })
+      ? await call("POST", `/repos/${repository}/issues/${options.pr}/comments`, { body })
+      : await call("PATCH", `/repos/${repository}/issues/comments/${existing.id}`, { body })
   ) as { html_url: string };
   return { url: posted.html_url, updated: existing !== undefined };
+}
+
+// Posts the report on the PR, or edits Bearing's comment from an earlier run if it has one, keeping the guard's
+// section above it. Returns its URL.
+export async function postComment(body: string, options: PostOptions): Promise<{ url: string; updated: boolean }> {
+  const report = splitComment(body).report;
+  const posted = await writeComment(
+    (existing) => ({ ...existing, ...(report === undefined ? {} : { report }) }),
+    options,
+  );
+  return { url: posted.url ?? "", updated: posted.updated };
 }
 
 // The PR a GitHub Actions run is for: the event's pull request, or the number in `refs/pull/<n>/merge`.
@@ -639,7 +689,8 @@ export function reportCommand(): Command {
           error instanceof ClaimError ||
           error instanceof RequirementsError ||
           error instanceof CoverageError ||
-          error instanceof ReportError
+          error instanceof ReportError ||
+          error instanceof GitHubError
         ) {
           this.error(`error: ${error.message}`);
         }

@@ -42,3 +42,42 @@ export const runCommand: Run = (command, args) =>
       else resolvePromise({ code: error === null ? 0 : Number(error.code ?? 1), output: stdout });
     });
   });
+
+export class GitHubError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "GitHubError";
+  }
+}
+
+// Calls GitHub's REST API: `path` is relative to the API root, e.g. "/repos/acme/basket/pulls/7". Resolves to the
+// parsed JSON, or undefined for an empty response; rejects with a GitHubError carrying the status for any other.
+export type GitHubCall = (method: string, path: string, payload?: object) => Promise<unknown>;
+
+export function githubApi(token: string, env: NodeJS.ProcessEnv = process.env, fetchFn = fetch): GitHubCall {
+  const api = env.GITHUB_API_URL || "https://api.github.com";
+  const headers = {
+    accept: "application/vnd.github+json",
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+  };
+  return async (method, path, payload) => {
+    const url = `${api}${path}`;
+    const response = await fetchFn(url, {
+      method,
+      headers,
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+    });
+    if (!response.ok) {
+      throw new GitHubError(
+        `GitHub returned ${response.status} ${response.statusText} for ${method} ${url}`,
+        response.status,
+      );
+    }
+    const text = await response.text();
+    return text === "" ? undefined : (JSON.parse(text) as unknown);
+  };
+}

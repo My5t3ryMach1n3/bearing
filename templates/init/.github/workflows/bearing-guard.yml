@@ -1,38 +1,33 @@
-# Written by `bearing init`. Runs from the base branch and never checks out or runs the PR's code,
-# so a PR can't change or switch off the job that judges it.
+# Written by `bearing init`. Runs from the base branch and never checks out or runs the PR's code: `bearing guard`
+# reads the PR through the API only. So a PR can't change or switch off the job that flags it; a PR that edits this
+# file is itself flagged, and the edit only takes effect once it's merged.
 name: Bearing guard
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    # edited: the PR's base branch may have changed, and with it the files it changes.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
+  contents: read
   issues: write
   pull-requests: write
   statuses: write
+
+# One run per PR at a time, so an older push can't overwrite a newer one's label, comment or status.
+concurrency:
+  group: bearing-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      # Changes to the target, Bearing's config or the workflows are a target change. Claims files are not:
-      # every governed PR writes one.
-      - name: Look for a target change
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Labels a target change architecture-change, puts the changed files' diffs at the top of Bearing's comment and
+      # sets bearing/target. The status is always a success: the guard reports, and merging approves the change.
+      - run: npx --yes bearing-cli@{{version}} guard
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          changed=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
-            | grep -E '^(architecture/|\.bearing/|\.github/workflows/)' | grep -v '^\.bearing/claims/' || true)
-          if [ -n "$changed" ]; then
-            echo "Target change:"; echo "$changed"
-            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=architecture-change" > /dev/null
-            description="Target change: needs code-owner approval"
-          else
-            description="Target unchanged"
-          fi
-          # Until the full guard lands, branch protection's code-owner review is what holds a target change.
-          gh api "repos/$REPO/statuses/$SHA" -f state=success -f context=bearing/target \
-            -f description="$description" > /dev/null
+          GITHUB_TOKEN: ${{ github.token }}

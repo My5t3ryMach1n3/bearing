@@ -11,6 +11,8 @@ import {
   formatMermaid,
   gatherReport,
   overlayLimit,
+  guardEnd,
+  guardStart,
   postComment,
   pullRequestNumber,
   reportMarker,
@@ -285,7 +287,7 @@ const api = "https://api.github.com/repos/acme/basket";
 describe("postComment", () => {
   it("posts a new comment when the PR has none of Bearing's", async () => {
     const github = fakeGitHub([{ id: 5, body: "LGTM" }]);
-    const posted = await postComment(`${reportMarker}\nhi`, {
+    const posted = await postComment(`${reportMarker}\n\nhi\n`, {
       repository: "acme/basket",
       pr: 7,
       token: "t",
@@ -295,7 +297,7 @@ describe("postComment", () => {
     expect(posted).toEqual({ url: "https://github.com/acme/basket/pull/7#issuecomment-1", updated: false });
     expect(github.requests).toEqual([
       { method: "GET", url: `${api}/issues/7/comments?per_page=100&page=1` },
-      { method: "POST", url: `${api}/issues/7/comments`, body: { body: `${reportMarker}\nhi` } },
+      { method: "POST", url: `${api}/issues/7/comments`, body: { body: `${reportMarker}\n\nhi\n` } },
     ]);
   });
 
@@ -315,6 +317,23 @@ describe("postComment", () => {
       `GET ${api}/issues/7/comments?per_page=100&page=2`,
       `PATCH ${api}/issues/comments/321`,
     ]);
+  });
+
+  it("keeps the guard's section above the report", async () => {
+    const guard = `${guardStart}\n### Target change\n${guardEnd}`;
+    const github = fakeGitHub([{ id: 321, body: `${reportMarker}\n\n${guard}\n\n## Bearing: old\n` }]);
+    await postComment(`${reportMarker}\n\n## Bearing: new\n`, {
+      repository: "acme/basket",
+      pr: 7,
+      token: "t",
+      env: {},
+      fetch: github.fetch,
+    });
+    expect(github.requests.at(-1)).toEqual({
+      method: "PATCH",
+      url: `${api}/issues/comments/321`,
+      body: { body: `${reportMarker}\n\n${guard}\n\n## Bearing: new\n` },
+    });
   });
 
   it("says what GitHub refused", async () => {
