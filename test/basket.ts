@@ -1,4 +1,5 @@
-import { cpSync, mkdtempSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,5 +21,25 @@ export function copyBasket(variant?: BasketVariant): string {
   cpSync(join(basketDir, "repo"), root, { recursive: true });
   if (variant !== undefined) cpSync(join(basketDir, "variants", variant), root, { recursive: true });
   symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "junction");
+  return root;
+}
+
+export function git(root: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], {
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+}
+
+// The basket repo as a git repo with main committed, reading its target from the exported workspace JSON so
+// no test runs Structurizr.
+export function basketRepo(): string {
+  const root = copyBasket();
+  cpSync(join(basketDir, "workspace.json"), join(root, "architecture", "workspace.json"));
+  const config = join(root, ".bearing", "config.yaml");
+  writeFileSync(config, readFileSync(config, "utf8").replace("workspace.dsl", "workspace.json"));
+  git(root, "init", "-q", "-b", "main");
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "main");
   return root;
 }

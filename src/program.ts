@@ -1,7 +1,7 @@
 import { Command } from "commander";
+import { checkCommand } from "./check.js";
 import { claimCommand } from "./claims.js";
 import { contextCommand } from "./context.js";
-import { checkCommand } from "./coverage.js";
 import { deriveCommand } from "./derive.js";
 import { diffCommand } from "./diff.js";
 import { initCommand } from "./init.js";

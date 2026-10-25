@@ -1,13 +1,10 @@
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CommanderError } from "commander";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { loadConfig, parseConfig } from "../src/config.js";
 import { CoverageError, criteriaCoverage, formatCoverage, readTestRecords } from "../src/coverage.js";
-import { createProgram } from "../src/program.js";
 import { loadRequirements } from "../src/requirements.js";
-import { tracesDir } from "../src/test.js";
 import type { TestRecord } from "../src/trace/runtime.js";
 import { basketDir } from "./basket.js";
 
@@ -86,7 +83,7 @@ describe("criteriaCoverage", () => {
 describe("formatCoverage", () => {
   it("says what to do about each criterion that isn't covered", () => {
     const tests = [passed("#2/AC1"), failed("#3/AC1"), passed("#3/AC1"), skipped("#3/AC2")];
-    expect(formatCoverage(criteriaCoverage(config, requirements, [2, 3], tests), tests)).toBe(
+    expect(formatCoverage(criteriaCoverage(config, requirements, [2, 3], tests), tests.length)).toBe(
       [
         "Criteria coverage: 1 of 4 criteria covered",
         "  #2/AC1  covered  Given a signed-in shopper, when they add an item, then the basket persists across sessions.",
@@ -102,7 +99,7 @@ describe("formatCoverage", () => {
   });
 
   it("points to `bearing test` when there are no results at all", () => {
-    expect(formatCoverage(criteriaCoverage(config, requirements, [7], []), [])).toContain(
+    expect(formatCoverage(criteriaCoverage(config, requirements, [7], []), 0)).toContain(
       "No test results in .bearing/traces/; run the tests with `bearing test` first.",
     );
   });
@@ -122,85 +119,5 @@ describe("readTestRecords", () => {
 
   it("reads nothing from a directory that isn't there", () => {
     expect(readTestRecords(join(tmpdir(), "bearing-no-such-dir"))).toEqual([]);
-  });
-});
-
-describe("bearing check", () => {
-  let root: string;
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "bearing-check-"));
-    cpSync(join(basketDir, "repo", ".bearing"), join(root, ".bearing"), { recursive: true });
-    mkdirSync(join(root, tracesDir), { recursive: true });
-    vi.spyOn(process, "cwd").mockReturnValue(root);
-    vi.stubEnv("BEARING_ISSUES_FILE", issuesFile);
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-    process.exitCode = undefined;
-  });
-
-  function record(...tests: TestRecord[]) {
-    writeFileSync(join(root, tracesDir, "tests-1-0.jsonl"), tests.map((test) => `${JSON.stringify(test)}\n`).join(""));
-  }
-
-  async function run(...args: string[]) {
-    let stdout = "";
-    let stderr = "";
-    vi.spyOn(process.stdout, "write").mockImplementation((text) => ((stdout += String(text)), true));
-    const program = createProgram();
-    for (const command of [program, ...program.commands]) {
-      command.exitOverride().configureOutput({ writeErr: (text) => (stderr += text) });
-    }
-    let exitCode: number;
-    try {
-      await program.parseAsync(["check", ...args], { from: "user" });
-      exitCode = Number(process.exitCode ?? 0);
-    } catch (error) {
-      if (!(error instanceof CommanderError)) throw error;
-      exitCode = error.exitCode;
-    }
-    return { stdout, stderr, exitCode };
-  }
-
-  it("passes when every criterion of the issues is covered", async () => {
-    record(passed("#2/AC1"), passed("#2/AC2"), passed("#7/AC1"));
-    const result = await run("#2", "7");
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(/^Criteria coverage: 3 of 3 criteria covered\n/);
-  });
-
-  it("exits non-zero when a criterion is missing or failing", async () => {
-    record(passed("#2/AC1"), failed("#7/AC1"));
-    const result = await run("2", "7");
-    expect(result.exitCode).toBe(1);
-    expect(result.stdout).toContain("#2/AC2  missing");
-    expect(result.stdout).toContain("#7/AC1  failing");
-  });
-
-  it("prints JSON with --json", async () => {
-    record(passed("#7/AC1"));
-    const result = await run("7", "--json");
-    expect(JSON.parse(result.stdout)).toEqual({
-      coverage: [expect.objectContaining({ id: "#7/AC1", tag: "#7/AC1", status: "covered" })],
-    });
-  });
-
-  it("needs at least one issue", async () => {
-    const result = await run();
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("missing required argument 'issues'");
-  });
-
-  it("fails on something that isn't an issue number", async () => {
-    const result = await run("2", "basket");
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('"basket" is not an issue number');
-  });
-
-  it("fails on an issue that isn't a requirement", async () => {
-    const result = await run("99");
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("#99 is not a requirement");
   });
 });
