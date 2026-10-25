@@ -48,6 +48,20 @@ describe("trace runtime", () => {
     ]);
   });
 
+  it("reads the running test from another global, such as a Jest environment's", () => {
+    const global = {
+      [Symbol.for("$$jest-matchers-object")]: { state: { currentTestName: "sandbox #4/AC2 restores" } },
+    };
+    runtime
+      .within(global)
+      .module("sessionRestore", "src/session-restore/index.ts")
+      .wrap(() => 1, "restore")();
+    const [span] = named("restore");
+    expect(attribute(span!, "bearing.component")).toBe("sessionRestore");
+    expect(attribute(span!, "bearing.test")).toBe("sandbox #4/AC2 restores");
+    expect(attribute(span!, "bearing.criterion")).toBe("#4/AC2");
+  });
+
   it("#9/AC3 tags each span with its component, function, file, test and criterion", () => {
     service.wrap((n: number) => n + 1, "increment")(1);
     const [span] = named("increment");

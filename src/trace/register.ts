@@ -8,14 +8,18 @@ import { instrumentCommonJs, instrumentModule } from "./transform.js";
 // The module `bearing test` preloads into every Node process the test command starts, with `--import`. It installs
 // the span runtime and a module hook that wraps the exports of every file under a component path, for ES modules
 // and CommonJS alike. Vite's entry is swapped for one that adds the trace plugin to each config, which is how
-// Vitest's own module runner gets instrumented and its test outcomes recorded too. Jest's core gets the same
-// treatment for its outcomes; see ./jest.ts.
+// Vitest's own module runner gets instrumented and its test outcomes recorded too. Jest's runtime is swapped for
+// one that instruments what it loads (see ./jest-runtime.ts), and Jest's core for one that records outcomes (see
+// ./jest.ts).
 
 // Asks the hook for Vite's real entry, from inside the shim that replaces it.
 const original = "bearing-original";
 
 // Appended to `@jest/core`'s CommonJS entry, so whoever requires it gets a `runCLI` that records outcomes.
 const jestShim = `module.exports = require(${JSON.stringify(fileURLToPath(new URL("./jest.js", import.meta.url)))}).withTestOutcomes(module.exports);`;
+
+// Appended to `jest-runtime`'s CommonJS entry, so Jest makes each test file's runtime from Bearing's subclass.
+const jestRuntimeShim = `require(${JSON.stringify(fileURLToPath(new URL("./jest-runtime.js", import.meta.url)))}).withTracedRuntime(module.exports);`;
 
 const settings = readTraceSettings();
 if (settings !== undefined) {
@@ -34,6 +38,10 @@ if (settings !== undefined) {
       if (/[\\/]node_modules[\\/]@jest[\\/]core[\\/]build[\\/]index\.js$/.test(path)) {
         const code = (result.source ?? readFileSync(path)).toString();
         return { ...result, source: `${code}\n${jestShim}` };
+      }
+      if (/[\\/]node_modules[\\/]jest-runtime[\\/]build[\\/]index\.js$/.test(path)) {
+        const code = (result.source ?? readFileSync(path)).toString();
+        return { ...result, source: `${code}\n${jestRuntimeShim}` };
       }
       const traced = tracedFile(path, settings);
       if (traced === undefined) return result;

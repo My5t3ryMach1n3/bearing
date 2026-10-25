@@ -236,6 +236,54 @@ describe("bearing test", () => {
     expect(callTree(spansIn(root))).toEqual(["maths.double"]);
   });
 
+  it.each([
+    { format: "CommonJS", type: "commonjs", run: "npx jest", load: "require", exports: "exports.%s = " },
+    {
+      format: "ES modules",
+      type: "module",
+      run: "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+      load: "import",
+      exports: "export const %s = ",
+    },
+  ])("traces Jest's tests in $format, tagged with their criteria", { timeout: 60_000 }, async (jest) => {
+    const exported = (name: string, body: string) => `${jest.exports.replace("%s", name)}${body};\n`;
+    const root = node({
+      "package.json": JSON.stringify({ type: jest.type }),
+      "src/pricing/index.js": [
+        jest.load === "require"
+          ? 'const { double } = require("../maths/index.js");\n'
+          : 'import { double } from "../maths/index.js";\n',
+        exported("quadruple", "(n) => double(double(n))"),
+      ].join(""),
+      "src/maths/index.js": exported("double", "(n) => n * 2"),
+      "test/pricing.test.js": [
+        jest.load === "require"
+          ? 'const { quadruple } = require("../src/pricing/index.js");'
+          : 'import { quadruple } from "../src/pricing/index.js";',
+        'describe("pricing", () => {',
+        '  test("#1/AC1 quadruples", () => expect(quadruple(1)).toBe(4));',
+        '  test("quadruples zero", () => expect(quadruple(0)).toBe(0));',
+        "});",
+      ].join("\n"),
+    });
+    symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "junction");
+    const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
+    const components = [
+      { id: "pricing", path: "src/pricing" },
+      { id: "maths", path: "src/maths" },
+    ];
+    const result = await runTraced(config, components, [jest.run], quiet);
+    expect(result.exitCode).toBe(0);
+    expect(result.criteria).toEqual(["#1/AC1"]);
+    const spans = spansIn(root);
+    expect(callTree(criterion(spans, "#1/AC1"))).toEqual(["pricing.quadruple", "  maths.double", "  maths.double"]);
+    expect(
+      spans
+        .filter((span) => attribute(span, "bearing.criterion") === undefined)
+        .map((span) => attribute(span, "bearing.test")),
+    ).toEqual(Array(3).fill("pricing quadruples zero"));
+  });
+
   it("exits with the test command's exit code", { timeout: 60_000 }, async () => {
     const root = node({});
     const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
