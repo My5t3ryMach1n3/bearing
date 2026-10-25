@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, write
 import { basename, dirname, join, posix, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, configPath, parseConfig, type Config } from "./config.js";
+import { skillPath } from "./skill.js";
 
 // The files `bearing init` writes, laid out as they land in the repo. Shipped next to dist/ in the package.
 const templates = new URL("../templates/init/", import.meta.url);
@@ -53,7 +54,8 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
       ? createIfMissing(root, model, () => render("architecture/workspace.dsl", { name: basename(root) }))
       : { path: model, outcome: "skipped", detail: "not a .dsl file" },
   );
-  actions.push(keepDir(root, posix.join(posix.dirname(model), "adrs")));
+  const adrs = posix.join(posix.dirname(model), "adrs");
+  actions.push(createIfMissing(root, posix.join(adrs, "template.md"), () => template("architecture/adrs/template.md")));
   actions.push(keepDir(root, ".bearing/claims"));
   const tagExample = config.tests.tag.replace("<issue>", "12").replace("<n>", "2");
   const issueForm = ".github/ISSUE_TEMPLATE/requirement.yml";
@@ -65,7 +67,7 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   }
 
   actions.push(gitignore(root));
-  actions.push(agentsSection(root, config, tagExample));
+  actions.push(agentsSection(root, config, adrs, tagExample));
   const owners = (options.owners ?? []).map((owner) => (owner.includes("@") ? owner : `@${owner}`));
   const entries = codeownersEntries(posix.dirname(model), owners);
   if (owners.length > 0) actions.push(codeowners(root, entries));
@@ -148,12 +150,13 @@ function gitignore(root: string): InitAction {
   return append(root, path, ".bearing/traces/\n", ".bearing/traces/", false);
 }
 
-function agentsSection(root: string, config: Config, tagExample: string): InitAction {
+function agentsSection(root: string, config: Config, adrs: string, tagExample: string): InitAction {
   const path = "AGENTS.md";
   const file = join(root, path);
   if (existsSync(file) && /^#{1,6}\s+Bearing\s*$/m.test(readFileSync(file, "utf8"))) return { path, outcome: "kept" };
   const section = render("AGENTS.md", {
     model: config.model,
+    adrs,
     tagExample,
     integration: config.tests.integration ?? "<your integration test command>",
     attempts: String(config.agent.selfHealAttempts),
@@ -252,6 +255,9 @@ export function formatResult(root: string, result: InitResult): string {
     "",
     "The requirement issue form needs its label to exist:",
     `  gh label create ${result.label} --description "A user story Bearing designs and checks against"`,
+    "",
+    "Agents design the target by following `bearing skill`. Init doesn't install it; to keep it in the repo as",
+    `${skillPath}, for agents that load skills, run \`bearing skill --install\`.`,
   );
   return `${lines.join("\n")}\n`;
 }
@@ -259,7 +265,7 @@ export function formatResult(root: string, result: InitResult): string {
 export function initCommand(): Command {
   return new Command("init")
     .description(
-      "scaffold Bearing into a repo: model, config, issue form, workflows and AGENTS.md, plus CODEOWNERS if given owners",
+      "scaffold Bearing into a repo: model, ADR template, config, issue form, workflows and AGENTS.md, plus CODEOWNERS if given owners",
     )
     .argument("[dir]", "the repo root", ".")
     .option(
