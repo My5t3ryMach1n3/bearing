@@ -388,13 +388,13 @@ note: Implements #2 within existing components.
 
 ### Agent instructions
 
-`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps are a skill that `bearing skill` prints: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. Init never installs it; an agent that loads skills can save it to `.agents/skills/bearing-design/SKILL.md` with `bearing skill --install`. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
+`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps are a skill that `bearing skill` prints: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. Init never installs it; an agent that loads skills offers to save it to `.agents/skills/bearing-design/SKILL.md` with `bearing skill --install`, and runs it only if the user agrees. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
 
 ```markdown
 ### Bearing
 - To design or revise the target, follow the steps `bearing skill` prints: run `bearing context --issues`, write
   architecture/workspace.dsl, record key choices as ADRs in architecture/adrs/, then `bearing validate`.
-  If you load skills, you may save them as one with `bearing skill --install`.
+  If you load skills, offer to save them as one with `bearing skill --install`, and only run it if the user agrees.
 - Before coding an issue, run `bearing context #<issue>`; keep code inside the component paths it lists.
 - Tag every integration test with its criterion, e.g. `#12/AC2`.
 - For criteria that depend on time, such as expiry, pass the clock in as a dependency so tests set the time instead

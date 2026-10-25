@@ -125,6 +125,7 @@ describe("init", () => {
     expect(agents).toContain("e.g. `REQ-12.2`");
     expect(agents).toContain("After 5 failed attempts, propose a target change in\n  design/model.dsl");
     expect(agents).toContain("as ADRs in design/adrs/");
+    expect(agents).toContain("only run it if the user agrees");
     expect(read(root, ".github/CODEOWNERS")).toContain("/design/ @acme\n");
   });
 
