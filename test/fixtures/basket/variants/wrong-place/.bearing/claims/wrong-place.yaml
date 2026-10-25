@@ -1,0 +1,13 @@
+branch: wrong-place
+issues: ["#2"]
+model:
+  added: []
+  removed: []
+files:
+  - path: src/basket-api/basket-controller/index.ts
+    component: basketController
+  - path: src/basket-api/session-restore/addItem.ts
+    component: sessionRestore
+  - path: src/basket-api/session-restore/index.ts
+    component: sessionRestore
+note: Implements #2 within existing components.
