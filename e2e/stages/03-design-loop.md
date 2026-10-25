@@ -10,4 +10,4 @@ The design loop: requirements in, reviewed target out.
 - [ ] Check the draft passes `bearing validate`, then **Plant:** add an element that lists no requirement. Validate must fail
 - [ ] Review the model in Structurizr one dynamic view at a time. Push back on at least one thing through PR review comments and let the agent revise
 - [ ] Record one choice as an ADR from the template
-- [ ] Approve and merge. That commit is Shelf's target
+- [ ] Merge it. That commit is Shelf's target
