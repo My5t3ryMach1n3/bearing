@@ -1,6 +1,6 @@
 ---
 name: bearing-design
-description: Design the target architecture from the open requirements, or revise it after review. Use when asked to design, draft or revise the C4 model in {{model}}, before any code is written for those requirements.
+description: Design the target architecture from the open requirements, revise it after review, or change it for a new requirement. Use when asked to design, draft, revise or change the C4 model in {{model}}, before any code is written for those requirements.
 ---
 
 # Design the target from requirements
@@ -56,6 +56,10 @@ Open a pull request with only the model and the ADRs. In the description, list t
 ## Revising after review
 
 Make the change in the model, re-derive the requirement tags of anything it touches, update or add ADRs, and run `bearing validate` again before pushing. Reply to each comment with what changed. Don't start coding until the model is merged: that commit is the target.
+
+## A new requirement against a merged target
+
+Change the target as little as the new story needs. Run `bearing context #<n>` for the issues it builds on or links to, read the target and the code they point at, and walk the new story's path as in step 2. Reuse what's there; add or change only what that path can't take. Then add its dynamic view, re-derive the requirement tags of what you touched, and validate. In the PR, list what changed and say why each existing element was enough or wasn't.
 
 ## Skeleton
 
