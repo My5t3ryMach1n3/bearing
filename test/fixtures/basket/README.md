@@ -6,6 +6,7 @@ The basket service from the spec's [walkthrough](../../../docs/product-spec.md#w
 | --- | --- |
 | `issues.json` | The six `requirement` issues, shaped like GitHub's REST API returns them, for fixture mode in [#7](https://github.com/My5t3ryMach1n3/bearing/issues/7) |
 | `repo/` | The clean repo: what main looks like |
+| `workspace.json` | `repo/architecture/workspace.dsl` as the pinned Structurizr exports it, so unit tests can read the target without running Structurizr |
 | `variants/<name>/` | The seeded broken branches, as files laid over `repo/` |
 
 ## The repo
