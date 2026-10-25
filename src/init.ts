@@ -24,6 +24,8 @@ export interface InitResult {
   repo?: string;
   // The issue label the requirement form applies.
   label: string;
+  // The one user who owns all of Bearing's paths in CODEOWNERS, if there is only one.
+  soleOwner?: string;
 }
 
 // Scaffolds Bearing into the repo at `root`. Never overwrites a file that exists: whole files are only
@@ -66,9 +68,10 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   const owners = (options.owners ?? (repo ? [`@${repo.split("/")[0]}`] : [])).map((owner) =>
     owner.startsWith("@") || owner.includes("@") ? owner : `@${owner}`,
   );
-  actions.push(codeowners(root, posix.dirname(model), owners));
+  const entries = codeownersEntries(posix.dirname(model), owners);
+  actions.push(codeowners(root, entries));
 
-  return { actions, repo, label: config.requirements.label };
+  return { actions, repo, label: config.requirements.label, soleOwner: soleOwner(root, entries) };
 }
 
 function template(path: string): string {
@@ -162,28 +165,62 @@ function agentsSection(root: string, config: Config, tagExample: string): InitAc
 // GitHub reads CODEOWNERS from the first of these that exists.
 const codeownersPaths = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"];
 
-function codeowners(root: string, modelDir: string, owners: string[]): InitAction {
-  const path = codeownersPaths.find((candidate) => existsSync(join(root, candidate))) ?? codeownersPaths[0]!;
+function codeownersPath(root: string): string {
+  return codeownersPaths.find((candidate) => existsSync(join(root, candidate))) ?? codeownersPaths[0]!;
+}
+
+// Each CODEOWNERS pattern Bearing needs, with its owners. The last matching line wins, so claims, which every
+// governed PR writes, are left without an owner.
+function codeownersEntries(modelDir: string, owners: string[]): Array<[string, string[]]> {
+  return [
+    [`/${modelDir}/`, owners],
+    ["/.bearing/", owners],
+    ["/.bearing/claims/", []],
+    ["/.github/workflows/", owners],
+  ];
+}
+
+// The CODEOWNERS file's lines as [pattern, owners], skipping comments and blank lines.
+function readCodeowners(root: string): Array<[string, string[]]> {
+  const file = join(root, codeownersPath(root));
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .map((line) => line.replace(/#.*/, "").trim())
+    .filter((line) => line !== "")
+    .map((line) => {
+      const [pattern, ...owners] = line.split(/\s+/);
+      return [pattern!, owners];
+    });
+}
+
+function codeowners(root: string, entries: Array<[string, string[]]>): InitAction {
+  const path = codeownersPath(root);
+  const owners = entries[0]![1];
   if (owners.length === 0) {
     return { path, outcome: "skipped", detail: "no GitHub `origin` remote to take an owner from; pass --owner" };
   }
-  const owned = owners.join(" ");
-  // The last matching line wins, so claims, which every governed PR writes, are left without an owner.
-  const entries: Array<[string, string]> = [
-    [`/${modelDir}/`, owned],
-    ["/.bearing/", owned],
-    ["/.bearing/claims/", ""],
-    ["/.github/workflows/", owned],
-  ];
-  const file = join(root, path);
-  const patterns = new Set(
-    (existsSync(file) ? readFileSync(file, "utf8") : "").split("\n").map((line) => line.trim().split(/\s+/)[0]),
-  );
+  const patterns = new Set(readCodeowners(root).map(([pattern]) => pattern));
   const missing = entries.filter(([pattern]) => !patterns.has(pattern));
   if (missing.length === 0) return { path, outcome: "kept" };
-  const lines = missing.map(([pattern, who]) => (who ? `${pattern} ${who}` : pattern));
+  const lines = missing.map(([pattern, who]) => [pattern, ...who].join(" "));
   const text = `# Bearing: changes to the target, its config or the workflows need code-owner approval.\n${lines.join("\n")}\n`;
-  return append(root, path, text, `${missing.length} entries for ${owned}`);
+  return append(root, path, text, `${missing.length} entries for ${owners.join(" ")}`);
+}
+
+// The owner of Bearing's paths as CODEOWNERS now stands, when that is a single user rather than several
+// owners or a team. Read from the file, so owners someone has edited since the first run count.
+function soleOwner(root: string, entries: Array<[string, string[]]>): string | undefined {
+  const lines = readCodeowners(root);
+  const owners = new Set<string>();
+  for (const [pattern, defaults] of entries) {
+    if (defaults.length === 0) continue;
+    const line = lines.findLast(([candidate]) => candidate === pattern);
+    if (line === undefined) return undefined;
+    for (const owner of line[1]) owners.add(owner);
+  }
+  const [owner] = owners;
+  return owners.size === 1 && !owner!.includes("/") ? owner : undefined;
 }
 
 // "owner/repo" from a github.com `origin` remote, if there is one.
@@ -206,7 +243,13 @@ export function formatResult(root: string, result: InitResult): string {
   lines.push(
     "",
     `Once this is merged to main, turn on these repo settings${settings}:`,
-    "  - [ ] Branch protection on main: require a pull request, with review from Code Owners.",
+    ...(result.soleOwner
+      ? [
+          "  - [ ] Branch protection on main: require a pull request, with no required approvals. GitHub doesn't",
+          `        count approval of your own PR, so requiring review from Code Owners would stop ${result.soleOwner},`,
+          "        the only code owner, merging their own target changes.",
+        ]
+      : ["  - [ ] Branch protection on main: require a pull request, with review from Code Owners."]),
     "  - [ ] Required status checks: bearing/target and bearing/conformance. GitHub only lists them once the",
     "        workflows have run on a pull request.",
     "  - [ ] Optional, on organisation plans with rulesets: make the conformance workflow a required workflow",

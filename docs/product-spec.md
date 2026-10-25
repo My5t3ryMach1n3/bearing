@@ -206,7 +206,7 @@ Your workflow is option C with option E for verification: a human-approved targe
 | Structurizr dependency | MVP requires the Structurizr CLI (Java or Docker); Bearing calls it once to turn the DSL into workspace JSON and does everything else in TypeScript | Keeps Structurizr's validation without spreading Java through the codebase; swappable later |
 | Claimed model diff | A file per branch at .bearing/claims/<branch>.yaml, kept after merge | Versioned with the code, can't be edited after checks run, no merge conflicts, and builds a history of each agent's accuracy |
 | Diagram rendering | Structurizr DSL is the source of truth; Bearing generates Mermaid overlays for the PR comment, plus a Structurizr static-site export as a build artifact | GitHub renders Mermaid natively; no headless browser or image hosting |
-| Protecting the checks | Guard job on pull_request_target reads changed paths only and never runs PR code; conformance job on pull_request with no secrets; CODEOWNERS on architecture/, .bearing/ and workflows | An agent can't edit or weaken the check that judges it without code-owner approval |
+| Protecting the checks | Guard job on pull_request_target reads changed paths only and never runs PR code; conformance job on pull_request with no secrets; CODEOWNERS on architecture/, .bearing/ and workflows | An agent can't edit or weaken the check that judges it without code-owner approval. A sole code owner merges their own PRs, since GitHub won't count their own approval; they see every merge and can revert it |
 
 ### Validation plan
 
@@ -419,7 +419,7 @@ The guard runs from the base branch and never executes PR code, so a PR can't di
 **Repo settings `bearing init` asks you to turn on**
 
 - [ ] CODEOWNERS entries for architecture/, .bearing/ and .github/workflows/.
-- [ ] Branch protection on main: require code-owner review.
+- [ ] Branch protection on main: require code-owner review. When one user is the only code owner, require a pull request with no required approvals instead, so they can merge their own PRs.
 - [ ] Required status checks: `bearing/target` and `bearing/conformance`.
 - [ ] Optional, on organisation plans with rulesets: make the conformance workflow a required workflow sourced from main.
 

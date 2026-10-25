@@ -147,10 +147,43 @@ describe("init", () => {
 
   it("prints the repo settings to turn on", () => {
     const root = emptyRepo();
-    const output = formatResult(root, init(root));
+    const output = formatResult(root, init(root, { owners: ["@acme/architects"] }));
     expect(output).toContain("https://github.com/acme/shop/settings/branches");
     expect(output).toContain("require a pull request, with review from Code Owners");
     expect(output).toContain("Required status checks: bearing/target and bearing/conformance");
     expect(output).toContain("gh label create requirement");
+  });
+
+  it("lets a sole code owner merge their own PRs", () => {
+    const root = emptyRepo();
+    const result = init(root);
+    expect(result.soleOwner).toBe("@acme");
+    const output = formatResult(root, result);
+    expect(output).toContain("require a pull request, with no required approvals");
+    expect(output).not.toContain("with review from Code Owners.");
+    expect(output).toContain("Required status checks: bearing/target and bearing/conformance");
+  });
+
+  it.each([
+    ["several users", ["@alice", "@bob"]],
+    ["a team", ["@acme/architects"]],
+  ])("asks for code-owner review when the owners are %s", (_, owners) => {
+    const root = emptyRepo();
+    expect(init(root, { owners }).soleOwner).toBeUndefined();
+  });
+
+  it("reads the owners from CODEOWNERS as it stands on a re-run", () => {
+    const root = emptyRepo();
+    init(root);
+    const owned = (bearing: string) =>
+      `/architecture/ @alice\n/.bearing/ ${bearing}\n/.bearing/claims/\n/.github/workflows/ @alice\n`;
+    const file = join(root, ".github", "CODEOWNERS");
+    writeFileSync(file, owned("@alice"));
+    expect(init(root).soleOwner).toBe("@alice");
+    writeFileSync(file, owned("@alice @bob"));
+    expect(init(root).soleOwner).toBeUndefined();
+    // The last matching line wins.
+    writeFileSync(file, `${owned("@alice")}/.bearing/ @bob\n`);
+    expect(init(root).soleOwner).toBeUndefined();
   });
 });
