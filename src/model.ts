@@ -47,6 +47,9 @@ export interface DynamicView {
   // Stable ID of the software system or container the view is scoped to, if any.
   scope?: string;
   description: string;
+  // `bearing.criteria`: the issue's criteria as they stood when the view was last checked against them, as
+  // `criteriaPin` writes it.
+  criteria?: string;
   steps: DynamicStep[];
 }
 
@@ -127,6 +130,7 @@ interface JsonWorkspace {
       key: string;
       elementId?: string;
       description?: string;
+      properties?: Record<string, string>;
       relationships?: Array<{ id: string; order?: string; description?: string }>;
     }>;
   };
@@ -270,6 +274,8 @@ export function modelFromWorkspace(workspace: Workspace): Model {
     steps.sort((a, b) => a.order.localeCompare(b.order, undefined, { numeric: true }));
     const dynamicView: DynamicView = { id: view.key, description: view.description ?? "", steps };
     if (view.elementId !== undefined) dynamicView.scope = stable(view.elementId);
+    const criteria = view.properties?.["bearing.criteria"];
+    if (criteria !== undefined) dynamicView.criteria = criteria;
     model.dynamicViews.set(dynamicView.id, dynamicView);
   }
   return model;

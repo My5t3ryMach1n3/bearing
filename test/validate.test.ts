@@ -6,7 +6,7 @@ import { loadConfig } from "../src/config.js";
 import { loadModel } from "../src/diff.js";
 import { modelFromWorkspace, type Model } from "../src/model.js";
 import { createProgram } from "../src/program.js";
-import { loadRequirements, type Requirement } from "../src/requirements.js";
+import { criteriaPin, loadRequirements, type Requirement } from "../src/requirements.js";
 import { StructurizrError } from "../src/structurizr.js";
 import { validateModel } from "../src/validate.js";
 import { basketDir } from "./basket.js";
@@ -35,6 +35,12 @@ function requirement(number: number, fields: Partial<Requirement> = {}): Require
     epic: false,
     ...fields,
   };
+}
+
+function close(number: number, stateReason: string): Requirement[] {
+  return requirements.map((each) =>
+    each.number === number ? { ...each, state: "closed" as const, stateReason } : each,
+  );
 }
 
 function problems(target: Model, issues: Requirement[] = requirements) {
@@ -71,19 +77,57 @@ describe("validateModel", () => {
       ]);
     });
 
-    it("fails an element whose requirements are all closed", () => {
-      const closed = requirements.map((each) =>
-        each.number === 4 ? { ...each, state: "closed" as const, stateReason: "not_planned" } : each,
-      );
-      const ids = problems(model(), closed)
-        .filter((problem) => problem.rule === "requirements")
-        .map((problem) => problem.id);
+    it("lists for pruning what served only an issue closed as not planned, and its code", () => {
+      const closed = close(4, "not_planned");
+      const found = problems(model(), closed);
       // Session restore and its relationships served only #4.
-      expect(ids).toEqual([
-        "sessionRestore",
-        "basketController->sessionRestore",
-        "sessionRestore->authMiddleware",
-        "sessionRestore->basketRepository",
+      expect(found.filter((problem) => problem.message.includes("prune it"))).toEqual([
+        {
+          rule: "requirements",
+          id: "sessionRestore",
+          message:
+            "component served only #4, closed as not planned; prune it from the target, and delete its code under src/basket-api/session-restore",
+        },
+        ...[
+          "basketController->sessionRestore",
+          "sessionRestore->authMiddleware",
+          "sessionRestore->basketRepository",
+        ].map((id) => ({
+          rule: "requirements",
+          id,
+          message: "relationship served only #4, closed as not planned; prune it from the target",
+        })),
+        {
+          rule: "dynamic-view",
+          id: "req-4",
+          message: "dynamic view is for #4, closed as not planned; prune it from the target",
+        },
+      ]);
+    });
+
+    it("fails an element that lists a closed issue next to open ones", () => {
+      const found = problems(model(), close(4, "not_planned")).filter(
+        (problem) => !problem.message.includes("prune it"),
+      );
+      expect(found.length).toBeGreaterThan(0);
+      expect(found).toContainEqual({
+        rule: "requirements",
+        id: "basketController",
+        message: '"bearing.requirements" lists #4, closed; drop it and keep #1, #2, #3, #6, #7',
+      });
+      for (const problem of found) expect(problem.message).toMatch(/lists #4, closed; drop it and keep #/);
+    });
+
+    it("fails an element that serves only an issue closed as completed", () => {
+      const target = model();
+      target.elements.get("basketService")!.requirements = ["#9"];
+      const issues = [...requirements, requirement(9, { state: "closed", stateReason: "completed" })];
+      expect(problems(target, issues)).toEqual([
+        {
+          rule: "requirements",
+          id: "basketService",
+          message: expect.stringContaining("component serves no open requirement"),
+        },
       ]);
     });
 
@@ -183,6 +227,72 @@ describe("validateModel", () => {
       expect(problems(target).map(({ id, message }) => `${id}: ${message}`)).toEqual([
         expect.stringMatching(/^add-item: dynamic view isn't keyed to a requirement/),
         "req-99: dynamic view is for #99, which isn't a requirement",
+      ]);
+    });
+  });
+
+  describe("criteria", () => {
+    function edit(number: number, criteria: Requirement["criteria"]): Requirement[] {
+      return requirements.map((each) => (each.number === number ? { ...each, criteria } : each));
+    }
+    const ac = (n: number, text: string) => ({ id: `#2/AC${n}`, number: n, text });
+    const two = requirements.find((each) => each.number === 2)!;
+
+    it("pins each criterion's text, ignoring how it wraps", () => {
+      const rewrapped = edit(
+        2,
+        two.criteria.map((each) => ({ ...each, text: `  ${each.text.replace(/ /g, "\n   ")} ` })),
+      );
+      expect(criteriaPin(rewrapped.find((each) => each.number === 2)!)).toBe(criteriaPin(two));
+      expect(criteriaPin(two)).toMatch(/^AC1:[0-9a-f]{8},AC2:[0-9a-f]{8}$/);
+      expect(problems(model(), rewrapped)).toEqual([]);
+    });
+
+    it("flags the view and the tests of an edited criterion as stale", () => {
+      const edited = edit(2, [
+        two.criteria[0]!,
+        ac(2, "Given a shopper, when they add an unknown SKU, then it is refused."),
+      ]);
+      const pin = criteriaPin(edited.find((each) => each.number === 2)!);
+      expect(problems(model(), edited)).toEqual([
+        {
+          rule: "criteria",
+          id: "req-2",
+          message: `#2's criteria changed since the view was pinned (AC2 edited), so the view and the tests tagged #2/AC2 are stale; check them against the criteria, then set "bearing.criteria" to "${pin}"`,
+        },
+      ]);
+    });
+
+    it("flags added and removed criteria, naming tests in the configured tag", () => {
+      const added = edit(2, [
+        ...two.criteria,
+        ac(3, "Given a full basket, when they add an item, then it is refused."),
+      ]);
+      expect(validateModel(model(), added, "[<issue>-<n>]").map((problem) => problem.message)).toEqual([
+        expect.stringContaining("(AC3 added), so the view and the tests tagged [2-3] are stale"),
+      ]);
+      const removed = edit(2, [two.criteria[0]!]);
+      expect(problems(model(), removed).map((problem) => problem.message)).toEqual([
+        expect.stringContaining("(AC2 removed), so the view and the tests tagged #2/AC2 are stale"),
+      ]);
+    });
+
+    it("fails a view with no pin or a pin Bearing didn't write, giving the pin to set", () => {
+      const target = model();
+      delete target.dynamicViews.get("req-1")!.criteria;
+      target.dynamicViews.get("req-2")!.criteria += ",whatever";
+      const pin = (number: number) => criteriaPin(requirements.find((each) => each.number === number)!);
+      expect(problems(target)).toEqual([
+        {
+          rule: "criteria",
+          id: "req-1",
+          message: `dynamic view doesn't pin #1's criteria; once it and the tests tagged with them match the criteria, set "bearing.criteria" to "${pin(1)}"`,
+        },
+        {
+          rule: "criteria",
+          id: "req-2",
+          message: `"bearing.criteria" "${pin(2)},whatever" isn't a pin Bearing writes; set it to "${pin(2)}"`,
+        },
       ]);
     });
   });

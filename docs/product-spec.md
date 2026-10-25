@@ -117,7 +117,7 @@ GitHub Issues are the source of truth for requirements: one issue per user story
 - The body holds a user story and numbered acceptance criteria in Given/When/Then form.
 - Each acceptance criterion needs at least one integration test tagged with the issue and criterion (e.g. `#123/AC2`); traces from those tests verify the issue's dynamic view.
 - Every model element and relationship lists the issue numbers it serves.
-- Opening an issue triggers design or a proposed target change; editing its criteria flags its dynamic view and tests as stale; closing it as not planned triggers pruning.
+- Opening an issue triggers design or a proposed target change; editing its criteria flags its dynamic view and tests as stale; closing it as not planned triggers pruning. See [How requirement changes are caught](#how-requirement-changes-are-caught).
 - Epics are parent issues; only leaf stories get dynamic views.
 
 ```markdown
@@ -352,7 +352,7 @@ checks:
 | `bearing skill` | Agent | Prints the skill for designing the target from requirements; `--install` saves it to `.agents/skills/` for agents that load skills |
 | `bearing context --issues` | Agent | Prints the open requirements, the C4 rules and the DSL conventions, for designing the target |
 | `bearing context #2` | Agent | Prints the slice of the model an issue touches: components, paths, relationships, its dynamic view and criteria |
-| `bearing validate` | Agent, CI | Structurizr validation plus Bearing's rules: issue IDs on every element, a path on every component, a dynamic view per issue |
+| `bearing validate` | Agent, CI | Structurizr validation plus Bearing's rules: open issue IDs on every element, a path on every component, a dynamic view per issue pinning its current criteria |
 | `bearing claim` | Agent | Writes the branch's claims file |
 | `bearing test -- <cmd>` | Agent, CI | Runs the integration tests with tracing on |
 | `bearing derive` | CI, anyone | Builds the as-built model from TypeScript imports, Terraform and traces |
@@ -372,7 +372,7 @@ checks:
 | Deployment | Terraform against the target deployment view | Yes |
 | Criteria coverage | Each criterion of the touched issues has a tagged test that ran and passed in CI | Yes |
 | Trace paths | Traces from those tests against each issue's dynamic view | Yes |
-| Surplus | Code outside any component path, or untouched by any criterion's trace | No |
+| Surplus | Code outside any component path, in a component that serves only closed issues, or untouched by any criterion's trace | No |
 | Responsibilities | Components exceeding the responsibility threshold | No |
 
 ### The claims file
@@ -480,6 +480,13 @@ Criteria coverage reads the test outcomes from the last `bearing test` run. For 
 A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
 
 The check fails if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. It checks the issues the claims file names, or, with no claims file, the ones in the branch name. Issues given as arguments, `bearing check 2 4`, replace both.
+
+### How requirement changes are caught
+
+The target and the tests are written against an issue's criteria as they stood at the time, so `bearing validate` keeps them in step as issues change. Bearing reads the issues afresh on every run; nothing listens for GitHub's issue events.
+
+- **Criteria edited.** Each story's dynamic view pins its criteria in `bearing.criteria`: a short digest of each criterion's text, such as `"AC1:3f2a9c1e,AC2:9b1c04d7"`, which `bearing context` prints. Whitespace is collapsed first, so rewrapping a criterion doesn't change it, and the story, the title and anything outside the criteria aren't pinned. When the pin stops matching, validation fails on the view, saying which criteria were edited, added or removed and naming the tests tagged with them as stale, with the pin to set once they're checked. Updating the pin changes the model, so the guard flags it as a target change and merging it approves the refresh. A view with no pin fails the same way.
+- **Closed.** An element or relationship that lists a closed issue fails validation. What listed only issues closed as not planned is listed for pruning, components with the path whose code to delete, and so is the issue's dynamic view; what lists open issues too is told to drop the closed one. Until the prune merges, Surplus flags the code of each component that serves only closed issues, whatever traces it; once it's pruned, that code is outside every component and is flagged as such until it's deleted. A requirement issue stays open for as long as the code serves it, so closing one as completed fails the elements that list it in the same way.
 
 ### How `bearing check` works
 

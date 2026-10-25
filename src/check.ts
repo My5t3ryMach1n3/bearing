@@ -27,9 +27,9 @@ import { deriveImports, DeriveError, type ImportGraph, type ImportRelationship, 
 import { diffModels, loadModel, type Drift } from "./diff.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
-import { loadRequirements, RequirementsError } from "./requirements.js";
+import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
-import { checkSurplus, formatSurplus, type SurplusResult } from "./surplus.js";
+import { checkSurplus, closedComponents, formatSurplus, type SurplusResult } from "./surplus.js";
 import { readSpanRecords, tracesDir } from "./test.js";
 import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths.js";
 import {
@@ -334,6 +334,10 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     deployment = { check: "deployment", status: failed ? "failed" : "passed", blocking: true, ...result };
   }
 
+  // Read from GitHub at most once, and only by the checks that need them.
+  let loaded: Promise<Requirement[]> | undefined;
+  const requirements = () => (loaded ??= loadRequirements(config));
+
   const issues = options.issues?.map((issue) => `#${issue}`) ?? claim?.issues ?? issuesInBranch(branch);
   let coverage: CoverageCheck;
   let paths: PathsCheck;
@@ -345,10 +349,9 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     coverage = { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
     paths = { check: "paths", status: "skipped", blocking: true, reason, issues, views: [] };
   } else {
-    const requirements = await loadRequirements(config);
     const tests = readTestRecords(join(config.root, tracesDir));
     const numbers = issues.map((issue) => Number(issue.slice(1)));
-    const criteria = criteriaCoverage(config, requirements, numbers, tests);
+    const criteria = criteriaCoverage(config, await requirements(), numbers, tests);
     coverage = {
       check: "coverage",
       status: criteria.every((criterion) => criterion.status === "covered") ? "passed" : "failed",
@@ -358,7 +361,13 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       recorded: tests.length,
     };
     const spans = readSpanRecords(join(config.root, tracesDir));
-    const views = checkTracePaths(config, { target, requirements, issues: numbers, tests, spans });
+    const views = checkTracePaths(config, {
+      target,
+      requirements: await requirements(),
+      issues: numbers,
+      tests,
+      spans,
+    });
     paths = views.some((view) => view.status === "failed")
       ? { check: "paths", status: "failed", blocking: true, issues, views }
       : views.some((view) => view.status === "passed")
@@ -382,12 +391,14 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       blocking: false,
       reason,
       outside: [],
+      closed: [],
       untraced: [],
       traced: false,
     };
   } else {
-    const result = checkSurplus(config.root, graph, readSpanRecords(join(config.root, tracesDir)));
-    const flagged = result.outside.length + result.untraced.length > 0;
+    const spans = readSpanRecords(join(config.root, tracesDir));
+    const result = checkSurplus(config.root, graph, spans, closedComponents(target, await requirements()));
+    const flagged = result.outside.length + result.closed.length + result.untraced.length > 0;
     surplus = { check: "surplus", status: flagged ? "flagged" : "passed", blocking: false, ...result };
   }
 

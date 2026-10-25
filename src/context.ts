@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
 import { dynamicViewKey, type DynamicView, type Element, type Model, type Relationship } from "./model.js";
-import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
+import { criteriaPin, loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
 import { criterionTag } from "./trace/runtime.js";
 
@@ -45,9 +45,10 @@ export function designContext(config: Config, requirements: Requirement[]): Desi
         "Deployment views place container instances on deployment nodes, matching the infrastructure the IaC will declare.",
       ],
       bearing: [
-        'Every element and relationship sets "bearing.requirements" to the open issues it serves, e.g. "#1,#2". Nothing is added just in case.',
+        'Every element and relationship sets "bearing.requirements" to the open issues it serves, e.g. "#1,#2", and no closed ones. Nothing is added just in case, and what served only an issue closed as not planned is pruned, with its code.',
         'Every component sets "bearing.path" to the folder it owns, relative to the repo root. No two paths overlap, and every source file belongs under one.',
         `Every open story that isn't an epic has exactly one dynamic view, keyed "${dynamicViewKey(2)}" for #2 and titled with the issue: "#2 <title>". Epics get none.`,
+        'Every dynamic view sets "bearing.criteria" to its issue\'s criteria pin, which this context prints. When the criteria are edited, the pin stops matching and the view and its tests are stale until checked against them and re-pinned.',
         "Every dynamic view step follows a relationship declared in the model.",
         "Code in one component may only depend on another along a declared relationship; anything goes inside a component.",
         `Each criterion is proven by an integration test tagged with it, e.g. "${tag}", whose trace must follow the issue's dynamic view.`,
@@ -55,7 +56,7 @@ export function designContext(config: Config, requirements: Requirement[]): Desi
       dsl: [
         `The model is ${config.model}, in Structurizr DSL.`,
         "Give every element an identifier in camelCase, e.g. basketService. Identifiers are stable IDs: renaming one reads as a removal and an addition.",
-        "Bearing's settings are Structurizr properties: put them in a properties block on the element or relationship.",
+        "Bearing's settings are Structurizr properties: put them in a properties block on the element, relationship or dynamic view.",
         "Scope each dynamic view to the container its components are in.",
       ],
     },
@@ -77,6 +78,9 @@ dynamic basketApi "${dynamicViewKey(2)}" "#2 Add an item to the basket" {
   webApp -> basketController "POST /basket/items"
   basketController -> basketService "addItem()"
   basketService -> basketRepository "save()"
+  properties {
+    "bearing.criteria" "AC1:3f2a9c1e,AC2:9b1c04d7"
+  }
 }`,
   };
 }
@@ -127,6 +131,7 @@ export function formatDesignContext(context: DesignContext): string {
       const epic = requirement.parent === null ? "" : ` (in epic #${requirement.parent})`;
       lines.push(`${requirement.id} ${requirement.title}${epic}`, indent(requirement.story));
       for (const criterion of requirement.criteria) lines.push(`  ${criterion.id} ${criterion.text}`);
+      lines.push(`  Its dynamic view pins these: "bearing.criteria" "${criteriaPin(requirement)}"`);
     }
     lines.push("");
   }
@@ -165,6 +170,7 @@ export function formatIssueContext(context: IssueContext): string {
   if (requirement.criteria.length > 0) {
     lines.push("Acceptance criteria (tag at least one integration test with each)");
     requirement.criteria.forEach((criterion, index) => lines.push(`  ${context.tags[index]} ${criterion.text}`));
+    lines.push(`  Pinned in the dynamic view as "bearing.criteria" "${criteriaPin(requirement)}"`);
     lines.push("");
   }
 

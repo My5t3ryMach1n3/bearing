@@ -35,6 +35,8 @@ For every open story that isn't an epic, add `dynamic <container> "req-<n>" "#<n
 
 These views are the contract: integration tests tagged with each criterion are traced, and the trace must follow the view. Draw the path you expect the code to take, not a simplified one.
 
+Give each view a `properties` block setting `"bearing.criteria"` to the pin `bearing context --issues` prints for its story. The pin records the criteria the view was drawn for: when someone edits them, `bearing validate` flags the view and the tests tagged with what changed as stale, until they are checked against the new criteria and the view is re-pinned.
+
 ## 5. Deployment view
 
 Add a `deploymentEnvironment` with nodes for where each container runs and a `containerInstance` for each. Match the IaC if the repo has it; otherwise describe the setup the engineer asked for, which IaC will later have to match. Infrastructure nodes such as load balancers and CDNs need no requirements.
@@ -60,6 +62,11 @@ Make the change in the model, re-derive the requirement tags of anything it touc
 ## A new requirement against a merged target
 
 Change the target as little as the new story needs. Run `bearing context #<n>` for the issues it builds on or links to, read the target and the code they point at, and walk the new story's path as in step 2. Reuse what's there; add or change only what that path can't take. Then add its dynamic view, re-derive the requirement tags of what you touched, and validate. In the PR, list what changed and say why each existing element was enough or wasn't.
+
+## When a requirement changes
+
+- **Its criteria are edited.** `bearing validate` names the stale view and the tests tagged with the changed criteria. Run `bearing context #<n>`, redraw the view if the path changed, then set its `"bearing.criteria"` to the new pin. The tests are code, so update them in the PR that implements the change.
+- **It's closed as not planned.** `bearing validate` lists what served only that issue. Remove those elements, relationships and its dynamic view from the target, drop the issue from everything else that lists it, and delete the code under the removed components' paths in the same PR; Surplus flags that code until it goes.
 
 ## Skeleton
 
@@ -126,6 +133,9 @@ workspace "<name>" "<one line on the system>" {
     dynamic api "req-1" "#1 <issue title>" {
       user -> someComponent "<the call>"
       autoLayout
+      properties {
+        "bearing.criteria" "<the pin bearing context prints for #1>"
+      }
     }
     deployment system production "deployment" {
       include *
