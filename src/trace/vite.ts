@@ -1,5 +1,7 @@
-import { readTraceSettings, tracedFile } from "./env.js";
-import { instrumentModule } from "./transform.js";
+import { relative, sep } from "node:path";
+import { readTraceSettings, tracedFile, type TraceSettings } from "./env.js";
+import type { TestOutcome, TraceRuntime } from "./runtime.js";
+import { instrumentModule, runtimeKey } from "./transform.js";
 
 const name = "bearing-trace";
 
@@ -20,6 +22,34 @@ export function tracePlugin() {
       if (traced === undefined || /\.c[jt]s$/.test(path)) return undefined;
       // Edits keep every line where it was, so the previous plugins' source map still holds.
       return { code: instrumentModule(code, path, traced), map: null };
+    },
+    // Adds a reporter that records how each test ended. It runs before Vitest creates its reporters, once per
+    // project, so it adds the reporter once per Vitest.
+    configureVitest({ vitest }: { vitest: { config: { reporters: unknown[] } } }) {
+      if (settings === undefined || reporting.has(vitest)) return;
+      reporting.add(vitest);
+      vitest.config.reporters.push(outcomeReporter(settings));
+    },
+  };
+}
+
+const reporting = new WeakSet<object>();
+
+// The parts of Vitest's `TestCase` the reporter reads.
+interface TestCase {
+  fullName: string;
+  module: { moduleId: string };
+  result(): { state: "passed" | "failed" | "skipped" | "pending" };
+}
+
+export function outcomeReporter(settings: TraceSettings) {
+  return {
+    onTestCaseResult(testCase: TestCase) {
+      const runtime = (globalThis as Record<symbol, TraceRuntime | undefined>)[Symbol.for(runtimeKey)];
+      const { state } = testCase.result();
+      const status: TestOutcome["status"] = state === "passed" || state === "failed" ? state : "skipped";
+      const file = relative(settings.root, testCase.module.moduleId).split(sep).join("/");
+      runtime?.test({ name: testCase.fullName, file, status });
     },
   };
 }

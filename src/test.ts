@@ -8,7 +8,7 @@ import { loadModel } from "./diff.js";
 import { componentPaths, type ComponentPath } from "./paths.js";
 import { StructurizrError } from "./structurizr.js";
 import { traceEnv, type TraceSettings } from "./trace/env.js";
-import { attributes } from "./trace/runtime.js";
+import { attributes, spansFile } from "./trace/runtime.js";
 
 export const tracesDir = join(".bearing", "traces");
 
@@ -78,7 +78,7 @@ export function readSpans(dir: string): { spans: number; criteria: string[] } {
   let spans = 0;
   const criteria = new Set<string>();
   if (!existsSync(dir)) return { spans, criteria: [] };
-  for (const name of readdirSync(dir).filter((name) => name.endsWith(".jsonl"))) {
+  for (const name of readdirSync(dir).filter((name) => spansFile.test(name))) {
     for (const line of readFileSync(join(dir, name), "utf8").split("\n")) {
       if (line === "") continue;
       const request = JSON.parse(line) as OtlpRequest;

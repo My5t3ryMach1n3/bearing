@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { contextCommand } from "./context.js";
+import { checkCommand } from "./coverage.js";
 import { deriveCommand } from "./derive.js";
 import { diffCommand } from "./diff.js";
 import { initCommand } from "./init.js";
@@ -17,6 +18,7 @@ const commands: Array<() => Command> = [
   skillCommand,
   deriveCommand,
   testCommand,
+  checkCommand,
 ];
 
 export function createProgram(): Command {
