@@ -6,4 +6,4 @@ model:
 files:
   - path: src/basket-api/basket-controller/index.ts
     component: basketController
-note: Implements #2 within existing components.
+note: "Implements #2 within existing components."

@@ -10,4 +10,4 @@ files:
     component: sessionRestore
   - path: src/basket-api/session-restore/index.ts
     component: sessionRestore
-note: Implements #2 within existing components.
+note: "Implements #2 within existing components."
