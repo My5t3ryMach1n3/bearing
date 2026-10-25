@@ -364,6 +364,8 @@ describe("bearing report", () => {
     vi.stubEnv("GITHUB_TOKEN", "t");
     vi.stubEnv("GITHUB_REPOSITORY", "acme/basket");
     vi.stubEnv("GITHUB_REF", "refs/pull/7/merge");
+    // CI sets its own event, for this PR.
+    vi.stubEnv("GITHUB_EVENT_PATH", "");
     const { stdout, stderr } = await run("--post");
     expect(stderr).toBe("Posted https://github.com/acme/basket/pull/7#issuecomment-1\n");
     expect(github.requests[1]).toEqual({ method: "POST", url: `${api}/issues/7/comments`, body: { body: stdout } });
