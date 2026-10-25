@@ -475,7 +475,21 @@ Criteria coverage reads the test outcomes from the last `bearing test` run. For 
 
 A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
 
-The check exits non-zero if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. Until the claims file names the issues a branch works on, they're given as arguments: `bearing check 2 4`.
+The check fails if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. It checks the issues the claims file names, or, with no claims file, the ones in the branch name. Issues given as arguments, `bearing check 2 4`, replace both.
+
+### How `bearing check` works
+
+`bearing check` runs the four blocking checks below on the repo as it is on disk and exits non-zero if any fails. Each one passes, fails or is skipped when there's nothing for it to check; a skipped check never fails. `--json` prints every check's result, with the IDs, files and lines behind each failure, for `bearing report`.
+
+- **Claim** reads the branch's claims file on top of the target as it stood where the branch forked from main, and fails on each mismatch with the as-built model:
+  - a relationship the code makes that the target didn't have at the fork point and the claim doesn't add;
+  - something the claim removes that the code still has: a relationship it still imports, or files left under a removed component's path;
+  - a changed source file the claim doesn't list, a listed file the branch doesn't change, or a file claimed for a component other than the one whose path holds it.
+
+  An addition the code doesn't make yet isn't a mismatch, since the target may lead the code. A branch with no claims file, such as a human's Terraform PR, skips this check.
+- **Boundaries** fails each relationship between two components that the code makes and the target doesn't declare, listing the imports that make it. Anything inside one component passes.
+- **Deployment** compares the nodes `bearing derive` reads from the Terraform with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when `iac.terraform` isn't set.
+- **Criteria coverage** is the check above.
 
 ### The GitHub Action
 

@@ -1,8 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Command } from "commander";
-import { ConfigError, loadConfig, type Config } from "./config.js";
-import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
+import type { Config } from "./config.js";
+import type { Requirement } from "./requirements.js";
 import { tracesDir } from "./test.js";
 import { criterionTag, testsFile, type TestRecord } from "./trace/runtime.js";
 
@@ -72,7 +71,8 @@ export function criteriaCoverage(
     });
 }
 
-export function formatCoverage(coverage: CriterionCoverage[], tests: TestRecord[]): string {
+// `recorded` is how many test results the last `bearing test` recorded, so none at all can say to run it.
+export function formatCoverage(coverage: CriterionCoverage[], recorded: number): string {
   const covered = coverage.filter((criterion) => criterion.status === "covered").length;
   const lines = [
     `Criteria coverage: ${covered} of ${coverage.length} ${coverage.length === 1 ? "criterion" : "criteria"} covered`,
@@ -92,38 +92,8 @@ export function formatCoverage(coverage: CriterionCoverage[], tests: TestRecord[
       lines.push(`    failed: ${test.name}${test.file === undefined ? "" : ` (${test.file})`}`);
     }
   }
-  if (tests.length === 0) {
+  if (recorded === 0) {
     lines.push("", `No test results in ${tracesDir}/; run the tests with \`bearing test\` first.`);
   }
   return `${lines.join("\n")}\n`;
-}
-
-export function checkCommand(): Command {
-  return new Command("check")
-    .description(
-      "check that each criterion of the given issues has a tagged test that ran and passed under `bearing test`; exits non-zero if any is missing or failing",
-    )
-    .argument("<issues...>", 'the issues the change works on, e.g. 2 4 or "#2"')
-    .option("--json", "print the coverage as JSON instead of text")
-    .action(async function (this: Command, issues: string[], options: { json?: boolean }) {
-      const numbers = issues.map((issue) => /^#?(\d+)$/.exec(issue.trim())?.[1]);
-      const bad = issues.find((_, index) => numbers[index] === undefined);
-      // An unquoted #2 is a shell comment, so `bearing check #2` arrives here with no issues at all.
-      if (bad !== undefined) this.error(`error: "${bad}" is not an issue number, e.g. 2 or '#2'`);
-      try {
-        const config = loadConfig();
-        const requirements = await loadRequirements(config);
-        const tests = readTestRecords(join(config.root, tracesDir));
-        const coverage = criteriaCoverage(config, requirements, numbers.map(Number), tests);
-        process.stdout.write(
-          options.json === true ? `${JSON.stringify({ coverage }, null, 2)}\n` : formatCoverage(coverage, tests),
-        );
-        if (coverage.some((criterion) => criterion.status !== "covered")) process.exitCode = 1;
-      } catch (error) {
-        if (error instanceof ConfigError || error instanceof RequirementsError || error instanceof CoverageError) {
-          this.error(`error: ${error.message}`);
-        }
-        throw error;
-      }
-    });
 }

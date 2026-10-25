@@ -141,9 +141,9 @@ export async function draftClaim(config: Config, options: DraftOptions): Promise
   const added: string[] = [];
   const removed: string[] = [];
   const requirements = new Set<string>();
-  const modelDir = posix.dirname(toPosix(config.model));
-  if (await changedSince(config.root, base, modelDir)) {
-    const diff = diffModels(await targetAt(config, base), target);
+  const forked = await targetAtFork(config, base, target);
+  if (forked !== target) {
+    const diff = diffModels(forked, target);
     for (const item of [...diff.elements.added, ...diff.relationships.added]) {
       added.push(item.id);
       for (const issue of item.requirements) requirements.add(issue);
@@ -152,12 +152,10 @@ export async function draftClaim(config: Config, options: DraftOptions): Promise
   }
 
   const components = componentPaths(target);
-  const files = (await changedFiles(config.root, base))
-    .filter((path) => sourceFile.test(path) && !testFile.test(path) && !declarationFile.test(path))
-    .map((path) => {
-      const component = componentOf(path, components);
-      return component === undefined ? { path } : { path, component };
-    });
+  const files = (await changedSourceFiles(config.root, base)).map((path) => {
+    const component = componentOf(path, components);
+    return component === undefined ? { path } : { path, component };
+  });
 
   for (const issue of issuesInBranch(branch)) requirements.add(issue);
   const byNumber = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1));
@@ -180,6 +178,21 @@ export function issuesInBranch(branch: string): string[] {
     .map((segment) => /^(?:issues?[-_]?)?([1-9][0-9]*)(?:[-_]|$)/i.exec(segment)?.[1])
     .filter((issue) => issue !== undefined);
   return [...new Set(issues)].map((issue) => `#${issue}`);
+}
+
+// The target as it stood at the fork point: `target` itself, the same object, unless the branch changes the model
+// folder, so the usual branch never runs Structurizr a second time.
+export async function targetAtFork(config: Config, base: string, target: Model): Promise<Model> {
+  const modelDir = posix.dirname(toPosix(config.model));
+  return (await changedSince(config.root, base, modelDir)) ? targetAt(config, base) : target;
+}
+
+// The source files a branch adds or changes since the fork point, as a claim lists them: tests and declaration files
+// are left out.
+export async function changedSourceFiles(root: string, base: string): Promise<string[]> {
+  return (await changedFiles(root, base)).filter(
+    (path) => sourceFile.test(path) && !testFile.test(path) && !declarationFile.test(path),
+  );
 }
 
 // The target as it stood at a commit: its model folder from that commit, loaded in a temp directory.

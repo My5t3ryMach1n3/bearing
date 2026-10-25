@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,28 +12,11 @@ import {
   readClaim,
 } from "../src/claims.js";
 import { loadConfig } from "../src/config.js";
-import { basketDir, copyBasket, type BasketVariant } from "./basket.js";
+import { basketDir, basketRepo, copyBasket, git, type BasketVariant } from "./basket.js";
 
 const claimed = ["controller-imports-repository", "untraced-helper", "wrong-place"] as const;
 const fixtureClaim = (variant: BasketVariant) =>
   readFileSync(join(basketDir, "variants", variant, ".bearing", "claims", `${variant}.yaml`), "utf8");
-
-function git(root: string, ...args: string[]): string {
-  return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: "pipe" });
-}
-
-// The basket repo as a git repo with main committed, reading its target from the exported workspace JSON so
-// no test runs Structurizr.
-function basketRepo(): string {
-  const root = copyBasket();
-  cpSync(join(basketDir, "workspace.json"), join(root, "architecture", "workspace.json"));
-  const config = join(root, ".bearing", "config.yaml");
-  writeFileSync(config, readFileSync(config, "utf8").replace("workspace.dsl", "workspace.json"));
-  git(root, "init", "-q", "-b", "main");
-  git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "add", ".");
-  git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "main");
-  return root;
-}
 
 function write(root: string, path: string, text: string) {
   mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -196,7 +178,7 @@ describe("draftClaim", () => {
       view.relationships = view.relationships.filter((step: { id: string }) => step.id !== relationship.id);
     }
     writeFileSync(workspacePath, JSON.stringify(workspace));
-    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qam", "drop");
+    git(root, "commit", "-qam", "drop");
 
     const draft = await draftClaim(loadConfig(root), { branch: "9-drop-auth", base: await forkPoint(root) });
     expect(draft.model).toEqual({ added: [], removed: ["authMiddleware->identityProvider"] });
@@ -240,7 +222,7 @@ describe("forkPoint", () => {
     const root = basketRepo();
     const main = git(root, "rev-parse", "HEAD").trim();
     git(root, "checkout", "-q", "-b", "topic");
-    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "x");
+    git(root, "commit", "-q", "--allow-empty", "-m", "x");
     expect(await forkPoint(root)).toBe(main);
   });
 
