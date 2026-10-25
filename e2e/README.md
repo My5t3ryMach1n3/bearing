@@ -91,7 +91,7 @@ These come in at the stage that needs them, not up front.
 | [6](stages/06-ci-on-real-prs.md) | PR comment, guard and conformance jobs | #19, #22, #23 |
 | [7](stages/07-target-change.md) | Change proposal and target-change mode | #21 |
 | [8](stages/08-human-drift.md) | A human drifts in Terraform | #12, #23 |
-| [9](stages/09-requirement-lifecycle.md) | Impact, edited and dropped requirements | #20, #24 |
+| [9](stages/09-requirement-lifecycle.md) | New, edited and dropped requirements | #24 |
 | [10](stages/10-v0-1-from-scratch.md) | The v0.1 release from a cold start | #25 |
 | [11](stages/11-python-worker.md) | A Python worker behind a queue | #26–#28 |
 | [12](stages/12-go-worker.md) | Optional: the worker rewritten in Go | #30 |

@@ -2,7 +2,7 @@
 
 The work itself is tracked as [GitHub issues](https://github.com/My5t3ryMach1n3/bearing/issues) grouped into [milestones](https://github.com/My5t3ryMach1n3/bearing/milestones). This page is the overview: how the plan is shaped, how the issues sequence, and the open questions they settle.
 
-Bearing gets built in three milestones and 32 issues: foundations, then the spec's TypeScript-only MVP, then the Python, Go and Java/Kotlin adapters.
+Bearing gets built in three milestones and 31 issues: foundations, then the spec's TypeScript-only MVP, then the Python, Go and Java/Kotlin adapters.
 
 ## How to read this plan
 
@@ -46,12 +46,13 @@ Labels use `area:` for the part of the system, `phase:` for the M1 design, build
 | [#17](https://github.com/My5t3ryMach1n3/bearing/issues/17) | Check trace paths against dynamic views | [#13](https://github.com/My5t3ryMach1n3/bearing/issues/13), [#16](https://github.com/My5t3ryMach1n3/bearing/issues/16) |
 | [#18](https://github.com/My5t3ryMach1n3/bearing/issues/18) | Flag surplus code | [#11](https://github.com/My5t3ryMach1n3/bearing/issues/11), [#13](https://github.com/My5t3ryMach1n3/bearing/issues/13) |
 | [#19](https://github.com/My5t3ryMach1n3/bearing/issues/19) | Implement `bearing report` | [#16](https://github.com/My5t3ryMach1n3/bearing/issues/16), [#17](https://github.com/My5t3ryMach1n3/bearing/issues/17), [#18](https://github.com/My5t3ryMach1n3/bearing/issues/18) |
-| [#20](https://github.com/My5t3ryMach1n3/bearing/issues/20) | Implement `bearing impact` | [#8](https://github.com/My5t3ryMach1n3/bearing/issues/8) |
 | [#21](https://github.com/My5t3ryMach1n3/bearing/issues/21) | Add change proposals and target-change mode | [#16](https://github.com/My5t3ryMach1n3/bearing/issues/16), [#19](https://github.com/My5t3ryMach1n3/bearing/issues/19) |
 | [#22](https://github.com/My5t3ryMach1n3/bearing/issues/22) | Build the guard job | [#1](https://github.com/My5t3ryMach1n3/bearing/issues/1) |
 | [#23](https://github.com/My5t3ryMach1n3/bearing/issues/23) | Build the conformance job | [#16](https://github.com/My5t3ryMach1n3/bearing/issues/16), [#17](https://github.com/My5t3ryMach1n3/bearing/issues/17), [#19](https://github.com/My5t3ryMach1n3/bearing/issues/19) |
-| [#24](https://github.com/My5t3ryMach1n3/bearing/issues/24) | Handle the requirement lifecycle | [#7](https://github.com/My5t3ryMach1n3/bearing/issues/7), [#20](https://github.com/My5t3ryMach1n3/bearing/issues/20) |
+| [#24](https://github.com/My5t3ryMach1n3/bearing/issues/24) | Handle the requirement lifecycle | [#7](https://github.com/My5t3ryMach1n3/bearing/issues/7) |
 | [#25](https://github.com/My5t3ryMach1n3/bearing/issues/25) | Run the walkthrough end to end and release v0.1 | [#6](https://github.com/My5t3ryMach1n3/bearing/issues/6) to [#24](https://github.com/My5t3ryMach1n3/bearing/issues/24) |
+
+[#20](https://github.com/My5t3ryMach1n3/bearing/issues/20), `bearing impact`, was dropped. Without an LLM it could only guess what a new requirement touches by matching words, and the agent does that better by reading the target and the code itself. `bearing context` already prints the exact slice for an existing issue.
 
 ### M2 Language adapters
 

@@ -100,7 +100,7 @@ The design loop runs once per requirement set or change; the build loop runs on 
 
 **New requirement: the change cycle**
 
-- The agent runs impact analysis on the current target: which elements, relationships and dynamic views must change.
+- The agent works out the impact on the current target: which elements, relationships and dynamic views must change. It reads the target and the code itself, starting from `bearing context` for the issues the new one builds on.
 - The engineer approves the proposed target diff, then phase 3 runs as normal. Trace-derived dynamic views show whether the implementation followed the approved path.
 
 **Design principles**
@@ -117,7 +117,7 @@ GitHub Issues are the source of truth for requirements: one issue per user story
 - The body holds a user story and numbered acceptance criteria in Given/When/Then form.
 - Each acceptance criterion needs at least one integration test tagged with the issue and criterion (e.g. `#123/AC2`); traces from those tests verify the issue's dynamic view.
 - Every model element and relationship lists the issue numbers it serves.
-- Opening an issue triggers design or impact analysis; editing its criteria triggers impact analysis; closing it as not planned triggers pruning.
+- Opening an issue triggers design or a proposed target change; editing its criteria flags its dynamic view and tests as stale; closing it as not planned triggers pruning.
 - Epics are parent issues; only leaf stories get dynamic views.
 
 ```markdown
@@ -351,7 +351,6 @@ checks:
 | `bearing skill` | Agent | Prints the skill for designing the target from requirements; `--install` saves it to `.agents/skills/` for agents that load skills |
 | `bearing context --issues` | Agent | Prints the open requirements, the C4 rules and the DSL conventions, for designing the target |
 | `bearing context #2` | Agent | Prints the slice of the model an issue touches: components, paths, relationships, its dynamic view and criteria |
-| `bearing impact #9` | Agent | Prints what a new or edited requirement touches, for proposing a target diff |
 | `bearing validate` | Agent, CI | Structurizr validation plus Bearing's rules: issue IDs on every element, a path on every component, a dynamic view per issue |
 | `bearing claim` | Agent | Writes the branch's claims file |
 | `bearing test -- <cmd>` | Agent, CI | Runs the integration tests with tracing on |
@@ -571,7 +570,7 @@ Sam, chasing a latency worry, opens a Terraform PR that adds a Redis cluster. Th
 
 ### Two weeks later: a new requirement
 
-Product asks for guest baskets: shoppers who haven't signed in. Priya files issue #9 with three acceptance criteria. Her agent runs bearing impact #9 against the target and proposes a diff: the session-restore component gains a responsibility, one relationship changes, and #9 gets a new dynamic view. Everything else is untouched.
+Product asks for guest baskets: shoppers who haven't signed in. Priya files issue #9 with three acceptance criteria. Her agent reads the target and the code, and proposes a diff: the session-restore component gains a responsibility, one relationship changes, and #9 gets a new dynamic view. Everything else is untouched.
 
 Priya reviews the diff in Structurizr, approves it, and the agents implement against the updated target. When the PR lands, the traces from `#9/AC1` to `#9/AC3` match the new dynamic view.
 
