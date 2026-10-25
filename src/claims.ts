@@ -180,11 +180,17 @@ export function issuesInBranch(branch: string): string[] {
   return [...new Set(issues)].map((issue) => `#${issue}`);
 }
 
+// The pathspec for the target's files: the model's folder, or the model file alone when it sits at the repo root.
+export function modelPathspec(config: Config): string {
+  const model = posix.normalize(toPosix(config.model));
+  const dir = posix.dirname(model);
+  return dir === "." ? model : dir;
+}
+
 // The target as it stood at the fork point: `target` itself, the same object, unless the branch changes the model
 // folder, so the usual branch never runs Structurizr a second time.
 export async function targetAtFork(config: Config, base: string, target: Model): Promise<Model> {
-  const modelDir = posix.dirname(toPosix(config.model));
-  return (await changedSince(config.root, base, modelDir)) ? targetAt(config, base) : target;
+  return (await changedSince(config.root, base, modelPathspec(config))) ? targetAt(config, base) : target;
 }
 
 // The source files a branch adds or changes since the fork point, as a claim lists them: tests and declaration files
@@ -196,7 +202,7 @@ export async function changedSourceFiles(root: string, base: string): Promise<st
 }
 
 // The target as it stood at a commit: its model folder from that commit, loaded in a temp directory.
-async function targetAt(config: Config, commit: string): Promise<Model> {
+export async function targetAt(config: Config, commit: string): Promise<Model> {
   const root = await mkdtemp(join(tmpdir(), "bearing-claim-"));
   try {
     const modelDir = posix.dirname(toPosix(config.model));
@@ -233,6 +239,26 @@ export async function changedPaths(root: string, commit: string, pathspecs: stri
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
+// Files added, changed or deleted between two commits that match any of the pathspecs, relative to the repo root and
+// sorted.
+export async function changedBetween(root: string, from: string, to: string, pathspecs: string[]): Promise<string[]> {
+  const output = await git(root, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "--relative",
+    "-z",
+    from,
+    to,
+    "--",
+    ...pathspecs,
+  ]);
+  return output
+    .split("\0")
+    .filter((file) => file !== "")
+    .sort();
+}
+
 // Files added or modified since a commit, relative to the repo root and sorted. Deleted files are left out.
 async function changedFiles(root: string, commit: string): Promise<string[]> {
   const split = (output: string) => output.split("\0").filter((file) => file !== "");
@@ -255,17 +281,20 @@ export async function currentBranch(root: string): Promise<string> {
   }
 }
 
+// The branch this one forked from: `base`, or by default the remote's default branch, falling back to main.
+export async function baseBranch(root: string, base?: string): Promise<string> {
+  if (base !== undefined) return base;
+  try {
+    return (await git(root, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).trim();
+  } catch {
+    return "main";
+  }
+}
+
 // The commit the branch forked from: its merge base with `base`, or by default with the remote's default branch,
 // falling back to main.
 export async function forkPoint(root: string, base?: string): Promise<string> {
-  let ref = base;
-  if (ref === undefined) {
-    try {
-      ref = (await git(root, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).trim();
-    } catch {
-      ref = "main";
-    }
-  }
+  const ref = await baseBranch(root, base);
   try {
     return (await git(root, ["merge-base", ref, "HEAD"])).trim();
   } catch {

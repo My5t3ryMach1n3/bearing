@@ -9,5 +9,6 @@
   of waiting.
 - Before pushing: `bearing claim`, `bearing test -- {{integration}}`, `bearing check`.
 - If a check fails, fix the code within the target. After {{attempts}} failed attempts, propose a target change in
-  {{model}} with the reason and the alternatives you considered.
+  {{model}} on the same branch, with an ADR from {{adrs}}/template.md giving the reason and the alternatives
+  you considered. If another target change merges first, rebase onto it and rework yours on top.
 - Never edit .bearing/config.yaml or anything in .github/workflows/.

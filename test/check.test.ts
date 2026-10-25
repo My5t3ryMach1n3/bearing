@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommanderError } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "controller-imports-repository",
       {
+        target: "skipped",
         claim: "failed",
         boundaries: "failed",
         deployment: "passed",
@@ -37,6 +38,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "redis-node",
       {
+        target: "skipped",
         claim: "skipped",
         boundaries: "passed",
         deployment: "failed",
@@ -48,6 +50,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "untraced-helper",
       {
+        target: "skipped",
         claim: "passed",
         boundaries: "passed",
         deployment: "passed",
@@ -59,6 +62,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "wrong-place",
       {
+        target: "skipped",
         claim: "passed",
         boundaries: "passed",
         deployment: "passed",
@@ -76,6 +80,7 @@ describe("runChecks on the basket fixture", () => {
   it("passes main, with nothing to claim or cover", async () => {
     const report = await runChecks(loadConfig(basketRepo()));
     expect(statuses(report)).toEqual({
+      target: "skipped",
       claim: "skipped",
       boundaries: "passed",
       deployment: "passed",
@@ -88,7 +93,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("lists the undeclared relationship and the claim's mismatch for controller-imports-repository", async () => {
     const report = await runChecks(loadConfig(variantRepo("controller-imports-repository")));
-    const [claim, boundaries] = report.checks;
+    const [, claim, boundaries] = report.checks;
     const imports = [
       {
         file: "src/basket-api/basket-controller/index.ts",
@@ -114,7 +119,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("lists the Redis node for redis-node", async () => {
     const report = await runChecks(loadConfig(variantRepo("redis-node")));
-    const deployment = report.checks[2];
+    const deployment = report.checks[3];
     expect(deployment).toMatchObject({
       environment: "Production",
       added: [
@@ -135,7 +140,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("shows #2's expected path beside the one wrong-place takes", async () => {
     const report = await runChecks(loadConfig(variantRepo("wrong-place")));
-    const paths = report.checks[4];
+    const paths = report.checks[5];
     expect(paths).toMatchObject({ issues: ["#2"], views: [{ issue: "#2", view: "req-2", status: "failed" }] });
     const text = formatReport(report);
     expect(text).toContain(
@@ -154,7 +159,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("checks the issues given instead of the claim's", async () => {
     const report = await runChecks(loadConfig(variantRepo("untraced-helper")), { issues: [7] });
-    expect(report.checks[3]).toMatchObject({ status: "failed", issues: ["#7"], criteria: [{ status: "missing" }] });
+    expect(report.checks[4]).toMatchObject({ status: "failed", issues: ["#7"], criteria: [{ status: "missing" }] });
   });
 
   it("takes the issues from the branch name when there's no claims file", async () => {
@@ -162,7 +167,7 @@ describe("runChecks on the basket fixture", () => {
     git(root, "checkout", "-q", "-b", "issue-7-session-expiry");
     record(root, passed("#7/AC1"));
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[3]).toMatchObject({ status: "passed", issues: ["#7"] });
+    expect(report.checks[4]).toMatchObject({ status: "passed", issues: ["#7"] });
   });
 
   it("skips Deployment when there's no Terraform to read", async () => {
@@ -170,14 +175,14 @@ describe("runChecks on the basket fixture", () => {
     const config = loadConfig(root);
     delete config.iac.terraform;
     const report = await runChecks(config);
-    expect(report.checks[2]).toMatchObject({ status: "skipped", reason: expect.stringContaining("iac.terraform") });
+    expect(report.checks[3]).toMatchObject({ status: "skipped", reason: expect.stringContaining("iac.terraform") });
   });
 
   it("flags a file outside every component, without blocking", async () => {
     const root = basketRepo();
     writeFileSync(join(root, "src", "server.ts"), "export const port = 3000;\n");
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[5]).toMatchObject({
+    expect(report.checks[6]).toMatchObject({
       status: "flagged",
       outside: ["src/server.ts"],
       untraced: [],
@@ -196,8 +201,75 @@ describe("runChecks on the basket fixture", () => {
     const config = loadConfig(variantRepo("untraced-helper"));
     config.checks.surplus = "off";
     const report = await runChecks(config);
-    expect(report.checks[5]).toMatchObject({ status: "skipped", reason: expect.stringContaining("checks.surplus") });
+    expect(report.checks[6]).toMatchObject({ status: "skipped", reason: expect.stringContaining("checks.surplus") });
     expect(formatReport(report)).toMatch(/All blocking checks passed\.\n$/);
+  });
+});
+
+// Declares the controller's call to the repository in the basket's target, which controller-imports-repository makes
+// without it.
+function declareControllerToRepository(root: string) {
+  const file = join(root, "architecture", "workspace.json");
+  const workspace = JSON.parse(readFileSync(file, "utf8"));
+  const controller = workspace.model.softwareSystems
+    .flatMap((system: { containers?: Array<{ components?: unknown[] }> }) => system.containers ?? [])
+    .flatMap((container: { components?: unknown[] }) => container.components ?? [])
+    .find((component: { id: string }) => component.id === "8");
+  controller.relationships.push({ id: "900", sourceId: "8", destinationId: "10", description: "Reads baskets from" });
+  writeFileSync(file, JSON.stringify(workspace));
+}
+
+function writeAdr(root: string, name: string) {
+  mkdirSync(join(root, "architecture", "adrs"), { recursive: true });
+  writeFileSync(join(root, "architecture", "adrs", name), `# ${name}\n`);
+}
+
+describe("the target the checks use", () => {
+  it("is main's current one for a branch that doesn't change it, with changes merged since the fork", async () => {
+    const root = variantRepo("controller-imports-repository");
+    git(root, "checkout", "-q", "main");
+    declareControllerToRepository(root);
+    git(root, "commit", "-qam", "declare");
+    git(root, "checkout", "-q", "controller-imports-repository");
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[0]).toMatchObject({ status: "skipped", base: "main", proposed: [] });
+    expect(statuses(report)).toMatchObject({ claim: "passed", boundaries: "passed" });
+  });
+
+  it("is the branch's own when it proposes a change", async () => {
+    const root = variantRepo("controller-imports-repository");
+    declareControllerToRepository(root);
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[0]).toMatchObject({
+      status: "passed",
+      proposed: ["architecture/workspace.json"],
+      moved: [],
+    });
+    expect(statuses(report)).toMatchObject({ boundaries: "passed" });
+    expect(formatReport(report)).toContain("Target change: passed, proposed on main's current target\n");
+  });
+
+  it("fails a proposal until it's rebased onto a target change that merged first", async () => {
+    const root = variantRepo("controller-imports-repository");
+    declareControllerToRepository(root);
+    git(root, "commit", "-qam", "propose");
+    git(root, "checkout", "-q", "main");
+    writeAdr(root, "0002-cache-baskets.md");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "merged first");
+    git(root, "checkout", "-q", "controller-imports-repository");
+
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[0]).toMatchObject({ status: "failed", moved: ["architecture/adrs/0002-cache-baskets.md"] });
+    expect(report.passed).toBe(false);
+    expect(formatReport(report)).toContain(
+      "Target change: failed, main's target changed after this branch forked, so the proposal isn't built on it\n" +
+        "  architecture/adrs/0002-cache-baskets.md\n" +
+        "  The first target change to merge wins. Rebase onto main, fold its change into this one, and rerun.\n",
+    );
+
+    git(root, "rebase", "-q", "main");
+    expect((await runChecks(loadConfig(root))).checks[0]).toMatchObject({ status: "passed", moved: [] });
   });
 });
 
@@ -357,6 +429,7 @@ describe("bearing check", () => {
     const report = JSON.parse(result.stdout) as CheckReport;
     expect(report.passed).toBe(true);
     expect(report.checks.map((check) => [check.check, check.status, check.blocking])).toEqual([
+      ["target", "skipped", true],
       ["claim", "passed", true],
       ["boundaries", "passed", true],
       ["deployment", "passed", true],

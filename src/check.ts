@@ -1,14 +1,18 @@
 import { join } from "node:path";
 import { Command } from "commander";
 import {
+  baseBranch,
+  changedBetween,
+  changedPaths,
   changedSourceFiles,
   claimFile,
   ClaimError,
   currentBranch,
   forkPoint,
   issuesInBranch,
+  modelPathspec,
   readClaim,
-  targetAtFork,
+  targetAt,
   type Claim,
 } from "./claims.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
@@ -36,14 +40,14 @@ import {
   type TerraformResource,
 } from "./terraform.js";
 
-// The checks `bearing check` runs. The blocking ones, Claim, Boundaries, Deployment, Criteria coverage and Trace
-// paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus, passes,
-// is flagged or is skipped when turned off, and never fails the run: its result sets `bearing/advisory`. This is the
-// JSON `bearing check --json` prints for `bearing report`. See the Checks section of docs/product-spec.md.
+// The checks `bearing check` runs. The blocking ones, Target change, Claim, Boundaries, Deployment, Criteria coverage
+// and Trace paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus,
+// passes, is flagged or is skipped when turned off, and never fails the run: its result sets `bearing/advisory`. This
+// is the JSON `bearing check --json` prints for `bearing report`. See the Checks section of docs/product-spec.md.
 export interface CheckReport {
   // False if any blocking check failed.
   passed: boolean;
-  checks: [ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck, SurplusCheck];
+  checks: [TargetCheck, ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck, SurplusCheck];
 }
 
 export type CheckStatus = "passed" | "failed" | "skipped";
@@ -60,6 +64,18 @@ export interface SurplusCheck extends SurplusResult {
   status: "passed" | "flagged" | "skipped";
   blocking: false;
   reason?: string;
+}
+
+// Whether a branch that proposes a target change is built on the base branch's current target. The first proposal
+// to merge wins: a later one fails until it's rebased onto the new target.
+export interface TargetCheck extends CheckBase {
+  check: "target";
+  // The branch it forked from, e.g. "main".
+  base: string;
+  // The target's files the branch changes: its proposal. Empty when it doesn't change the target.
+  proposed: string[];
+  // The target's files the base branch changed after the fork point.
+  moved: string[];
 }
 
 export interface ClaimCheck extends CheckBase {
@@ -206,6 +222,37 @@ export function checkDeployment(
   };
 }
 
+// The target a branch is checked against. A branch that changes the target's files is checked against its own,
+// proposed target; any other against the base branch's current one, so it meets every target change merged since
+// it forked.
+export interface CheckedTarget {
+  target: Model;
+  // The target the branch's change starts from: the one at the fork point when it proposes a change, otherwise
+  // `target` itself, the same object.
+  forked: Model;
+  // The commit the branch forked from.
+  fork: string;
+  base: string;
+  proposed: string[];
+  moved: string[];
+}
+
+// Works out the target to check against. Structurizr runs a second time only when the branch proposes a change, for
+// the target at the fork point, or when it doesn't and the base branch's target has moved, for that one.
+export async function checkedTarget(config: Config, base?: string): Promise<CheckedTarget> {
+  const branch = await baseBranch(config.root, base);
+  const fork = await forkPoint(config.root, branch);
+  const pathspec = modelPathspec(config);
+  const proposed = await changedPaths(config.root, fork, [pathspec]);
+  const moved = await changedBetween(config.root, fork, branch, [pathspec]);
+  const onDisk = await loadModel(join(config.root, config.model), () => config);
+  if (proposed.length > 0) {
+    return { target: onDisk, forked: await targetAt(config, fork), fork, base: branch, proposed, moved };
+  }
+  const target = moved.length === 0 ? onDisk : await targetAt(config, branch);
+  return { target, forked: target, fork, base: branch, proposed, moved };
+}
+
 export interface CheckOptions {
   // The issues to check coverage for; by default the claim's, or failing that the branch name's.
   issues?: number[];
@@ -213,12 +260,32 @@ export interface CheckOptions {
   base?: string;
 }
 
-// Runs every blocking check against the repo as it is on disk.
+// Runs every check against the code as it is on disk and the target `checkedTarget` picks.
 export async function runChecks(config: Config, options: CheckOptions = {}): Promise<CheckReport> {
-  const target = await loadModel(join(config.root, config.model), () => config);
+  const { target, forked, fork, base, proposed, moved } = await checkedTarget(config, options.base);
   const graph = deriveImports(config, target);
   const branch = options.branch ?? (await currentBranch(config.root));
   const claim = await readClaim(config, branch);
+
+  const targetCheck: TargetCheck =
+    proposed.length === 0
+      ? {
+          check: "target",
+          status: "skipped",
+          blocking: true,
+          reason: `the branch doesn't change the target, so it's checked against ${base}'s`,
+          base,
+          proposed,
+          moved,
+        }
+      : {
+          check: "target",
+          status: moved.length === 0 ? "passed" : "failed",
+          blocking: true,
+          base,
+          proposed,
+          moved,
+        };
 
   let claimCheck: ClaimCheck;
   if (claim === undefined) {
@@ -230,9 +297,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       mismatches: [],
     };
   } else {
-    const base = await forkPoint(config.root, options.base);
-    const forked = await targetAtFork(config, base, target);
-    const changed = await changedSourceFiles(config.root, base);
+    const changed = await changedSourceFiles(config.root, fork);
     const mismatches = checkClaim(claim, { forked, target, graph, changed });
     claimCheck = {
       check: "claim",
@@ -326,11 +391,12 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     surplus = { check: "surplus", status: flagged ? "flagged" : "passed", blocking: false, ...result };
   }
 
-  const checks: CheckReport["checks"] = [claimCheck, boundaries, deployment, coverage, paths, surplus];
+  const checks: CheckReport["checks"] = [targetCheck, claimCheck, boundaries, deployment, coverage, paths, surplus];
   return { passed: checks.every((check) => check.status !== "failed"), checks };
 }
 
 export const checkTitles = {
+  target: "Target change",
   claim: "Claim",
   boundaries: "Boundaries",
   deployment: "Deployment",
@@ -355,6 +421,8 @@ export function formatReport(report: CheckReport): string {
 export function formatCheck(check: CheckReport["checks"][number]): string {
   if (check.status === "skipped") return `${checkTitles[check.check]}: skipped, ${check.reason}\n`;
   switch (check.check) {
+    case "target":
+      return formatTargetCheck(check);
     case "claim":
       return formatClaimCheck(check);
     case "boundaries":
@@ -368,6 +436,16 @@ export function formatCheck(check: CheckReport["checks"][number]): string {
     case "surplus":
       return formatSurplus(check);
   }
+}
+
+function formatTargetCheck(check: TargetCheck): string {
+  if (check.status === "passed") return `Target change: passed, proposed on ${check.base}'s current target\n`;
+  return [
+    `Target change: failed, ${check.base}'s target changed after this branch forked, so the proposal isn't built on it`,
+    ...check.moved.map((file) => `  ${file}`),
+    `  The first target change to merge wins. Rebase onto ${check.base}, fold its change into this one, and rerun.`,
+    "",
+  ].join("\n");
 }
 
 function formatClaimCheck(check: ClaimCheck): string {
@@ -452,7 +530,7 @@ function toPosix(path: string): string {
 export function checkCommand(): Command {
   return new Command("check")
     .description(
-      "run the blocking checks: the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
+      "run the blocking checks: a target change against the base branch's current target (Target change), the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
     )
     .argument("[issues...]", "the issues to check coverage for, e.g. 2 4; defaults to the claims file's")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")

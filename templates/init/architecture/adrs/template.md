@@ -9,6 +9,7 @@ Proposed. Change to Accepted when the PR merges, or to "Superseded by NNNN" late
 ## Context
 
 What forced a choice: the requirements involved (#n) and any constraints, such as cost, team or existing systems.
+For a change to an approved target, why the code couldn't meet them within it.
 
 ## Decision
 
