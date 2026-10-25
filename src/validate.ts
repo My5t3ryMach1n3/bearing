@@ -90,12 +90,12 @@ function checkPaths(model: Model): Problem[] {
   return problems;
 }
 
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   const trimmed = path.trim().replaceAll("\\", "/");
   return trimmed === "" ? "" : posix.normalize(trimmed).replace(/(.)\/$/, "$1");
 }
 
-function within(path: string, folder: string): boolean {
+export function within(path: string, folder: string): boolean {
   return folder === "." || path === folder || path.startsWith(`${folder}/`);
 }
 

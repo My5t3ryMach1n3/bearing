@@ -405,6 +405,14 @@ note: Implements #2 within existing components.
 - Never edit .bearing/config.yaml or anything in .github/workflows/.
 ```
 
+### How imports map to relationships
+
+`bearing derive` maps every file in the configured tsconfig to the component whose `bearing.path` holds it. Each import from one component's file to code another component declares is an as-built relationship, `<source>-><destination>`, listed with the file and line of every import that makes it. Imports inside one component make none.
+
+Imports are resolved the way TypeScript resolves them, `tsconfig` paths included, and followed through barrels and re-exports to the file that declares what they use, so reaching the repository's code through the service's index still reads as a dependency on the repository. Type-only imports count. `import * as` and `export * from` depend on everything the module exports; side-effect imports, `import()` and `require()` depend on the module's file. Packages are ignored.
+
+Source files under no component path are listed for the surplus check. Tests (`*.test.ts`, `*.spec.ts` and anything under `test/`, `tests/` or `__tests__/`) and declaration files are left out: they make no relationships and are never surplus.
+
 ### How traces map to components
 
 `bearing test` loads a Node module hook that wraps the exported functions of every file under a component path and emits a span tagged with that component. Because Bearing already knows the paths from the model, nobody adds instrumentation by hand. Spans are written to `.bearing/traces/` locally and regenerated from scratch in CI.
