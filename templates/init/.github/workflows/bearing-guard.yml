@@ -1,0 +1,38 @@
+# Written by `bearing init`. Runs from the base branch and never checks out or runs the PR's code,
+# so a PR can't change or switch off the job that judges it.
+name: Bearing guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      # Changes to the target, Bearing's config or the workflows are a target change. Claims files are not:
+      # every governed PR writes one.
+      - name: Look for a target change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+            | grep -E '^(architecture/|\.bearing/|\.github/workflows/)' | grep -v '^\.bearing/claims/' || true)
+          if [ -n "$changed" ]; then
+            echo "Target change:"; echo "$changed"
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=architecture-change" > /dev/null
+            description="Target change: needs code-owner approval"
+          else
+            description="Target unchanged"
+          fi
+          # Until the full guard lands, branch protection's code-owner review is what holds a target change.
+          gh api "repos/$REPO/statuses/$SHA" -f state=success -f context=bearing/target \
+            -f description="$description" > /dev/null
