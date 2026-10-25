@@ -53,7 +53,8 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
       ? createIfMissing(root, model, () => render("architecture/workspace.dsl", { name: basename(root) }))
       : { path: model, outcome: "skipped", detail: "not a .dsl file" },
   );
-  actions.push(keepDir(root, posix.join(posix.dirname(model), "adrs")));
+  const adrs = posix.join(posix.dirname(model), "adrs");
+  actions.push(createIfMissing(root, posix.join(adrs, "template.md"), () => template("architecture/adrs/template.md")));
   actions.push(keepDir(root, ".bearing/claims"));
   const tagExample = config.tests.tag.replace("<issue>", "12").replace("<n>", "2");
   const issueForm = ".github/ISSUE_TEMPLATE/requirement.yml";
@@ -65,7 +66,8 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   }
 
   actions.push(gitignore(root));
-  actions.push(agentsSection(root, config, tagExample));
+  actions.push(createIfMissing(root, designSkill, () => render(designSkill, { model, adrs })));
+  actions.push(agentsSection(root, config, adrs, tagExample));
   const owners = (options.owners ?? []).map((owner) => (owner.includes("@") ? owner : `@${owner}`));
   const entries = codeownersEntries(posix.dirname(model), owners);
   if (owners.length > 0) actions.push(codeowners(root, entries));
@@ -148,12 +150,17 @@ function gitignore(root: string): InitAction {
   return append(root, path, ".bearing/traces/\n", ".bearing/traces/", false);
 }
 
-function agentsSection(root: string, config: Config, tagExample: string): InitAction {
+// The skill any agent follows to draft the target. AGENTS.md points to it, so agents without skill support find it too.
+const designSkill = ".agents/skills/bearing-design/SKILL.md";
+
+function agentsSection(root: string, config: Config, adrs: string, tagExample: string): InitAction {
   const path = "AGENTS.md";
   const file = join(root, path);
   if (existsSync(file) && /^#{1,6}\s+Bearing\s*$/m.test(readFileSync(file, "utf8"))) return { path, outcome: "kept" };
   const section = render("AGENTS.md", {
     model: config.model,
+    adrs,
+    skill: designSkill,
     tagExample,
     integration: config.tests.integration ?? "<your integration test command>",
     attempts: String(config.agent.selfHealAttempts),
@@ -259,7 +266,7 @@ export function formatResult(root: string, result: InitResult): string {
 export function initCommand(): Command {
   return new Command("init")
     .description(
-      "scaffold Bearing into a repo: model, config, issue form, workflows and AGENTS.md, plus CODEOWNERS if given owners",
+      "scaffold Bearing into a repo: model, ADR template, config, issue form, workflows, design skill and AGENTS.md, plus CODEOWNERS if given owners",
     )
     .argument("[dir]", "the repo root", ".")
     .option(

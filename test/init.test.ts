@@ -19,12 +19,13 @@ const read = (root: string, path: string) => readFileSync(join(root, path), "utf
 const scaffolded = [
   ".bearing/config.yaml",
   "architecture/workspace.dsl",
-  "architecture/adrs/.gitkeep",
+  "architecture/adrs/template.md",
   ".bearing/claims/.gitkeep",
   ".github/ISSUE_TEMPLATE/requirement.yml",
   ".github/workflows/bearing-guard.yml",
   ".github/workflows/bearing-conformance.yml",
   ".gitignore",
+  ".agents/skills/bearing-design/SKILL.md",
   "AGENTS.md",
 ];
 
@@ -117,11 +118,16 @@ describe("init", () => {
     );
     init(root, { owners: ["@acme"] });
     expect(read(root, "design/model.dsl")).toContain("workspace");
-    expect(read(root, "design/adrs/.gitkeep")).toBe("");
+    expect(read(root, "design/adrs/template.md")).toContain("## Alternatives considered");
+    expect(read(root, ".agents/skills/bearing-design/SKILL.md")).toContain(
+      "changes only design/model.dsl and design/adrs/",
+    );
     expect(parse(read(root, ".github/ISSUE_TEMPLATE/requirement.yml"))).toMatchObject({ labels: ["story"] });
     const agents = read(root, "AGENTS.md");
     expect(agents).toContain("e.g. `REQ-12.2`");
     expect(agents).toContain("After 5 failed attempts, propose a target change in\n  design/model.dsl");
+    expect(agents).toContain("follow .agents/skills/bearing-design/SKILL.md");
+    expect(agents).toContain("as ADRs in design/adrs/");
     expect(read(root, ".github/CODEOWNERS")).toContain("/design/ @acme\n");
   });
 
