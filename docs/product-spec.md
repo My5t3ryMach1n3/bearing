@@ -357,6 +357,7 @@ checks:
 | `bearing derive` | CI, anyone | Builds the as-built model from TypeScript imports, Terraform and traces |
 | `bearing check` | Agent, CI | Runs every check; exits non-zero on a blocking failure |
 | `bearing report` | CI | Writes the PR comment with Mermaid overlays |
+| `bearing guard` | CI | Flags a target change from the base branch: label, the changed files' diffs atop the comment, and `bearing/target` |
 
 ### Checks
 
@@ -504,6 +505,8 @@ The target they compare against depends on the branch. A branch that changes the
 - **Overlay**: one Mermaid flowchart of the affected elements only. Green is what the target change adds, grey and dashed what it removes, red what drifted: a changed element or relationship in the target, a relationship the code makes that the target doesn't declare, a deployment node the Terraform adds, lacks or counts differently, or a call a tagged test made that its issue's dynamic view doesn't have. Around them it draws the target's relationships between the elements shown, the steps a test's trace missed, and the component an undeclared relationship skips, stopping at 15 elements.
 - **Details** of each failing or flagged check, as `bearing check` prints them, and the changed source files with the component each landed in. They're dropped if the comment would be too long for GitHub.
 
+The guard job writes its own section above all of this when the PR changes the target, and `--post` keeps it there; see below.
+
 `--site <dir>` exports the PR's target as Structurizr's static site for the Action to upload as a build artifact, and the comment links to it: by default the Actions run's page, which lists its artifacts, or `--site-url`.
 
 ### The GitHub Action
@@ -514,7 +517,7 @@ The Action's job is to prove the agent hasn't made things up or silently moved t
 
 The guard runs from the base branch and never executes PR code, so a PR can't disable it; the conformance job runs the PR's code but has no secrets.
 
-- **Guard job** (`pull_request_target`): reads the changed files through the API. Changes under architecture/, .bearing/ or .github/workflows/ label the PR `architecture-change`, put the model diff first in the comment, and say so in `bearing/target`.
+- **Guard job** (`pull_request_target`): runs `bearing guard`, which reads the PR's changed files through the API, with no checkout. Changes under the model's folder (as the base branch's config sets it), `.bearing/` other than claims files, or `.github/workflows/` label the PR `architecture-change`, put each changed file's diff in a section at the top of Bearing's comment, and say so in `bearing/target`. The guard reports: `bearing/target` is always a success, so it never blocks a merge on its own; merging approves the change, and code-owner review is where a team holds one. When a later push stops changing the target, the label and the section go. The guard only edits a comment the Actions bot wrote, and the report keeps the guard's section when it updates the comment.
 - **Conformance job** (`pull_request`): runs `bearing validate`, `bearing test`, `bearing derive`, `bearing check` and `bearing report`, then sets `bearing/conformance` and `bearing/advisory`.
 - **Target compared**: main's target normally; the PR's proposed target when it changes the model. The conformance job checks out the PR's head with its history rather than GitHub's merge commit, so Bearing can find where the PR forked and tell whether main's target moved since.
 

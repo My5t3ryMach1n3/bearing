@@ -4,6 +4,7 @@ import { basename, dirname, join, posix, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, configPath, parseConfig, type Config } from "./config.js";
 import { skillPath } from "./skill.js";
+import { version } from "./version.js";
 
 // The files `bearing init` writes, laid out as they land in the repo. Shipped next to dist/ in the package.
 const templates = new URL("../templates/init/", import.meta.url);
@@ -62,9 +63,10 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   actions.push(
     createIfMissing(root, issueForm, () => render(issueForm, { label: config.requirements.label, tagExample })),
   );
-  for (const workflow of [".github/workflows/bearing-guard.yml", ".github/workflows/bearing-conformance.yml"]) {
-    actions.push(createIfMissing(root, workflow, () => template(workflow)));
-  }
+  const guardWorkflow = ".github/workflows/bearing-guard.yml";
+  actions.push(createIfMissing(root, guardWorkflow, () => render(guardWorkflow, { version })));
+  const conformanceWorkflow = ".github/workflows/bearing-conformance.yml";
+  actions.push(createIfMissing(root, conformanceWorkflow, () => template(conformanceWorkflow)));
 
   actions.push(gitignore(root));
   actions.push(agentsSection(root, config, adrs, tagExample));

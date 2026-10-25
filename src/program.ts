@@ -4,6 +4,7 @@ import { claimCommand } from "./claims.js";
 import { contextCommand } from "./context.js";
 import { deriveCommand } from "./derive.js";
 import { diffCommand } from "./diff.js";
+import { guardCommand } from "./guard.js";
 import { initCommand } from "./init.js";
 import { reportCommand } from "./report.js";
 import { skillCommand } from "./skill.js";
@@ -23,6 +24,7 @@ const commands: Array<() => Command> = [
   testCommand,
   checkCommand,
   reportCommand,
+  guardCommand,
 ];
 
 export function createProgram(): Command {
