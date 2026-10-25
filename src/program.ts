@@ -1,10 +1,11 @@
 import { Command } from "commander";
+import { contextCommand } from "./context.js";
 import { diffCommand } from "./diff.js";
 import { initCommand } from "./init.js";
 import { version } from "./version.js";
 
 // Subcommand factories, one per `bearing <command>`. Each issue that adds a command registers it here.
-const commands: Array<() => Command> = [initCommand, diffCommand];
+const commands: Array<() => Command> = [initCommand, diffCommand, contextCommand];
 
 export function createProgram(): Command {
   const program = new Command("bearing")

@@ -72,13 +72,18 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
         root,
       );
       const model = await loadModel(join(root, config.model), () => config);
+      // The unit tests read the target from this export, so it must stay what Structurizr makes of the DSL.
+      const exported = JSON.parse(
+        readFileSync(join(import.meta.dirname, "fixtures", "basket", "workspace.json"), "utf8"),
+      );
+      expect(model).toEqual(modelFromWorkspace(exported));
       const components = [...model.elements.values()].filter((element) => element.type === "component");
       expect(components.filter((component) => component.path !== undefined)).toHaveLength(5);
       // Every element and relationship serves a requirement. Deployment relationships aren't required to yet.
       for (const element of model.elements.values()) expect(element.requirements, element.id).not.toHaveLength(0);
       for (const relationship of model.relationships.values()) {
         if (!model.elements.has(relationship.source)) continue;
-        expect(relationship.properties["bearing.requirements"], relationship.id).toBeTruthy();
+        expect(relationship.requirements, relationship.id).not.toHaveLength(0);
       }
       expect([...model.dynamicViews.keys()]).toEqual(["req-1", "req-2", "req-3", "req-4", "req-6", "req-7"]);
       for (const view of model.dynamicViews.values()) {

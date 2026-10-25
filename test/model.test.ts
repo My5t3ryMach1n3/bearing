@@ -57,6 +57,7 @@ describe("modelFromWorkspace", () => {
       description: "Calls",
       technology: "HTTPS",
       tags: [],
+      requirements: [],
       properties: {},
     });
   });

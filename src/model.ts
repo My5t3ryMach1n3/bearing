@@ -36,6 +36,8 @@ export interface Relationship {
   description: string;
   technology: string;
   tags: string[];
+  // `bearing.requirements`, as on elements.
+  requirements: string[];
   properties: Record<string, string>;
 }
 
@@ -46,6 +48,11 @@ export interface DynamicView {
   scope?: string;
   description: string;
   steps: DynamicStep[];
+}
+
+// The key of the one dynamic view a leaf requirement gets: "req-2" for #2.
+export function dynamicViewKey(issue: number): string {
+  return `req-${issue}`;
 }
 
 export interface DynamicStep {
@@ -231,6 +238,7 @@ export function modelFromWorkspace(workspace: Workspace): Model {
   for (const relationship of explicit) {
     const pair = pairOf(relationship);
     const { description, technology, tags } = describe(relationship);
+    const { "bearing.requirements": requirements, ...properties } = ownProperties(relationship);
     const relationshipModel: Relationship = {
       id: pairs.get(pair)! > 1 ? `${pair}[${description}]` : pair,
       source: stable(relationship.sourceId),
@@ -238,7 +246,8 @@ export function modelFromWorkspace(workspace: Workspace): Model {
       description,
       technology,
       tags,
-      properties: ownProperties(relationship),
+      requirements: splitList(requirements),
+      properties,
     };
     add(model.relationships, relationshipModel, ids, relationship.id);
   }
