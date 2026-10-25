@@ -5,9 +5,9 @@ import ts from "typescript";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
 import type { Model, Relationship } from "./model.js";
+import { componentOf, componentPaths, declarationFile, testFile } from "./paths.js";
 import { StructurizrError } from "./structurizr.js";
 import { deriveTerraform, TerraformError, type TerraformGraph } from "./terraform.js";
-import { normalizePath, within } from "./validate.js";
 
 // What the TypeScript extractor finds in the code. This is the JSON `bearing derive` prints.
 export interface ImportGraph {
@@ -48,9 +48,6 @@ export class DeriveError extends Error {
   }
 }
 
-// Tests exercise components rather than belong to them, so they make no relationships and are never surplus.
-const testFile = /(^|\/)(test|tests|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
-
 // Maps every source file in the configured tsconfig to the component whose `bearing.path` holds it, then turns each
 // import between two components into a relationship.
 //
@@ -61,14 +58,9 @@ const testFile = /(^|\/)(test|tests|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
 // module's own file. Packages and anything outside the repo are ignored.
 export function deriveImports(config: Config, target: Model): ImportGraph {
   const root = resolve(config.root);
-  const components = [...target.elements.values()]
-    .filter((element) => element.type === "component" && element.path !== undefined)
-    .map((component) => ({ id: component.id, path: normalizePath(component.path!) }))
-    .filter((component) => component.path !== "")
-    // Longest path first, so the most specific folder wins if `bearing validate` hasn't caught an overlap yet.
-    .sort((a, b) => b.path.length - a.path.length);
+  const components = componentPaths(target);
   const repoPath = (file: string) => relative(root, file).split(sep).join("/");
-  const componentOf = (file: string) => components.find((component) => within(file, component.path))?.id;
+  const ownerOf = (file: string) => componentOf(file, components);
 
   const program = createProgram(root, config.tsconfig);
   const checker = program.getTypeChecker();
@@ -82,7 +74,7 @@ export function deriveImports(config: Config, target: Model): ImportGraph {
   const relationships = new Map<string, ImportRelationship>();
   for (const source of sources) {
     const file = repoPath(source.fileName);
-    const owner = componentOf(file);
+    const owner = ownerOf(file);
     if (owner === undefined) {
       unmapped.push(file);
       continue;
@@ -92,7 +84,7 @@ export function deriveImports(config: Config, target: Model): ImportGraph {
       for (const declaration of declaredIn) {
         const path = repoPath(declaration);
         if (path.startsWith("../") || path.includes("/node_modules/") || path.startsWith("node_modules/")) continue;
-        const destination = componentOf(path);
+        const destination = ownerOf(path);
         if (destination === undefined || destination === owner) continue;
         const id = `${owner}->${destination}`;
         let relationship = relationships.get(id);
@@ -165,7 +157,7 @@ function createProgram(root: string, tsconfig: string): ts.Program {
   if (errors.length > 0) throw new DeriveError(`${tsconfig}: ${errors.map(format).join("; ")}`);
   const rootNames = parsed.fileNames.filter((file) => {
     const repoFile = relative(root, file).split(sep).join("/");
-    return !repoFile.startsWith("../") && !testFile.test(repoFile) && !/\.d\.[cm]?ts$/.test(file);
+    return !repoFile.startsWith("../") && !testFile.test(repoFile) && !declarationFile.test(file);
   });
   return ts.createProgram({ rootNames, options: { ...parsed.options, noEmit: true } });
 }

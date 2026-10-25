@@ -445,7 +445,14 @@ Nodes are compared with the target's deployment view, which must have exactly on
 
 `bearing test` loads a Node module hook that wraps the exported functions of every file under a component path and emits a span tagged with that component. Because Bearing already knows the paths from the model, nobody adds instrumentation by hand. Spans are written to `.bearing/traces/` locally and regenerated from scratch in CI.
 
-Open point: the hook must handle both ESM and CommonJS, and its overhead on large test suites is unmeasured.
+`bearing test -- <cmd>` clears `.bearing/traces/` and runs the command, or `tests.integration` when none is given, with the hook preloaded into every Node process it starts through `NODE_OPTIONS`. It needs Node.js 22.15 or later.
+
+- **ES modules and CommonJS**: Node's module hooks rewrite each component file as it loads. An ES module's exported functions are rebound to wrappers at the end of the module, so importers, which read live bindings, call the wrapper; a CommonJS module's functions on `module.exports` are replaced once it has run. Re-exports are left to the module that declares the function, and classes aren't wrapped.
+- **Vitest** runs code through Vite's module runner rather than Node's loader, so the hook adds the same rewrite as a Vite plugin to every config Vitest resolves. The project's Vitest config is left as it is.
+- **Spans** are OpenTelemetry spans in the OTLP JSON file format, one file per process. Each carries `bearing.component`, `code.function.name` and `code.file.path`; calls nest under the call that made them, across `await`s, within one trace per test.
+- **Criteria**: the running test's full name, which Vitest and Jest keep in their shared matcher state, goes in `bearing.test`, and the tag in it that matches `tests.tag` goes in `bearing.criterion`, e.g. `#2/AC1`. Untagged tests' spans have no criterion, so they never count as evidence. Tests run concurrently within a file share that state, so their spans can be credited to the wrong test.
+
+The overhead, measured on the basket fixture and on date-fns, is in the [README](../README.md#trace-overhead): 17% to 29% more test time.
 
 ### The GitHub Action
 
