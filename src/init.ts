@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, write
 import { basename, dirname, join, posix, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, configPath, parseConfig, type Config } from "./config.js";
+import { skillPath } from "./skill.js";
 
 // The files `bearing init` writes, laid out as they land in the repo. Shipped next to dist/ in the package.
 const templates = new URL("../templates/init/", import.meta.url);
@@ -66,7 +67,6 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
   }
 
   actions.push(gitignore(root));
-  actions.push(createIfMissing(root, designSkill, () => render(designSkill, { model, adrs })));
   actions.push(agentsSection(root, config, adrs, tagExample));
   const owners = (options.owners ?? []).map((owner) => (owner.includes("@") ? owner : `@${owner}`));
   const entries = codeownersEntries(posix.dirname(model), owners);
@@ -150,9 +150,6 @@ function gitignore(root: string): InitAction {
   return append(root, path, ".bearing/traces/\n", ".bearing/traces/", false);
 }
 
-// The skill any agent follows to draft the target. AGENTS.md points to it, so agents without skill support find it too.
-const designSkill = ".agents/skills/bearing-design/SKILL.md";
-
 function agentsSection(root: string, config: Config, adrs: string, tagExample: string): InitAction {
   const path = "AGENTS.md";
   const file = join(root, path);
@@ -160,7 +157,6 @@ function agentsSection(root: string, config: Config, adrs: string, tagExample: s
   const section = render("AGENTS.md", {
     model: config.model,
     adrs,
-    skill: designSkill,
     tagExample,
     integration: config.tests.integration ?? "<your integration test command>",
     attempts: String(config.agent.selfHealAttempts),
@@ -259,6 +255,9 @@ export function formatResult(root: string, result: InitResult): string {
     "",
     "The requirement issue form needs its label to exist:",
     `  gh label create ${result.label} --description "A user story Bearing designs and checks against"`,
+    "",
+    "Agents design the target by following `bearing skill`. Init doesn't install it; to keep it in the repo as",
+    `${skillPath}, for agents that load skills, run \`bearing skill --install\`.`,
   );
   return `${lines.join("\n")}\n`;
 }
@@ -266,7 +265,7 @@ export function formatResult(root: string, result: InitResult): string {
 export function initCommand(): Command {
   return new Command("init")
     .description(
-      "scaffold Bearing into a repo: model, ADR template, config, issue form, workflows, design skill and AGENTS.md, plus CODEOWNERS if given owners",
+      "scaffold Bearing into a repo: model, ADR template, config, issue form, workflows and AGENTS.md, plus CODEOWNERS if given owners",
     )
     .argument("[dir]", "the repo root", ".")
     .option(

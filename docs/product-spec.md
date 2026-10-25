@@ -294,7 +294,7 @@ architecture/
   ISSUE_TEMPLATE/requirement.yml
   workflows/bearing-guard.yml
   workflows/bearing-conformance.yml
-.agents/skills/bearing-design/SKILL.md   # the requirements-to-model skill
+.agents/skills/bearing-design/SKILL.md   # optional: the design skill, from `bearing skill --install`
 AGENTS.md                    # includes the Bearing section
 src/basket-api/basket-service/   # owned by one level-3 component
 ```
@@ -347,7 +347,8 @@ checks:
 
 | Command | Who runs it | What it does |
 | --- | --- | --- |
-| `bearing init` | Engineer, once | Scaffolds the layout, ADR template, issue form, workflows, design skill and AGENTS.md section, plus CODEOWNERS entries if given owners; prints the branch-protection settings to turn on |
+| `bearing init` | Engineer, once | Scaffolds the layout, ADR template, issue form, workflows and AGENTS.md section, plus CODEOWNERS entries if given owners; prints the branch-protection settings to turn on |
+| `bearing skill` | Agent | Prints the skill for designing the target from requirements; `--install` saves it to `.agents/skills/` for agents that load skills |
 | `bearing context --issues` | Agent | Prints the open requirements, the C4 rules and the DSL conventions, for designing the target |
 | `bearing context #2` | Agent | Prints the slice of the model an issue touches: components, paths, relationships, its dynamic view and criteria |
 | `bearing impact #9` | Agent | Prints what a new or edited requirement touches, for proposing a target diff |
@@ -387,12 +388,13 @@ note: Implements #2 within existing components.
 
 ### Agent instructions
 
-`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps live in a skill, `.agents/skills/bearing-design/SKILL.md`: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
+`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps are a skill that `bearing skill` prints: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. Init never installs it; an agent that loads skills can save it to `.agents/skills/bearing-design/SKILL.md` with `bearing skill --install`. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
 
 ```markdown
 ### Bearing
-- To design or revise the target, follow .agents/skills/bearing-design/SKILL.md: it runs `bearing context --issues`, writes
-  architecture/workspace.dsl, records key choices as ADRs in architecture/adrs/ and ends with `bearing validate`.
+- To design or revise the target, follow the steps `bearing skill` prints: run `bearing context --issues`, write
+  architecture/workspace.dsl, record key choices as ADRs in architecture/adrs/, then `bearing validate`.
+  If you load skills, you may save them as one with `bearing skill --install`.
 - Before coding an issue, run `bearing context #<issue>`; keep code inside the component paths it lists.
 - Tag every integration test with its criterion, e.g. `#12/AC2`.
 - For criteria that depend on time, such as expiry, pass the clock in as a dependency so tests set the time instead

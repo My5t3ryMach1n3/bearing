@@ -25,7 +25,6 @@ const scaffolded = [
   ".github/workflows/bearing-guard.yml",
   ".github/workflows/bearing-conformance.yml",
   ".gitignore",
-  ".agents/skills/bearing-design/SKILL.md",
   "AGENTS.md",
 ];
 
@@ -39,6 +38,8 @@ describe("init", () => {
     expect(read(root, ".gitignore")).toBe(".bearing/traces/\n");
     expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(false);
     expect(read(root, "architecture/workspace.dsl")).toMatch(/^workspace "bearing-init-\w+"/);
+    // The design skill is only installed when asked for, with `bearing skill --install`.
+    expect(existsSync(join(root, ".agents"))).toBe(false);
   });
 
   it("writes valid YAML for the config, issue form and workflows", () => {
@@ -119,14 +120,10 @@ describe("init", () => {
     init(root, { owners: ["@acme"] });
     expect(read(root, "design/model.dsl")).toContain("workspace");
     expect(read(root, "design/adrs/template.md")).toContain("## Alternatives considered");
-    expect(read(root, ".agents/skills/bearing-design/SKILL.md")).toContain(
-      "changes only design/model.dsl and design/adrs/",
-    );
     expect(parse(read(root, ".github/ISSUE_TEMPLATE/requirement.yml"))).toMatchObject({ labels: ["story"] });
     const agents = read(root, "AGENTS.md");
     expect(agents).toContain("e.g. `REQ-12.2`");
     expect(agents).toContain("After 5 failed attempts, propose a target change in\n  design/model.dsl");
-    expect(agents).toContain("follow .agents/skills/bearing-design/SKILL.md");
     expect(agents).toContain("as ADRs in design/adrs/");
     expect(read(root, ".github/CODEOWNERS")).toContain("/design/ @acme\n");
   });
@@ -159,6 +156,8 @@ describe("init", () => {
     expect(output).toContain("Required status checks: bearing/target and bearing/conformance");
     expect(output).toContain("Optional, for teams that want a second reviewer");
     expect(output).toContain("gh label create requirement");
+    expect(output).toContain("Init doesn't install it");
+    expect(output).toContain("run `bearing skill --install`");
   });
 
   it("asks for code-owner review when CODEOWNERS gates target changes, including on a re-run", () => {
