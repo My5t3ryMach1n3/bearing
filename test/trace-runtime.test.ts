@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readTestRecords } from "../src/coverage.js";
 import { criterionPattern, installRuntime } from "../src/trace/runtime.js";
 
 // The runtime installs itself once per process; Vitest gives each test file its own.
@@ -20,22 +21,33 @@ interface Span {
 }
 
 function spans(): Span[] {
-  return readdirSync(dir).flatMap((file) =>
-    readFileSync(join(dir, file), "utf8")
-      .trim()
-      .split("\n")
-      .flatMap(
-        (line) =>
-          (JSON.parse(line) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> }).resourceSpans[0]!
-            .scopeSpans[0]!.spans,
-      ),
-  );
+  return readdirSync(dir)
+    .filter((file) => file.startsWith("spans-"))
+    .flatMap((file) =>
+      readFileSync(join(dir, file), "utf8")
+        .trim()
+        .split("\n")
+        .flatMap(
+          (line) =>
+            (JSON.parse(line) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> }).resourceSpans[0]!
+              .scopeSpans[0]!.spans,
+        ),
+    );
 }
 
 const attribute = (span: Span, key: string) => span.attributes.find((item) => item.key === key)?.value.stringValue;
 const named = (name: string) => spans().filter((span) => span.name === name);
 
 describe("trace runtime", () => {
+  it("records each test's outcome with the criterion in its name", () => {
+    runtime.test({ name: "basket > #2/AC1 adds an item", file: "test/basket.test.ts", status: "passed" });
+    runtime.test({ name: "basket > #2 adds without a criterion", status: "failed" });
+    expect(readTestRecords(dir)).toEqual([
+      { name: "basket > #2/AC1 adds an item", file: "test/basket.test.ts", status: "passed", criterion: "#2/AC1" },
+      { name: "basket > #2 adds without a criterion", status: "failed" },
+    ]);
+  });
+
   it("#9/AC3 tags each span with its component, function, file, test and criterion", () => {
     service.wrap((n: number) => n + 1, "increment")(1);
     const [span] = named("increment");

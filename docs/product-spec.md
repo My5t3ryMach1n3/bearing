@@ -451,8 +451,21 @@ Nodes are compared with the target's deployment view, which must have exactly on
 - **Vitest** runs code through Vite's module runner rather than Node's loader, so the hook adds the same rewrite as a Vite plugin to every config Vitest resolves. The project's Vitest config is left as it is.
 - **Spans** are OpenTelemetry spans in the OTLP JSON file format, one file per process. Each carries `bearing.component`, `code.function.name` and `code.file.path`; calls nest under the call that made them, across `await`s, within one trace per test.
 - **Criteria**: the running test's full name, which Vitest and Jest keep in their shared matcher state, goes in `bearing.test`, and the tag in it that matches `tests.tag` goes in `bearing.criterion`, e.g. `#2/AC1`. Untagged tests' spans have no criterion, so they never count as evidence. Tests run concurrently within a file share that state, so their spans can be credited to the wrong test.
+- **Test outcomes**: once a test finishes, the runner's main process records its full name, file, criterion tag and whether it passed, failed or was skipped, in `.bearing/traces/tests-*.jsonl`. Under Vitest the hook's Vite plugin adds a reporter for this; under Jest it wraps `runCLI` in `@jest/core`, which every way of running Jest goes through. Neither changes the project's own test config.
 
 The overhead, measured on the basket fixture and on date-fns, is in the [README](../README.md#trace-overhead): 17% to 29% more test time.
+
+### How criteria coverage is checked
+
+Criteria coverage reads the test outcomes from the last `bearing test` run. For each criterion of the issues a change works on, it looks at the tests whose names carry that criterion's tag:
+
+- **Covered**: at least one passed and none failed.
+- **Failing**: at least one failed, even if another passed.
+- **Missing**: none ran. Skipped tests don't count as having run.
+
+A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
+
+The check exits non-zero if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. Until the claims file names the issues a branch works on, they're given as arguments: `bearing check 2 4`.
 
 ### The GitHub Action
 

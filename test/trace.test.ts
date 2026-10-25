@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, parseConfig } from "../src/config.js";
+import { readTestRecords } from "../src/coverage.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { componentPaths } from "../src/paths.js";
 import { runTraced, tracesDir } from "../src/test.js";
@@ -36,16 +37,18 @@ interface Span {
 
 function spansIn(root: string): Span[] {
   const dir = join(root, tracesDir);
-  return readdirSync(dir).flatMap((file) =>
-    readFileSync(join(dir, file), "utf8")
-      .trim()
-      .split("\n")
-      .flatMap((line) =>
-        (JSON.parse(line) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> }).resourceSpans.flatMap(
-          (resource) => resource.scopeSpans.flatMap((scope) => scope.spans),
+  return readdirSync(dir)
+    .filter((file) => file.startsWith("spans-"))
+    .flatMap((file) =>
+      readFileSync(join(dir, file), "utf8")
+        .trim()
+        .split("\n")
+        .flatMap((line) =>
+          (
+            JSON.parse(line) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> }
+          ).resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)),
         ),
-      ),
-  );
+    );
 }
 
 const attribute = (span: Span, key: string) => span.attributes.find((item) => item.key === key)?.value.stringValue;
@@ -124,6 +127,77 @@ describe("bearing test", () => {
       expect(attribute(span, "bearing.test")).toBe("accepts whole quantities from 1 to 99");
       expect(attribute(span, "bearing.criterion")).toBeUndefined();
     }
+  });
+
+  it("records how each test ended under Vitest, with its criterion", { timeout: 60_000 }, async () => {
+    const root = copyBasket();
+    writeFileSync(
+      join(root, "test", "integration", "outcomes.test.ts"),
+      [
+        'import { describe, expect, it } from "vitest";',
+        'describe("outcomes", () => {',
+        '  it("#7/AC1 fails", () => expect(1).toBe(2));',
+        '  it.skip("#7/AC1 is skipped", () => {});',
+        "});",
+      ].join("\n"),
+    );
+    const config = loadConfig(root);
+    const result = await runTraced(config, basketComponents, [`${config.tests.integration!} test/unit`], quiet);
+    expect(result.exitCode).toBe(1);
+    const records = readTestRecords(join(root, tracesDir));
+    expect(records).toHaveLength(14);
+    expect(records).toContainEqual({
+      name: "#2 Add an item to the basket > #2/AC1 keeps an added item across sessions",
+      file: "test/integration/add-item.test.ts",
+      status: "passed",
+      criterion: "#2/AC1",
+    });
+    expect(records.filter((record) => record.file === "test/integration/outcomes.test.ts")).toEqual([
+      {
+        name: "outcomes > #7/AC1 fails",
+        file: "test/integration/outcomes.test.ts",
+        status: "failed",
+        criterion: "#7/AC1",
+      },
+      {
+        name: "outcomes > #7/AC1 is skipped",
+        file: "test/integration/outcomes.test.ts",
+        status: "skipped",
+        criterion: "#7/AC1",
+      },
+    ]);
+    expect(records.find((record) => record.file === "test/unit/quantity.test.ts")).toEqual({
+      name: "accepts whole quantities from 1 to 99",
+      file: "test/unit/quantity.test.ts",
+      status: "passed",
+    });
+  });
+
+  it("records how each test ended under Jest, with its criterion", { timeout: 60_000 }, async () => {
+    const root = node({
+      "package.json": '{ "private": true }\n',
+      "src/maths/index.js": "exports.double = (n) => n * 2;\n",
+      "test/maths.test.js": [
+        'const { double } = require("../src/maths/index.js");',
+        'describe("maths", () => {',
+        '  test("#1/AC1 doubles", () => expect(double(2)).toBe(4));',
+        '  test("#1/AC2 triples", () => expect(double(2)).toBe(6));',
+        '  test.skip("#2/AC1 halves", () => {});',
+        '  test("adds", () => expect(double(1)).toBe(2));',
+        "});",
+      ].join("\n"),
+    });
+    symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "junction");
+    const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
+    const result = await runTraced(config, [{ id: "maths", path: "src/maths" }], ["npx jest"], quiet);
+    expect(result.exitCode).toBe(1);
+    const file = "test/maths.test.js";
+    expect(readTestRecords(join(root, tracesDir))).toEqual([
+      { name: "maths #1/AC1 doubles", file, status: "passed", criterion: "#1/AC1" },
+      { name: "maths #1/AC2 triples", file, status: "failed", criterion: "#1/AC2" },
+      { name: "maths #2/AC1 halves", file, status: "skipped", criterion: "#2/AC1" },
+      { name: "maths adds", file, status: "passed" },
+    ]);
   });
 
   it("clears traces from the last run first", { timeout: 60_000 }, async () => {

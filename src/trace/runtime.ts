@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, openSync, writeSync } from "node:fs";
+import { appendFileSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { types } from "node:util";
 import { threadId } from "node:worker_threads";
@@ -9,6 +9,22 @@ import { runtimeKey } from "./transform.js";
 // What instrumented modules call. See `instrumentModule` and `instrumentCommonJs`.
 export interface TraceRuntime {
   module(component: string, file: string): TracedModule;
+  // Records how a test ended. The runner's main process calls it once per test, from a reporter Bearing adds.
+  test(outcome: TestOutcome): void;
+}
+
+// A test as the runner reports it once it has finished: passed only if it ran to the end with no failure.
+export interface TestOutcome {
+  // The full name, as the matcher state holds it while the test runs.
+  name: string;
+  // Repo-relative.
+  file?: string;
+  status: "passed" | "failed" | "skipped";
+}
+
+// One line of a tests file: the outcome and the criterion tag in the test's name, if it has one.
+export interface TestRecord extends TestOutcome {
+  criterion?: string;
 }
 
 export interface TracedModule {
@@ -44,6 +60,10 @@ export const attributes = {
   file: "code.file.path",
 } as const;
 
+// Span files are named `spans-<pid>-<thread>.jsonl` and test files `tests-<pid>-<thread>.jsonl`.
+export const spansFile = /^spans-.*\.jsonl$/;
+export const testsFile = /^tests-.*\.jsonl$/;
+
 // Spans are written as OTLP JSON, one `ExportTraceServiceRequest` per line: the OpenTelemetry file exporter's
 // format. Each call from a test into a component is written once it ends, with the calls it made, so nothing is lost
 // when a runner terminates a worker thread, which runs no exit handlers.
@@ -56,6 +76,7 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
   if (existing !== undefined) return existing as TraceRuntime;
 
   const file = join(options.dir, `spans-${process.pid}-${threadId}.jsonl`);
+  const testsPath = join(options.dir, `tests-${process.pid}-${threadId}.jsonl`);
   const criterion = criterionPattern(options.tag);
   const storage = new AsyncLocalStorage<Span>();
   // Span IDs only need to be unique within a trace: a random prefix per process and a counter.
@@ -208,6 +229,12 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
         },
       };
     },
+    test(outcome) {
+      const tag = criterion.exec(outcome.name)?.[0];
+      const record: TestRecord = tag === undefined ? outcome : { ...outcome, criterion: tag };
+      mkdirSync(options.dir, { recursive: true });
+      appendFileSync(testsPath, `${JSON.stringify(record)}\n`);
+    },
   };
   Object.defineProperty(globalThis, Symbol.for(runtimeKey), { value: runtime });
   return runtime;
@@ -217,6 +244,11 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
 export function criterionPattern(tag: string): RegExp {
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(escaped.replace("<issue>", "\\d+").replace("<n>", "\\d+"));
+}
+
+// A criterion's tag as tests write it, e.g. "#2/AC1" for the template "#<issue>/AC<n>".
+export function criterionTag(tag: string, issue: number, criterion: number): string {
+  return tag.replaceAll("<issue>", String(issue)).replaceAll("<n>", String(criterion));
 }
 
 // OTLP JSON writes 64-bit integers as strings.

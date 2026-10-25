@@ -5,6 +5,7 @@ import { loadModel } from "./diff.js";
 import { dynamicViewKey, type DynamicView, type Element, type Model, type Relationship } from "./model.js";
 import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
+import { criterionTag } from "./trace/runtime.js";
 
 // What `bearing context --issues` gives an agent to design the target from.
 export interface DesignContext {
@@ -32,7 +33,7 @@ export interface IssueContext {
 }
 
 export function designContext(config: Config, requirements: Requirement[]): DesignContext {
-  const tag = testTag(config, 2, 1);
+  const tag = criterionTag(config.tests.tag, 2, 1);
   return {
     requirements: requirements.filter((requirement) => requirement.state === "open"),
     rules: {
@@ -102,17 +103,13 @@ export function issueContext(config: Config, model: Model, requirements: Require
   );
   return {
     requirement,
-    tags: requirement.criteria.map((criterion) => testTag(config, number, criterion.number)),
+    tags: requirement.criteria.map((criterion) => criterionTag(config.tests.tag, number, criterion.number)),
     components: elements.filter((element) => element.type === "component"),
     elements: elements.filter((element) => element.type !== "component"),
     relationships,
     dynamicView,
     stories: requirements.filter((each) => each.parent === number && each.state === "open").map((each) => each.number),
   };
-}
-
-function testTag(config: Config, issue: number, criterion: number): string {
-  return config.tests.tag.replaceAll("<issue>", String(issue)).replaceAll("<n>", String(criterion));
 }
 
 export function formatDesignContext(context: DesignContext): string {
