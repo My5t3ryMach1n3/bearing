@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { claimCommand } from "./claims.js";
 import { contextCommand } from "./context.js";
 import { checkCommand } from "./coverage.js";
 import { deriveCommand } from "./derive.js";
@@ -17,6 +18,7 @@ const commands: Array<() => Command> = [
   validateCommand,
   skillCommand,
   deriveCommand,
+  claimCommand,
   testCommand,
   checkCommand,
 ];

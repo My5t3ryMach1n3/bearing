@@ -383,8 +383,17 @@ model:
 files:
   - path: src/basket-api/basket-service/addItem.ts
     component: basketService
-note: Implements #2 within existing components.
+note: "Implements #2 within existing components."
 ```
+
+`bearing claim` drafts this file from the branch's diff against where it forked from main, counting uncommitted and untracked changes too, for the agent to check and commit:
+
+- **issues** come from the branch name (`issue-2-add-item`, `2-add-item`, `feat/2-add-item`) and from the requirements of whatever the target gains.
+- **model** lists the stable IDs of the elements and relationships the branch's target adds or removes. It is drafted from the target alone, never the code: the Claim check exists to catch an agent that misreads its own change, so a relationship the code makes without the target declaring it is the agent's to add.
+- **files** lists the changed source files, tests and declaration files left out, each with the component whose path holds it. A file under no component path has no `component`.
+- **note** is the agent's to write.
+
+Rerunning it redrafts the model and files but keeps the issues and note. The file is named after the branch, with anything outside `A-Z a-z 0-9 . _ -` percent-encoded, so `feat/2-add-item` is `.bearing/claims/feat%2F2-add-item.yaml`.
 
 ### Agent instructions
 

@@ -6,4 +6,4 @@ model:
 files:
   - path: src/basket-api/basket-service/retryWithBackoff.ts
     component: basketService
-note: Adds a retry helper for catalogue lookups in #2.
+note: "Adds a retry helper for catalogue lookups in #2."
