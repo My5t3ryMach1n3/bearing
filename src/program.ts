@@ -4,6 +4,7 @@ import { deriveCommand } from "./derive.js";
 import { diffCommand } from "./diff.js";
 import { initCommand } from "./init.js";
 import { skillCommand } from "./skill.js";
+import { testCommand } from "./test.js";
 import { validateCommand } from "./validate.js";
 import { version } from "./version.js";
 
@@ -15,6 +16,7 @@ const commands: Array<() => Command> = [
   validateCommand,
   skillCommand,
   deriveCommand,
+  testCommand,
 ];
 
 export function createProgram(): Command {

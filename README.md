@@ -23,6 +23,18 @@ To adopt Bearing in a repo, run `bearing init` at its root. It writes the model,
 
 Whoever merges a PR approves any target change it makes; Bearing labels those PRs and shows the model diff first. To require a second reviewer instead, pass owners, e.g. `bearing init --owner @your-org/architects`: init adds CODEOWNERS entries for the model, config and workflows, and asks you to require code-owner review.
 
+## Trace overhead
+
+`bearing test` traces every call into a component's exports, so tests run slower under it. Measured with Node 25.4 on a 16-core Linux machine (WSL2), as the median of 5 or 10 alternating plain and traced runs after a warm-up:
+
+| Suite | Tests | Spans | Plain | Traced | Overhead |
+| --- | --- | --- | --- | --- | --- |
+| Basket fixture, integration tests (Vitest 4) | 11 | 145 | 0.77 s | 1.00 s | +29% |
+| [date-fns](https://github.com/date-fns/date-fns) core at `a9739fb` (Vitest 5), its own config | 3,166 | 71,000 | 2.60 s | 3.04 s | +17% |
+| The same, with Vitest's module cache off | 3,166 | 71,000 | 4.66 s | 5.66 s | +22% |
+
+date-fns was mapped as one component per function folder, 254 in all, so nearly every call it makes is traced. On the fixture most of the extra time is fixed: loading TypeScript to rewrite the component files.
+
 ## Docs
 
 - [Product spec](docs/product-spec.md): the problem, the proposed solution, how it works, and a walkthrough on a greenfield service.

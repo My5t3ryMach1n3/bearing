@@ -1,0 +1,181 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
+import { loadConfig, parseConfig } from "../src/config.js";
+import { modelFromWorkspace } from "../src/model.js";
+import { componentPaths } from "../src/paths.js";
+import { runTraced, tracesDir } from "../src/test.js";
+import { basketDir, copyBasket } from "./basket.js";
+
+// The hook runs in the test command's own processes, so these tests preload a build of it rather than the source.
+// It goes under node_modules so the build finds Bearing's dependencies.
+const build = join(import.meta.dirname, "..", "node_modules", ".cache", "bearing-trace-test");
+const hook = pathToFileURL(join(build, "trace", "register.js"));
+const quiet = { hook, env: { NODE_OPTIONS: "" }, stdio: "ignore" } as const;
+
+beforeAll(() => {
+  execFileSync("npx", ["tsc", "-p", "tsconfig.build.json", "--outDir", build], {
+    cwd: join(import.meta.dirname, ".."),
+    stdio: "pipe",
+  });
+}, 60_000);
+
+const basketTarget = modelFromWorkspace(JSON.parse(readFileSync(join(basketDir, "workspace.json"), "utf8")));
+const basketComponents = componentPaths(basketTarget);
+
+interface Span {
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  startTimeUnixNano: string;
+  attributes: Array<{ key: string; value: { stringValue?: string } }>;
+}
+
+function spansIn(root: string): Span[] {
+  const dir = join(root, tracesDir);
+  return readdirSync(dir).flatMap((file) =>
+    readFileSync(join(dir, file), "utf8")
+      .trim()
+      .split("\n")
+      .flatMap((line) =>
+        (JSON.parse(line) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Span[] }> }> }).resourceSpans.flatMap(
+          (resource) => resource.scopeSpans.flatMap((scope) => scope.spans),
+        ),
+      ),
+  );
+}
+
+const attribute = (span: Span, key: string) => span.attributes.find((item) => item.key === key)?.value.stringValue;
+
+// Each span as "<component>.<function>", indented under its parent, in the order the calls started.
+function callTree(spans: Span[]): string[] {
+  const sorted = [...spans].sort((a, b) => (BigInt(a.startTimeUnixNano) < BigInt(b.startTimeUnixNano) ? -1 : 1));
+  const byId = new Map(sorted.map((span) => [span.spanId, span]));
+  const depth = (span: Span): number => {
+    const parent = span.parentSpanId === undefined ? undefined : byId.get(span.parentSpanId);
+    return parent === undefined ? 0 : depth(parent) + 1;
+  };
+  return sorted.map((span) => `${"  ".repeat(depth(span))}${attribute(span, "bearing.component")}.${span.name}`);
+}
+
+const criterion = (spans: Span[], tag: string) => spans.filter((span) => attribute(span, "bearing.criterion") === tag);
+
+describe("bearing test", () => {
+  it.each(["forks", "threads"])(
+    "traces the basket's integration tests under Vitest's %s pool, tagged with their criteria",
+    { timeout: 60_000 },
+    async (pool) => {
+      const root = copyBasket();
+      const config = loadConfig(root);
+      const result = await runTraced(config, basketComponents, [`${config.tests.integration} --pool=${pool}`], quiet);
+      expect(result.exitCode).toBe(0);
+      expect(result.criteria).toEqual([
+        "#1/AC1",
+        "#1/AC2",
+        "#2/AC1",
+        "#2/AC2",
+        "#3/AC1",
+        "#3/AC2",
+        "#4/AC1",
+        "#4/AC2",
+        "#6/AC1",
+        "#6/AC2",
+        "#7/AC1",
+      ]);
+      // #2's dynamic view: controller, then service, then repository. The second request reads the basket back.
+      expect(callTree(criterion(spansIn(root), "#2/AC1"))).toEqual([
+        "basketController.handle",
+        "  authMiddleware.authenticate",
+        "  basketService.addItem",
+        "    basketService.isValidQuantity",
+        "    basketRepository.loadBasket",
+        "    basketRepository.saveBasket",
+        "basketController.handle",
+        "  authMiddleware.authenticate",
+        "  basketService.getBasket",
+        "    basketRepository.loadBasket",
+      ]);
+    },
+  );
+
+  it("shows the path a misplaced implementation really takes", { timeout: 60_000 }, async () => {
+    const root = copyBasket("wrong-place");
+    const config = loadConfig(root);
+    await runTraced(config, basketComponents, [config.tests.integration!], quiet);
+    // Adding goes controller, session restore, repository; reading the basket back still goes through the service.
+    expect(callTree(criterion(spansIn(root), "#2/AC1")).slice(0, 5)).toEqual([
+      "basketController.handle",
+      "  authMiddleware.authenticate",
+      "  sessionRestore.addItem",
+      "    basketRepository.loadBasket",
+      "    basketRepository.saveBasket",
+    ]);
+  });
+
+  it("traces untagged tests without a criterion", { timeout: 60_000 }, async () => {
+    const root = copyBasket();
+    await runTraced(loadConfig(root), basketComponents, ["npx vitest run test/unit"], quiet);
+    const spans = spansIn(root);
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) {
+      expect(attribute(span, "bearing.test")).toBe("accepts whole quantities from 1 to 99");
+      expect(attribute(span, "bearing.criterion")).toBeUndefined();
+    }
+  });
+
+  it("clears traces from the last run first", { timeout: 60_000 }, async () => {
+    const root = copyBasket();
+    mkdirSync(join(root, tracesDir), { recursive: true });
+    writeFileSync(join(root, tracesDir, "spans-1-0.jsonl"), "stale\n");
+    const result = await runTraced(loadConfig(root), basketComponents, ["node", "-e", ""], quiet);
+    expect(result.spans).toBe(0);
+    expect(readdirSync(join(root, tracesDir))).toEqual([]);
+  });
+
+  it("traces ES modules and CommonJS under plain Node", { timeout: 60_000 }, async () => {
+    const root = node({
+      "src/pricing/index.mjs": [
+        'import { double } from "../maths/index.cjs";',
+        "export function quadruple(n) { return double(double(n)); }",
+        "export default async (n) => n / 2;",
+      ].join("\n"),
+      "src/maths/index.cjs": "exports.double = (n) => n * 2;\n",
+      "main.mjs": 'import half, { quadruple } from "./src/pricing/index.mjs";\nquadruple(3);\nawait half(4);\n',
+      "main.cjs": 'const { double } = require("./src/maths/index.cjs");\ndouble(1);\n',
+    });
+    const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
+    const components = [
+      { id: "pricing", path: "src/pricing" },
+      { id: "maths", path: "src/maths" },
+    ];
+    await runTraced(config, components, ["node", "main.mjs"], quiet);
+    expect(callTree(spansIn(root))).toEqual([
+      "pricing.quadruple",
+      "  maths.double",
+      "  maths.double",
+      "pricing.default",
+    ]);
+    await runTraced(config, components, ["node", "main.cjs"], quiet);
+    expect(callTree(spansIn(root))).toEqual(["maths.double"]);
+  });
+
+  it("exits with the test command's exit code", { timeout: 60_000 }, async () => {
+    const root = node({});
+    const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
+    const result = await runTraced(config, [], ["node", "-e", "process.exit(3)"], quiet);
+    expect(result.exitCode).toBe(3);
+  });
+});
+
+// Writes a plain Node repo to a temp directory and returns its root.
+function node(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), "bearing-trace-"));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return root;
+}

@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { ConfigError, loadConfig } from "./config.js";
 import { loadModel } from "./diff.js";
 import { dynamicViewKey, type Model } from "./model.js";
+import { normalizePath, within } from "./paths.js";
 import { leafStories, loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
 
@@ -88,15 +89,6 @@ function checkPaths(model: Model): Problem[] {
     }
   }
   return problems;
-}
-
-export function normalizePath(path: string): string {
-  const trimmed = path.trim().replaceAll("\\", "/");
-  return trimmed === "" ? "" : posix.normalize(trimmed).replace(/(.)\/$/, "$1");
-}
-
-export function within(path: string, folder: string): boolean {
-  return folder === "." || path === folder || path.startsWith(`${folder}/`);
 }
 
 // Every open story has exactly one dynamic view, keyed "req-<n>", and every dynamic view belongs to a story.
