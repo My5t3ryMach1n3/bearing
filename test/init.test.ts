@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,7 +26,6 @@ const scaffolded = [
   ".github/workflows/bearing-conformance.yml",
   ".gitignore",
   "AGENTS.md",
-  ".github/CODEOWNERS",
 ];
 
 describe("init", () => {
@@ -37,9 +36,7 @@ describe("init", () => {
     expect(repo).toBe("acme/shop");
     expect(loadConfig(root)).toMatchObject({ model: "architecture/workspace.dsl", tests: { tag: "#<issue>/AC<n>" } });
     expect(read(root, ".gitignore")).toBe(".bearing/traces/\n");
-    expect(read(root, ".github/CODEOWNERS")).toContain(
-      "/architecture/ @acme\n/.bearing/ @acme\n/.bearing/claims/\n/.github/workflows/ @acme\n",
-    );
+    expect(existsSync(join(root, ".github", "CODEOWNERS"))).toBe(false);
     expect(read(root, "architecture/workspace.dsl")).toMatch(/^workspace "bearing-init-\w+"/);
   });
 
@@ -85,7 +82,7 @@ describe("init", () => {
     writeFileSync(join(root, ".gitignore"), "node_modules/\n");
     mkdirSync(join(root, ".github"));
     writeFileSync(join(root, ".github", "CODEOWNERS"), "* @acme/everyone\n/architecture/ @acme/architects\n");
-    init(root);
+    init(root, { owners: ["@acme"] });
     expect(read(root, "AGENTS.md")).toMatch(new RegExp(`^${agents}\n\n## Bearing\n`));
     expect(read(root, ".gitignore")).toBe("node_modules/\n.bearing/traces/\n");
     const codeowners = read(root, ".github/CODEOWNERS");
@@ -118,7 +115,7 @@ describe("init", () => {
       "version: 1\nmodel: design/model.dsl\nlanguage: typescript\nrequirements:\n  label: story\n" +
         'tests:\n  tag: "REQ-<issue>.<n>"\nagent:\n  selfHealAttempts: 5\n',
     );
-    init(root);
+    init(root, { owners: ["@acme"] });
     expect(read(root, "design/model.dsl")).toContain("workspace");
     expect(read(root, "design/adrs/.gitkeep")).toBe("");
     expect(parse(read(root, ".github/ISSUE_TEMPLATE/requirement.yml"))).toMatchObject({ labels: ["story"] });
@@ -135,22 +132,46 @@ describe("init", () => {
     expect(() => init(root)).toThrow(ConfigError);
   });
 
-  it("takes CODEOWNERS owners from --owner, or skips CODEOWNERS without a GitHub remote", () => {
-    const withOwners = emptyRepo("");
-    init(withOwners, { owners: ["octocat", "@acme/architects"] });
-    expect(read(withOwners, ".github/CODEOWNERS")).toContain("/.bearing/ @octocat @acme/architects\n");
-
-    const without = emptyRepo("");
-    const { actions } = init(without);
-    expect(actions.at(-1)).toMatchObject({ path: ".github/CODEOWNERS", outcome: "skipped" });
+  it("writes CODEOWNERS only when given owners", () => {
+    const root = emptyRepo();
+    const { actions } = init(root, { owners: ["octocat", "@acme/architects"] });
+    expect(actions.at(-1)).toMatchObject({ path: ".github/CODEOWNERS", outcome: "created" });
+    expect(read(root, ".github/CODEOWNERS")).toContain(
+      "/architecture/ @octocat @acme/architects\n/.bearing/ @octocat @acme/architects\n/.bearing/claims/\n" +
+        "/.github/workflows/ @octocat @acme/architects\n",
+    );
+    expect(init(root, { owners: ["@octocat"] }).actions.at(-1)).toMatchObject({ outcome: "kept" });
   });
 
-  it("prints the repo settings to turn on", () => {
+  it("asks only for a pull request and the checks when target changes aren't gated", () => {
     const root = emptyRepo();
-    const output = formatResult(root, init(root));
+    const result = init(root);
+    expect(result.gated).toBe(false);
+    const output = formatResult(root, result);
     expect(output).toContain("https://github.com/acme/shop/settings/branches");
-    expect(output).toContain("require a pull request, with review from Code Owners");
+    expect(output).toContain("Branch protection on main: require a pull request.\n");
     expect(output).toContain("Required status checks: bearing/target and bearing/conformance");
+    expect(output).toContain("Optional, for teams that want a second reviewer");
     expect(output).toContain("gh label create requirement");
+  });
+
+  it("asks for code-owner review when CODEOWNERS gates target changes, including on a re-run", () => {
+    const root = emptyRepo();
+    expect(formatResult(root, init(root, { owners: ["@acme/architects"] }))).toContain(
+      "require a pull request, with review from Code Owners.",
+    );
+    const output = formatResult(root, init(root));
+    expect(output).toContain("with review from Code Owners.");
+    expect(output).not.toContain("Optional, for teams");
+  });
+
+  it("doesn't count CODEOWNERS lines that leave Bearing's paths unowned", () => {
+    const root = emptyRepo();
+    mkdirSync(join(root, ".github"));
+    writeFileSync(
+      join(root, ".github", "CODEOWNERS"),
+      "/architecture/ @acme\n/architecture/\n/.bearing/claims/ @acme\n",
+    );
+    expect(init(root).gated).toBe(false);
   });
 });

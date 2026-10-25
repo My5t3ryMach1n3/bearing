@@ -8,7 +8,7 @@ import { ConfigError, configPath, parseConfig, type Config } from "./config.js";
 const templates = new URL("../templates/init/", import.meta.url);
 
 export interface InitOptions {
-  // CODEOWNERS owners, e.g. "@octocat" or "@org/team". Defaults to the owner of the GitHub `origin` remote.
+  // CODEOWNERS owners, e.g. "@octocat" or "@org/team". Without them, init writes no CODEOWNERS entries.
   owners?: string[];
 }
 
@@ -24,10 +24,13 @@ export interface InitResult {
   repo?: string;
   // The issue label the requirement form applies.
   label: string;
+  // Whether CODEOWNERS gives Bearing's paths owners, so target changes can require their review.
+  gated: boolean;
 }
 
 // Scaffolds Bearing into the repo at `root`. Never overwrites a file that exists: whole files are only
 // written when missing, and AGENTS.md, .gitignore and CODEOWNERS are only appended to, when Bearing's part is missing.
+// CODEOWNERS is opt-in: entries are only written for the owners given.
 export function init(dir: string, options: InitOptions = {}): InitResult {
   const root = resolve(dir);
   const actions: InitAction[] = [];
@@ -63,12 +66,11 @@ export function init(dir: string, options: InitOptions = {}): InitResult {
 
   actions.push(gitignore(root));
   actions.push(agentsSection(root, config, tagExample));
-  const owners = (options.owners ?? (repo ? [`@${repo.split("/")[0]}`] : [])).map((owner) =>
-    owner.startsWith("@") || owner.includes("@") ? owner : `@${owner}`,
-  );
-  actions.push(codeowners(root, posix.dirname(model), owners));
+  const owners = (options.owners ?? []).map((owner) => (owner.includes("@") ? owner : `@${owner}`));
+  const entries = codeownersEntries(posix.dirname(model), owners);
+  if (owners.length > 0) actions.push(codeowners(root, entries));
 
-  return { actions, repo, label: config.requirements.label };
+  return { actions, repo, label: config.requirements.label, gated: gated(root, entries) };
 }
 
 function template(path: string): string {
@@ -162,28 +164,56 @@ function agentsSection(root: string, config: Config, tagExample: string): InitAc
 // GitHub reads CODEOWNERS from the first of these that exists.
 const codeownersPaths = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"];
 
-function codeowners(root: string, modelDir: string, owners: string[]): InitAction {
-  const path = codeownersPaths.find((candidate) => existsSync(join(root, candidate))) ?? codeownersPaths[0]!;
-  if (owners.length === 0) {
-    return { path, outcome: "skipped", detail: "no GitHub `origin` remote to take an owner from; pass --owner" };
-  }
-  const owned = owners.join(" ");
-  // The last matching line wins, so claims, which every governed PR writes, are left without an owner.
-  const entries: Array<[string, string]> = [
-    [`/${modelDir}/`, owned],
-    ["/.bearing/", owned],
-    ["/.bearing/claims/", ""],
-    ["/.github/workflows/", owned],
+function codeownersPath(root: string): string {
+  return codeownersPaths.find((candidate) => existsSync(join(root, candidate))) ?? codeownersPaths[0]!;
+}
+
+// Claims are left without an owner: every governed PR writes one. The last matching CODEOWNERS line wins.
+const claimsPattern = "/.bearing/claims/";
+
+// Each CODEOWNERS pattern Bearing writes, with its owners.
+function codeownersEntries(modelDir: string, owners: string[]): Array<[string, string[]]> {
+  return [
+    [`/${modelDir}/`, owners],
+    ["/.bearing/", owners],
+    [claimsPattern, []],
+    ["/.github/workflows/", owners],
   ];
-  const file = join(root, path);
-  const patterns = new Set(
-    (existsSync(file) ? readFileSync(file, "utf8") : "").split("\n").map((line) => line.trim().split(/\s+/)[0]),
-  );
+}
+
+// The CODEOWNERS file's lines as [pattern, owners], skipping comments and blank lines.
+function readCodeowners(root: string): Array<[string, string[]]> {
+  const file = join(root, codeownersPath(root));
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .map((line) => line.replace(/#.*/, "").trim())
+    .filter((line) => line !== "")
+    .map((line) => {
+      const [pattern, ...owners] = line.split(/\s+/);
+      return [pattern!, owners];
+    });
+}
+
+function codeowners(root: string, entries: Array<[string, string[]]>): InitAction {
+  const path = codeownersPath(root);
+  const patterns = new Set(readCodeowners(root).map(([pattern]) => pattern));
   const missing = entries.filter(([pattern]) => !patterns.has(pattern));
   if (missing.length === 0) return { path, outcome: "kept" };
-  const lines = missing.map(([pattern, who]) => (who ? `${pattern} ${who}` : pattern));
+  const lines = missing.map(([pattern, owners]) => [pattern, ...owners].join(" "));
   const text = `# Bearing: changes to the target, its config or the workflows need code-owner approval.\n${lines.join("\n")}\n`;
-  return append(root, path, text, `${missing.length} entries for ${owned}`);
+  return append(root, path, text, `${missing.length} entries for ${entries[0]![1].join(" ")}`);
+}
+
+// Whether CODEOWNERS, as it stands, gives any of Bearing's gated paths an owner. Read from the file, so a re-run
+// without --owner still sees entries written earlier or by hand.
+function gated(root: string, entries: Array<[string, string[]]>): boolean {
+  const lines = readCodeowners(root);
+  return entries.some(([pattern]) => {
+    if (pattern === claimsPattern) return false;
+    const line = lines.findLast(([candidate]) => candidate === pattern);
+    return line !== undefined && line[1].length > 0;
+  });
 }
 
 // "owner/repo" from a github.com `origin` remote, if there is one.
@@ -206,9 +236,17 @@ export function formatResult(root: string, result: InitResult): string {
   lines.push(
     "",
     `Once this is merged to main, turn on these repo settings${settings}:`,
-    "  - [ ] Branch protection on main: require a pull request, with review from Code Owners.",
+    result.gated
+      ? "  - [ ] Branch protection on main: require a pull request, with review from Code Owners."
+      : "  - [ ] Branch protection on main: require a pull request.",
     "  - [ ] Required status checks: bearing/target and bearing/conformance. GitHub only lists them once the",
     "        workflows have run on a pull request.",
+    ...(result.gated
+      ? []
+      : [
+          "  - [ ] Optional, for teams that want a second reviewer on target changes: run `bearing init --owner`",
+          "        with a user or @org/team, then require review from Code Owners.",
+        ]),
     "  - [ ] Optional, on organisation plans with rulesets: make the conformance workflow a required workflow",
     "        sourced from main.",
     "",
@@ -220,11 +258,13 @@ export function formatResult(root: string, result: InitResult): string {
 
 export function initCommand(): Command {
   return new Command("init")
-    .description("scaffold Bearing into a repo: model, config, issue form, workflows, CODEOWNERS and AGENTS.md")
+    .description(
+      "scaffold Bearing into a repo: model, config, issue form, workflows and AGENTS.md, plus CODEOWNERS if given owners",
+    )
     .argument("[dir]", "the repo root", ".")
     .option(
       "--owner <owners...>",
-      "CODEOWNERS owners for the model, config and workflows (default: the origin remote's owner)",
+      "opt in to code-owner review of target changes: CODEOWNERS owners (users or @org/team) for the model, config and workflows",
     )
     .action(function (this: Command, dir: string, options: { owner?: string[] }) {
       const root = resolve(dir);
