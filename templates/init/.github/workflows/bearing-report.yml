@@ -1,0 +1,28 @@
+# Written by `bearing init`. Posts what bearing-conformance.yml found on the PR: Bearing's comment and the
+# bearing/advisory status. It runs from the default branch once that workflow completes, with a token that can write,
+# which a PR from a fork never gets, and never checks out or runs the PR's code. What the conformance job uploaded
+# came from the PR's code, so it's posted only on the PR whose head that job checked.
+name: Bearing report
+
+on:
+  workflow_run:
+    # The conformance workflow's name.
+    workflows: [Bearing conformance]
+    types: [completed]
+
+permissions:
+  actions: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  report:
+    # A cancelled run was replaced by a newer push's, which reports instead.
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: My5t3ryMach1n3/bearing/actions/report@v{{version}}

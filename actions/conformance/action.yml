@@ -1,0 +1,90 @@
+# The conformance job's steps, for a `pull_request` workflow that has checked out the PR's head with its history and
+# installed the project's dependencies. It runs the PR's code, so it needs no secrets and only a read-only token. It
+# re-derives everything: no as-built model, trace or test result the branch commits is used. The job fails if the
+# target is invalid or a blocking check fails, and that result is `bearing/conformance`. The comment and check results
+# are uploaded for the `workflow_run` job in actions/report to post, since this job's token can't write to a fork's PR.
+# See the GitHub Action section of docs/product-spec.md.
+name: Bearing conformance
+description: Validate the target, run the traced tests, derive the as-built model, check it and write the PR comment.
+
+inputs:
+  base:
+    description: The branch the PR merges into, whose current target it's checked against.
+    default: ${{ github.base_ref }}
+  token:
+    description: A read-only token, for reading the requirement issues.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    # The Bearing this action was tagged with, from its own package.json.
+    - name: Install Bearing
+      shell: bash
+      run: |
+        version="$(node -p 'require(process.argv[1]).version' "$GITHUB_ACTION_PATH/../../package.json")"
+        npm install --prefix "$RUNNER_TEMP/bearing-cli" --no-save --no-audit --no-fund "bearing-cli@$version"
+        echo "$RUNNER_TEMP/bearing-cli/node_modules/.bin" >> "$GITHUB_PATH"
+        mkdir -p "$RUNNER_TEMP/bearing/report"
+        # Traces the branch commits are never read: `bearing test` writes its own.
+        rm -rf .bearing/traces
+    - id: validate
+      name: bearing validate
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: bearing validate
+    # A failing test isn't the job's failure on its own: Criteria coverage reports it against its criterion.
+    - name: bearing test
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: bearing test
+    - name: bearing derive
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: bearing derive > "$RUNNER_TEMP/bearing/report/as-built.json"
+    - id: check
+      name: bearing check
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BASE: ${{ inputs.base }}
+      run: |
+        bearing check --base "origin/$BASE" --json > "$RUNNER_TEMP/bearing/report/check.json"
+    - name: bearing report
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BASE: ${{ inputs.base }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        dir="$RUNNER_TEMP/bearing/report"
+        echo "$PR" > "$dir/pr"
+        bearing report --base "origin/$BASE" --check "$dir/check.json" --site "$RUNNER_TEMP/bearing/site" > "$dir/comment.md"
+        cat "$dir/comment.md" >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: bearing-report
+        path: ${{ runner.temp }}/bearing/report/
+        if-no-files-found: warn
+    - uses: actions/upload-artifact@v4
+      with:
+        name: bearing-site
+        path: ${{ runner.temp }}/bearing/site/
+        if-no-files-found: ignore
+    - name: Result
+      shell: bash
+      env:
+        VALIDATE: ${{ steps.validate.outcome }}
+        CHECK: ${{ steps.check.outcome }}
+      run: |
+        if [ "$VALIDATE" != success ]; then echo "::error::The target isn't valid: see bearing validate above."; fi
+        if [ "$CHECK" != success ]; then echo "::error::A blocking check failed: see bearing check above."; fi
+        [ "$VALIDATE" = success ] && [ "$CHECK" = success ]

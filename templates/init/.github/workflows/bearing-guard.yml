@@ -1,6 +1,6 @@
-# Written by `bearing init`. Runs from the base branch and never checks out or runs the PR's code: `bearing guard`
-# reads the PR through the API only. So a PR can't change or switch off the job that flags it; a PR that edits this
-# file is itself flagged, and the edit only takes effect once it's merged.
+# Written by `bearing init`. Runs from the base branch and never checks out or runs the PR's code: the guard action
+# runs `bearing guard`, which reads the PR through the API only. So a PR can't change or switch off the job that flags
+# it; a PR that edits this file is itself flagged, and the edit only takes effect once it's merged.
 name: Bearing guard
 
 on:
@@ -28,6 +28,4 @@ jobs:
           node-version: 22
       # Labels a target change architecture-change, puts the changed files' diffs at the top of Bearing's comment and
       # sets bearing/target. The status is always a success: the guard reports, and merging approves the change.
-      - run: npx --yes bearing-cli@{{version}} guard
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - uses: My5t3ryMach1n3/bearing/actions/guard@v{{version}}
