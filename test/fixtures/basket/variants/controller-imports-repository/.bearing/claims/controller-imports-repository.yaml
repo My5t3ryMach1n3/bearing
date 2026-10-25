@@ -1,0 +1,9 @@
+branch: controller-imports-repository
+issues: ["#2"]
+model:
+  added: []
+  removed: []
+files:
+  - path: src/basket-api/basket-controller/index.ts
+    component: basketController
+note: Implements #2 within existing components.

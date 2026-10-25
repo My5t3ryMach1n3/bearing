@@ -1,0 +1,74 @@
+[
+  {
+    "number": 1,
+    "title": "View the basket",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want to see what's in my basket, so that I know what I'm about to buy.\n\n**Acceptance criteria**\n1. Given a signed-in shopper with items in their basket, when they view it, then each item is listed with its name, current catalogue price and quantity, and the basket total.\n2. Given a signed-in shopper with an empty basket, when they view it, then the basket is empty and the total is zero.\n"
+  },
+  {
+    "number": 2,
+    "title": "Add an item to the basket",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want to add an item to my basket, so that I can check out later.\n\n**Acceptance criteria**\n1. Given a signed-in shopper, when they add an item, then the basket persists across sessions.\n2. Given a product that isn't in the catalogue, when a shopper adds it, then the request is rejected and the basket is unchanged.\n"
+  },
+  {
+    "number": 3,
+    "title": "Remove an item from the basket",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want to remove an item from my basket, so that I don't buy something I've changed my mind about.\n\n**Acceptance criteria**\n1. Given an item in the basket, when the shopper removes it, then it is no longer in the basket.\n2. Given an item that isn't in the basket, when the shopper removes it, then the request is rejected as not found.\n"
+  },
+  {
+    "number": 4,
+    "title": "Restore the basket after the session expires",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want my basket restored after my session expires, so that I don't lose it.\n\n**Acceptance criteria**\n1. Given an expired session, when they return and sign in, then their saved basket is restored.\n2. Given an expired session, when the shopper changes their basket before signing in again, then the request is rejected as unauthorised and the saved basket is unchanged.\n"
+  },
+  {
+    "number": 6,
+    "title": "Change an item's quantity",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want to change how many of an item I'm buying, so that I don't have to remove and re-add it.\n\n**Acceptance criteria**\n1. Given an item in the basket, when the shopper sets its quantity to between 1 and 99, then the basket shows the new quantity.\n2. Given an item in the basket, when the shopper sets a quantity outside 1 to 99, then the request is rejected and the quantity is unchanged.\n"
+  },
+  {
+    "number": 7,
+    "title": "Empty the basket",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a shopper, I want to empty my basket in one go, so that I can start again.\n\n**Acceptance criteria**\n1. Given a basket with items, when the shopper empties it, then the basket is empty.\n"
+  }
+]

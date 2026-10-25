@@ -1,0 +1,19 @@
+version: 1
+model: architecture/workspace.dsl
+structurizr:
+  runner: docker
+language: typescript
+tsconfig: tsconfig.json
+requirements:
+  source: github-issues
+  label: requirement
+tests:
+  integration: npm run test:integration
+  tag: "#<issue>/AC<n>"
+iac:
+  terraform: infra/
+agent:
+  selfHealAttempts: 3
+checks:
+  surplus: advisory
+  responsibilities: advisory
