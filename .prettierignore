@@ -3,3 +3,5 @@ coverage
 package-lock.json
 # Prose is wrapped by hand, so Prettier stays out of Markdown.
 *.md
+# Not YAML until `bearing init` fills its placeholders.
+templates/init/.bearing/config.yaml

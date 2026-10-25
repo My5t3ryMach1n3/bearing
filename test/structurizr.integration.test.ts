@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config.js";
 import { diffModels, loadModel } from "../src/diff.js";
+import { init } from "../src/init.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { loadWorkspace } from "../src/structurizr.js";
 import { copyBasket } from "./basket.js";
@@ -28,6 +29,17 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
     const workspace = await loadWorkspace(config);
     console.log(`One Structurizr conversion with ${runner}: ${Math.round(performance.now() - started)} ms`);
     expect(workspace).toMatchObject({ name: "Basket", model: { people: [{ name: "Shopper" }] } });
+  });
+
+  it("converts the empty workspace `bearing init` writes", { timeout: 600_000 }, async () => {
+    const root = mkdtempSync(join(tmpdir(), "bearing-init-"));
+    init(root, { owners: ["@acme"] });
+    const text = readFileSync(join(root, ".bearing", "config.yaml"), "utf8").replace(
+      "runner: docker",
+      `runner: ${runner}`,
+    );
+    const workspace = await loadWorkspace(parseConfig(text, root));
+    expect(workspace).toMatchObject({ name: expect.stringMatching(/^bearing-init-/), model: {} });
   });
 
   it("reports the file and line of a DSL error", { timeout: 600_000 }, async () => {

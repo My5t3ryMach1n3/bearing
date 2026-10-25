@@ -1,0 +1,26 @@
+name: Requirement
+description: One user story with numbered acceptance criteria. The issue number is its requirement ID.
+labels: ["{{label}}"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Keep it to one story; split anything bigger into an epic with child issues. Every acceptance criterion needs
+        an integration test tagged with this issue and the criterion's number, e.g. `{{tagExample}}`.
+  - type: textarea
+    id: story
+    attributes:
+      label: Story
+      placeholder: As a shopper, I want to save my basket, so that I can check out later.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: Numbered, each in Given/When/Then form.
+      placeholder: |
+        1. Given a signed-in shopper, when they add an item, then the basket persists across sessions.
+        2. Given an expired session, when they return and sign in, then their saved basket is restored.
+    validations:
+      required: true

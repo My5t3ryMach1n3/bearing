@@ -1,0 +1,17 @@
+# Written by `bearing init`. Runs the PR's code, so it has no secrets and a read-only token.
+name: Bearing conformance
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    # The job's name is the check that branch protection requires.
+    name: bearing/conformance
+    runs-on: ubuntu-latest
+    steps:
+      # Becomes validate, test, derive, check and report as those commands land.
+      - run: echo "::notice::The conformance checks are not in this version of Bearing yet."

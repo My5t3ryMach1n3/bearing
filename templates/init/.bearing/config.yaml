@@ -1,0 +1,19 @@
+# Bearing config. See https://github.com/My5t3ryMach1n3/bearing/blob/main/docs/product-spec.md#config
+version: 1
+model: architecture/workspace.dsl
+structurizr:
+  runner: docker            # or: java
+language: typescript
+tsconfig: tsconfig.json
+requirements:
+  source: github-issues
+  label: requirement
+tests:
+  {{integration}}
+  tag: "#<issue>/AC<n>"
+{{iac}}
+agent:
+  selfHealAttempts: 3
+checks:
+  surplus: advisory
+  responsibilities: advisory

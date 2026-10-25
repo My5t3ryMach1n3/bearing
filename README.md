@@ -6,7 +6,7 @@ The as-built state comes from deterministic analysis of code, infrastructure and
 
 ## Status
 
-Early. The CLI is scaffolded but has no subcommands yet; the build is planned as GitHub issues.
+Early. `bearing init` and `bearing diff` work; the rest of the build is planned as GitHub issues.
 
 ## Install
 
@@ -18,6 +18,8 @@ bearing --help
 ```
 
 The npm package is `bearing-cli`; the command it installs is `bearing`.
+
+To adopt Bearing in a repo, run `bearing init` at its root. It writes the model, config, requirement issue form, workflows, CODEOWNERS entries and the AGENTS.md section, then prints the branch-protection settings to turn on. Re-running it only adds what's missing.
 
 ## Docs
 

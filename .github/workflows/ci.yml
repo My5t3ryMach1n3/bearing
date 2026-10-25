@@ -33,6 +33,8 @@ jobs:
           cd "$RUNNER_TEMP"
           bearing --version
           bearing --help
+          mkdir shop && cd shop && git init -q
+          bearing init --owner @acme
 
   # Converts the fixture DSLs with the real Structurizr, once per runner, and logs how long one conversion takes.
   structurizr:
