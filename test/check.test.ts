@@ -30,6 +30,11 @@ function record(root: string, ...tests: TestRecord[]) {
 // A call into a component, "<component>.<function>", with the calls it makes.
 type Call = [string, ...Call[]];
 
+// The basket's components each keep their functions in their folder's index.ts: basketService is
+// src/basket-api/basket-service/index.ts.
+const fileOf = (component: string) =>
+  `src/basket-api/${component.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}/index.ts`;
+
 // Writes the spans a test's calls would leave, as `bearing test` does. The real traces are checked in trace.test.ts.
 function trace(root: string, test: TestRecord, ...calls: Call[]) {
   const spans: object[] = [];
@@ -45,6 +50,7 @@ function trace(root: string, test: TestRecord, ...calls: Call[]) {
       startTimeUnixNano: String(spans.length),
       attributes: [
         { key: "bearing.component", value: { stringValue: component } },
+        { key: "code.file.path", value: { stringValue: fileOf(component!) } },
         { key: "bearing.test", value: { stringValue: test.name } },
         { key: "bearing.criterion", value: { stringValue: test.criterion } },
       ],
@@ -92,23 +98,52 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("runChecks on the basket fixture", () => {
   // Each seeded branch fails the checks its README names, and only those. Surplus is advisory, so untraced-helper
-  // passes them all.
+  // passes them all. These traces only add an item, so Surplus flags every other function; trace.test.ts checks it
+  // against real ones.
   it.each([
     [
       "controller-imports-repository",
-      { claim: "failed", boundaries: "failed", deployment: "passed", coverage: "passed", paths: "passed" },
+      {
+        claim: "failed",
+        boundaries: "failed",
+        deployment: "passed",
+        coverage: "passed",
+        paths: "passed",
+        surplus: "flagged",
+      },
     ],
     [
       "redis-node",
-      { claim: "skipped", boundaries: "passed", deployment: "failed", coverage: "skipped", paths: "skipped" },
+      {
+        claim: "skipped",
+        boundaries: "passed",
+        deployment: "failed",
+        coverage: "skipped",
+        paths: "skipped",
+        surplus: "flagged",
+      },
     ],
     [
       "untraced-helper",
-      { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed", paths: "passed" },
+      {
+        claim: "passed",
+        boundaries: "passed",
+        deployment: "passed",
+        coverage: "passed",
+        paths: "passed",
+        surplus: "flagged",
+      },
     ],
     [
       "wrong-place",
-      { claim: "passed", boundaries: "passed", deployment: "passed", coverage: "passed", paths: "failed" },
+      {
+        claim: "passed",
+        boundaries: "passed",
+        deployment: "passed",
+        coverage: "passed",
+        paths: "failed",
+        surplus: "flagged",
+      },
     ],
   ] as const)("%s", async (variant, expected) => {
     const report = await runChecks(loadConfig(variantRepo(variant)));
@@ -124,6 +159,7 @@ describe("runChecks on the basket fixture", () => {
       deployment: "passed",
       coverage: "skipped",
       paths: "skipped",
+      surplus: "passed",
     });
     expect(report.passed).toBe(true);
   });
@@ -151,7 +187,7 @@ describe("runChecks on the basket fixture", () => {
         "  basketController->basketRepository: the code makes it, but the target didn't have it and the claim doesn't add it\n",
     );
     expect(text).toContain("Boundaries: failed, the code makes relationships the target doesn't declare\n");
-    expect(text).toMatch(/2 blocking checks failed: Claim, Boundaries\.\n$/);
+    expect(text).toMatch(/2 blocking checks failed: Claim, Boundaries\. Advisory, not blocking: Surplus flagged\.\n$/);
   });
 
   it("lists the Redis node for redis-node", async () => {
@@ -191,7 +227,7 @@ describe("runChecks on the basket fixture", () => {
         "    basketController -> basketService   missing\n" +
         "    basketService -> basketRepository   missing\n",
     );
-    expect(text).toMatch(/1 blocking check failed: Trace paths\.\n$/);
+    expect(text).toMatch(/1 blocking check failed: Trace paths\. Advisory, not blocking: Surplus flagged\.\n$/);
   });
 
   it("checks the issues given instead of the claim's", async () => {
@@ -213,6 +249,33 @@ describe("runChecks on the basket fixture", () => {
     delete config.iac.terraform;
     const report = await runChecks(config);
     expect(report.checks[2]).toMatchObject({ status: "skipped", reason: expect.stringContaining("iac.terraform") });
+  });
+
+  it("flags a file outside every component, without blocking", async () => {
+    const root = basketRepo();
+    writeFileSync(join(root, "src", "server.ts"), "export const port = 3000;\n");
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[5]).toMatchObject({
+      status: "flagged",
+      outside: ["src/server.ts"],
+      untraced: [],
+      traced: false,
+    });
+    expect(report.passed).toBe(true);
+    expect(formatReport(report)).toContain(
+      "Surplus: flagged (advisory, doesn't block merge), code that may not be needed\n" +
+        "  Outside every component's path:\n" +
+        "    src/server.ts\n" +
+        "  Untraced functions not looked for: no tagged test's trace is recorded; run `bearing test`.\n",
+    );
+  });
+
+  it("skips Surplus when it's turned off", async () => {
+    const config = loadConfig(variantRepo("untraced-helper"));
+    config.checks.surplus = "off";
+    const report = await runChecks(config);
+    expect(report.checks[5]).toMatchObject({ status: "skipped", reason: expect.stringContaining("checks.surplus") });
+    expect(formatReport(report)).toMatch(/All blocking checks passed\.\n$/);
   });
 });
 
@@ -348,14 +411,23 @@ describe("bearing check", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Claim: passed, .bearing/claims/untraced-helper.yaml matches the code\n");
     expect(result.stdout).toContain("Criteria coverage: 2 of 2 criteria covered\n");
-    expect(result.stdout).toMatch(/All blocking checks passed\.\n$/);
+    expect(result.stdout).toContain(
+      "Surplus: flagged (advisory, doesn't block merge), code that may not be needed\n" +
+        "  Exported but never called by a test tagged with a criterion:\n",
+    );
+    expect(result.stdout).toContain(
+      "    src/basket-api/basket-service/retryWithBackoff.ts (basketService): retryWithBackoff()\n",
+    );
+    expect(result.stdout).toMatch(/All blocking checks passed\. Advisory, not blocking: Surplus flagged\.\n$/);
   });
 
   it("exits non-zero when a check fails", async () => {
     const result = await run("2", "#7");
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain("#7/AC1  missing");
-    expect(result.stdout).toMatch(/1 blocking check failed: Criteria coverage\.\n$/);
+    expect(result.stdout).toMatch(
+      /1 blocking check failed: Criteria coverage\. Advisory, not blocking: Surplus flagged\.\n$/,
+    );
   });
 
   it("prints JSON with --json", async () => {
@@ -368,6 +440,7 @@ describe("bearing check", () => {
       ["deployment", "passed", true],
       ["coverage", "passed", true],
       ["paths", "passed", true],
+      ["surplus", "flagged", false],
     ]);
   });
 

@@ -1,0 +1,128 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import ts from "typescript";
+import type { ImportGraph } from "./derive.js";
+import type { SpanRecord } from "./test.js";
+
+// Surplus: code outside every component's path, and exported functions no criterion's trace reaches. Advisory only,
+// since a helper nothing traces may still be needed. See the Checks section of docs/product-spec.md.
+//
+// It reports files and exported functions, not lines. A function counts as reached when a test tagged with any
+// criterion, of any issue, called it, so the whole repo is checked rather than the branch's change: code an earlier
+// requirement stopped needing shows up too. Only exported functions are traced, so they are all it can judge.
+
+export interface SurplusResult {
+  // Source files under no component path.
+  outside: string[];
+  // Files in components whose exported functions no tagged test called, with those functions.
+  untraced: UntracedFile[];
+  // Whether any tagged test's trace was recorded. Without one, nothing is reached, so untraced functions aren't
+  // looked for.
+  traced: boolean;
+}
+
+export interface UntracedFile {
+  file: string;
+  component: string;
+  // Their exported names; "default" for a default export.
+  functions: string[];
+}
+
+export function checkSurplus(root: string, graph: ImportGraph, spans: SpanRecord[]): SurplusResult {
+  const reached = new Set<string>();
+  for (const span of spans) {
+    if (span.criterion !== undefined) reached.add(`${span.file}#${span.name}`);
+  }
+  const untraced: UntracedFile[] = [];
+  if (reached.size > 0) {
+    for (const component of graph.components) {
+      for (const file of component.files) {
+        const code = readFileSync(join(root, file), "utf8");
+        const functions = exportedFunctions(code, file).filter((name) => !reached.has(`${file}#${name}`));
+        if (functions.length > 0) untraced.push({ file, component: component.id, functions });
+      }
+    }
+  }
+  return { outside: graph.unmapped, untraced, traced: reached.size > 0 };
+}
+
+// The names a module exports functions under, as the trace hook wraps them: function declarations with a body,
+// variables initialised with a function or arrow function, and default exports of either. Classes, re-exports and
+// other values aren't traced, so they aren't listed. Sorted.
+export function exportedFunctions(code: string, fileName: string): string[] {
+  const source = ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest, true);
+  // Top-level functions by local name.
+  const functions = new Set<string>();
+  const names = new Set<string>();
+  const lists: ts.ExportSpecifier[] = [];
+  const isFunction = (node: ts.Expression | undefined) =>
+    node !== undefined && (ts.isFunctionExpression(node) || ts.isArrowFunction(node));
+
+  for (const statement of source.statements) {
+    const exported = hasModifier(statement, ts.SyntaxKind.ExportKeyword);
+    if (hasModifier(statement, ts.SyntaxKind.DeclareKeyword)) continue;
+    if (ts.isFunctionDeclaration(statement)) {
+      if (statement.body === undefined) continue;
+      const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
+      if (statement.name !== undefined) functions.add(statement.name.text);
+      if (exported) names.add(isDefault ? "default" : statement.name!.text);
+    } else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || !isFunction(declaration.initializer)) continue;
+        functions.add(declaration.name.text);
+        if (exported) names.add(declaration.name.text);
+      }
+    } else if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      const expression = statement.expression;
+      if (isFunction(expression) || (ts.isIdentifier(expression) && functions.has(expression.text))) {
+        names.add("default");
+      }
+    } else if (
+      ts.isExportDeclaration(statement) &&
+      statement.moduleSpecifier === undefined &&
+      !statement.isTypeOnly &&
+      statement.exportClause !== undefined &&
+      ts.isNamedExports(statement.exportClause)
+    ) {
+      lists.push(...statement.exportClause.elements.filter((element) => !element.isTypeOnly));
+    }
+  }
+  // `export { a as b }` may come before `a` is declared.
+  for (const element of lists) {
+    if (functions.has((element.propertyName ?? element.name).text)) names.add(element.name.text);
+  }
+  return [...names].sort();
+}
+
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+  return ts.canHaveModifiers(node) && (ts.getModifiers(node)?.some((modifier) => modifier.kind === kind) ?? false);
+}
+
+export function formatSurplus(result: SurplusResult): string {
+  const flagged = result.outside.length + result.untraced.length;
+  const lines = [
+    flagged > 0
+      ? "Surplus: flagged (advisory, doesn't block merge), code that may not be needed"
+      : result.traced
+        ? "Surplus: passed, every source file is in a component and every exported function is reached by a tagged test"
+        : "Surplus: passed, every source file is in a component",
+  ];
+  if (result.outside.length > 0) {
+    lines.push("  Outside every component's path:", ...result.outside.map((file) => `    ${file}`));
+  }
+  if (result.untraced.length > 0) {
+    lines.push("  Exported but never called by a test tagged with a criterion:");
+    for (const { file, component, functions } of result.untraced) {
+      lines.push(`    ${file} (${component}): ${functions.map((name) => `${name}()`).join(", ")}`);
+    }
+  }
+  if (!result.traced) {
+    lines.push("  Untraced functions not looked for: no tagged test's trace is recorded; run `bearing test`.");
+  }
+  if (flagged > 0) {
+    lines.push(
+      "  Remove the code if no requirement needs it, or tag a test that exercises it with the criterion it serves.",
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}

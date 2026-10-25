@@ -88,6 +88,8 @@ export interface SpanRecord {
   // The function called.
   name: string;
   component: string;
+  // The repo-relative file that declares the function.
+  file: string;
   // Nanoseconds since the epoch, as OTLP writes them.
   start: bigint;
   // The full name of the test that made the call, and its criterion tag.
@@ -113,6 +115,7 @@ export function readSpanRecords(dir: string): SpanRecord[] {
               spanId: span.spanId,
               name: span.name,
               component: value(attributes.component) ?? "",
+              file: value(attributes.file) ?? "",
               start: BigInt(span.startTimeUnixNano),
             };
             if (span.parentSpanId !== undefined) record.parentSpanId = span.parentSpanId;

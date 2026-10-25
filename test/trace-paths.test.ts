@@ -22,7 +22,15 @@ function spans(test: string, ...calls: Call[]): SpanRecord[] {
   const add = ([call, ...children]: Call, parentSpanId?: string) => {
     const [component, name] = call.split(".") as [string, string];
     const spanId = String(records.length).padStart(16, "0");
-    const record: SpanRecord = { traceId: test, spanId, name, component, start: BigInt(records.length), test };
+    const record: SpanRecord = {
+      traceId: test,
+      spanId,
+      name,
+      component,
+      file: `${component}.ts`,
+      start: BigInt(records.length),
+      test,
+    };
     if (parentSpanId !== undefined) record.parentSpanId = parentSpanId;
     records.push(record);
     for (const child of children) add(child, spanId);
