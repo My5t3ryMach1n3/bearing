@@ -25,6 +25,7 @@ import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
 import { loadRequirements, RequirementsError } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
+import { checkSurplus, formatSurplus, type SurplusResult } from "./surplus.js";
 import { readSpanRecords, tracesDir } from "./test.js";
 import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths.js";
 import {
@@ -35,13 +36,14 @@ import {
   type TerraformResource,
 } from "./terraform.js";
 
-// The blocking checks `bearing check` runs: Claim, Boundaries, Deployment, Criteria coverage and Trace paths. Each passes, fails
-// or is skipped when there's nothing for it to check. This is the JSON `bearing check --json` prints for
-// `bearing report`. See the Checks section of docs/product-spec.md.
+// The checks `bearing check` runs. The blocking ones, Claim, Boundaries, Deployment, Criteria coverage and Trace
+// paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus, passes,
+// is flagged or is skipped when turned off, and never fails the run: its result sets `bearing/advisory`. This is the
+// JSON `bearing check --json` prints for `bearing report`. See the Checks section of docs/product-spec.md.
 export interface CheckReport {
   // False if any blocking check failed.
   passed: boolean;
-  checks: [ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck];
+  checks: [ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck, SurplusCheck];
 }
 
 export type CheckStatus = "passed" | "failed" | "skipped";
@@ -50,6 +52,13 @@ interface CheckBase {
   status: CheckStatus;
   blocking: true;
   // Why the check was skipped.
+  reason?: string;
+}
+
+export interface SurplusCheck extends SurplusResult {
+  check: "surplus";
+  status: "passed" | "flagged" | "skipped";
+  blocking: false;
   reason?: string;
 }
 
@@ -299,7 +308,25 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
           };
   }
 
-  const checks: CheckReport["checks"] = [claimCheck, boundaries, deployment, coverage, paths];
+  let surplus: SurplusCheck;
+  if (config.checks.surplus === "off") {
+    const reason = '"checks.surplus" is off in .bearing/config.yaml';
+    surplus = {
+      check: "surplus",
+      status: "skipped",
+      blocking: false,
+      reason,
+      outside: [],
+      untraced: [],
+      traced: false,
+    };
+  } else {
+    const result = checkSurplus(config.root, graph, readSpanRecords(join(config.root, tracesDir)));
+    const flagged = result.outside.length + result.untraced.length > 0;
+    surplus = { check: "surplus", status: flagged ? "flagged" : "passed", blocking: false, ...result };
+  }
+
+  const checks: CheckReport["checks"] = [claimCheck, boundaries, deployment, coverage, paths, surplus];
   return { passed: checks.every((check) => check.status !== "failed"), checks };
 }
 
@@ -309,6 +336,7 @@ const titles = {
   deployment: "Deployment",
   coverage: "Criteria coverage",
   paths: "Trace paths",
+  surplus: "Surplus",
 };
 
 export function formatReport(report: CheckReport): string {
@@ -325,14 +353,18 @@ export function formatReport(report: CheckReport): string {
         return formatCoverage(check.criteria, check.recorded);
       case "paths":
         return formatTracePaths(check.views);
+      case "surplus":
+        return formatSurplus(check);
     }
   });
   const failed = report.checks.filter((check) => check.status === "failed").map((check) => titles[check.check]);
-  const verdict =
+  const flagged = report.checks.filter((check) => check.status === "flagged").map((check) => titles[check.check]);
+  let verdict =
     failed.length === 0
-      ? "All blocking checks passed.\n"
-      : `${failed.length} blocking ${failed.length === 1 ? "check" : "checks"} failed: ${failed.join(", ")}.\n`;
-  return [...sections, verdict].join("\n");
+      ? "All blocking checks passed."
+      : `${failed.length} blocking ${failed.length === 1 ? "check" : "checks"} failed: ${failed.join(", ")}.`;
+  if (flagged.length > 0) verdict += ` Advisory, not blocking: ${flagged.join(", ")} flagged.`;
+  return [...sections, `${verdict}\n`].join("\n");
 }
 
 function formatClaimCheck(check: ClaimCheck): string {
@@ -417,7 +449,7 @@ function toPosix(path: string): string {
 export function checkCommand(): Command {
   return new Command("check")
     .description(
-      "run the blocking checks: the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); exits non-zero if any fails",
+      "run the blocking checks: the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
     )
     .argument("[issues...]", "the issues to check coverage for, e.g. 2 4; defaults to the claims file's")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")

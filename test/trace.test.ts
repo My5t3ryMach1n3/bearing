@@ -7,11 +7,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, parseConfig } from "../src/config.js";
 import { readTestRecords } from "../src/coverage.js";
 import { modelFromWorkspace } from "../src/model.js";
+import { deriveImports } from "../src/derive.js";
 import { componentPaths } from "../src/paths.js";
 import { loadRequirements } from "../src/requirements.js";
 import { readSpanRecords, runTraced, tracesDir } from "../src/test.js";
+import { checkSurplus } from "../src/surplus.js";
 import { checkTracePaths, formatTracePaths } from "../src/trace-paths.js";
-import { basketDir, copyBasket } from "./basket.js";
+import { basketDir, copyBasket, type BasketVariant } from "./basket.js";
 
 // The hook runs in the test command's own processes, so these tests preload a build of it rather than the source.
 // It goes under node_modules so the build finds Bearing's dependencies.
@@ -366,3 +368,31 @@ function node(files: Record<string, string>): string {
   }
   return root;
 }
+
+// The basket's real traces against its code: every exported function on main is reached by a tagged test.
+describe("surplus", () => {
+  async function surplus(variant?: BasketVariant) {
+    const root = copyBasket(variant);
+    const config = loadConfig(root);
+    await runTraced(config, basketComponents, [config.tests.integration!], quiet);
+    return checkSurplus(root, deriveImports(config, basketTarget), readSpanRecords(join(root, tracesDir)));
+  }
+
+  it("flags nothing on main", { timeout: 60_000 }, async () => {
+    expect(await surplus()).toEqual({ outside: [], untraced: [], traced: true });
+  });
+
+  it("flags the helper untraced-helper adds", { timeout: 60_000 }, async () => {
+    expect(await surplus("untraced-helper")).toEqual({
+      outside: [],
+      untraced: [
+        {
+          file: "src/basket-api/basket-service/retryWithBackoff.ts",
+          component: "basketService",
+          functions: ["retryWithBackoff"],
+        },
+      ],
+      traced: true,
+    });
+  });
+});
