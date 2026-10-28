@@ -494,6 +494,7 @@ The target and the tests are written against an issue's criteria as they stood a
 
 The target they compare against depends on the branch. A branch that changes the model's folder is checked against its own, proposed target. Any other branch is checked against main's current target, read from git, so a target change merged after it forked applies to it straight away.
 
+- **Target valid** applies `bearing validate`'s rules to the target the branch is checked against, and fails on each one it breaks. A new requirement with no dynamic view yet fails it, on every branch, until a target change covers it. Structurizr's own validation has already passed, or the target wouldn't load.
 - **Target change** passes a branch that changes the model's folder when main's model folder hasn't changed since the branch forked, and fails it, listing main's changed files, when it has: the first target change to merge wins, and a later one must rebase onto it and rework its change on top. Two proposals can edit different parts of the model without a Git conflict, so this check, not Git, is what makes the later one rework its change. A branch that doesn't change the target skips it.
 - **Claim** reads the branch's claims file on top of the target as it stood where the branch forked from main, and fails on each mismatch with the as-built model:
   - a relationship the code makes that the target didn't have at the fork point and the claim doesn't add;

@@ -361,6 +361,10 @@ function summarise(check: CheckReport["checks"][number]): string {
   if (check.status === "skipped") return check.reason ?? "";
   const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   switch (check.check) {
+    case "valid":
+      return check.status === "passed"
+        ? `\`${check.model}\` follows Bearing's rules`
+        : `${count(check.problems.length, "broken rule")} in \`${check.model}\``;
     case "target":
       return check.status === "passed"
         ? `proposed on ${check.base}'s current target`

@@ -240,7 +240,7 @@ describe("the comment", () => {
     const root = variantRepo("untraced-helper");
     const config = loadConfig(root);
     const check = await runChecks(config);
-    const surplus = check.checks[6];
+    const surplus = check.checks[7];
     surplus.outside = Array.from({ length: 5000 }, (_, index) => `src/generated/file-${index}.ts`);
     const comment = formatComment({ check, ...(await gatherReport(config)) });
     expect(comment.length).toBeLessThan(65_536);
@@ -391,12 +391,29 @@ describe("bearing report", () => {
 
   it("reads the results `bearing check --json` wrote", async () => {
     const check: CheckReport = await runChecks(loadConfig(root));
-    check.checks[2].undeclared = [];
-    check.checks[2].status = "passed";
+    check.checks[3].undeclared = [];
+    check.checks[3].status = "passed";
     const file = join(root, "check.json");
     writeFileSync(file, JSON.stringify(check));
     const { stdout } = await run("--check", file);
     expect(stdout).toContain("## Bearing: ❌ 1 blocking check failed: Claim");
+  });
+
+  it("fails the comment, not only the job, when the target is invalid", async () => {
+    const check: CheckReport = await runChecks(loadConfig(root));
+    check.checks[0] = {
+      check: "valid",
+      status: "failed",
+      blocking: true,
+      model: "architecture/workspace.dsl",
+      problems: [{ rule: "dynamic-view", id: "#5", message: 'open story has no dynamic view; add one keyed "req-5"' }],
+    };
+    const file = join(root, "check.json");
+    writeFileSync(file, JSON.stringify(check));
+    const { stdout } = await run("--check", file);
+    expect(stdout).toContain("## Bearing: ❌ 3 blocking checks failed: Target valid, Claim, Boundaries");
+    expect(stdout).toContain("| Target valid | ❌ failed | 1 broken rule in `architecture/workspace.dsl` |");
+    expect(stdout).toContain("#5: open story has no dynamic view");
   });
 
   it("posts the comment on the event's pull request", async () => {

@@ -26,6 +26,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "controller-imports-repository",
       {
+        valid: "passed",
         target: "skipped",
         claim: "failed",
         boundaries: "failed",
@@ -38,6 +39,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "redis-node",
       {
+        valid: "passed",
         target: "skipped",
         claim: "skipped",
         boundaries: "passed",
@@ -50,6 +52,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "untraced-helper",
       {
+        valid: "passed",
         target: "skipped",
         claim: "passed",
         boundaries: "passed",
@@ -62,6 +65,7 @@ describe("runChecks on the basket fixture", () => {
     [
       "wrong-place",
       {
+        valid: "passed",
         target: "skipped",
         claim: "passed",
         boundaries: "passed",
@@ -80,6 +84,7 @@ describe("runChecks on the basket fixture", () => {
   it("passes main, with nothing to claim or cover", async () => {
     const report = await runChecks(loadConfig(basketRepo()));
     expect(statuses(report)).toEqual({
+      valid: "passed",
       target: "skipped",
       claim: "skipped",
       boundaries: "passed",
@@ -91,9 +96,37 @@ describe("runChecks on the basket fixture", () => {
     expect(report.passed).toBe(true);
   });
 
+  it("fails Target valid when a new requirement has no dynamic view yet", async () => {
+    const root = basketRepo();
+    const issues = JSON.parse(readFileSync(issuesFile, "utf8")) as Array<Record<string, unknown>>;
+    issues.push({
+      number: 5,
+      title: "Share the basket by email",
+      state: "open",
+      state_reason: null,
+      labels: [{ name: "requirement" }],
+      body: "**Story**\nAs a shopper, I want to share my basket.\n\n**Acceptance criteria**\n1. Given a basket, when it's shared, then the address is emailed.\n",
+    });
+    const file = join(root, "issues.json");
+    writeFileSync(file, JSON.stringify(issues));
+    vi.stubEnv("BEARING_ISSUES_FILE", file);
+
+    const report = await runChecks(loadConfig(root));
+    expect(report.passed).toBe(false);
+    expect(report.checks[0]).toMatchObject({
+      check: "valid",
+      status: "failed",
+      problems: [{ rule: "dynamic-view", id: "#5" }],
+    });
+    expect(formatReport(report)).toMatch(
+      /^Target valid: failed, architecture\/workspace\.(dsl|json) breaks 1 Bearing rule\n {2}#5: open story has no dynamic view;/,
+    );
+    expect(formatReport(report)).toMatch(/1 blocking check failed: Target valid\.\n$/);
+  });
+
   it("lists the undeclared relationship and the claim's mismatch for controller-imports-repository", async () => {
     const report = await runChecks(loadConfig(variantRepo("controller-imports-repository")));
-    const [, claim, boundaries] = report.checks;
+    const [, , claim, boundaries] = report.checks;
     const imports = [
       {
         file: "src/basket-api/basket-controller/index.ts",
@@ -119,7 +152,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("lists the Redis node for redis-node", async () => {
     const report = await runChecks(loadConfig(variantRepo("redis-node")));
-    const deployment = report.checks[3];
+    const deployment = report.checks[4];
     expect(deployment).toMatchObject({
       environment: "Production",
       added: [
@@ -140,7 +173,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("shows #2's expected path beside the one wrong-place takes", async () => {
     const report = await runChecks(loadConfig(variantRepo("wrong-place")));
-    const paths = report.checks[5];
+    const paths = report.checks[6];
     expect(paths).toMatchObject({ issues: ["#2"], views: [{ issue: "#2", view: "req-2", status: "failed" }] });
     const text = formatReport(report);
     expect(text).toContain(
@@ -159,7 +192,7 @@ describe("runChecks on the basket fixture", () => {
 
   it("checks the issues given instead of the claim's", async () => {
     const report = await runChecks(loadConfig(variantRepo("untraced-helper")), { issues: [7] });
-    expect(report.checks[4]).toMatchObject({ status: "failed", issues: ["#7"], criteria: [{ status: "missing" }] });
+    expect(report.checks[5]).toMatchObject({ status: "failed", issues: ["#7"], criteria: [{ status: "missing" }] });
   });
 
   it("takes the issues from the branch name when there's no claims file", async () => {
@@ -167,7 +200,7 @@ describe("runChecks on the basket fixture", () => {
     git(root, "checkout", "-q", "-b", "issue-7-session-expiry");
     record(root, passed("#7/AC1"));
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[4]).toMatchObject({ status: "passed", issues: ["#7"] });
+    expect(report.checks[5]).toMatchObject({ status: "passed", issues: ["#7"] });
   });
 
   it("skips Deployment when there's no Terraform to read", async () => {
@@ -175,14 +208,14 @@ describe("runChecks on the basket fixture", () => {
     const config = loadConfig(root);
     delete config.iac.terraform;
     const report = await runChecks(config);
-    expect(report.checks[3]).toMatchObject({ status: "skipped", reason: expect.stringContaining("iac.terraform") });
+    expect(report.checks[4]).toMatchObject({ status: "skipped", reason: expect.stringContaining("iac.terraform") });
   });
 
   it("flags a file outside every component, without blocking", async () => {
     const root = basketRepo();
     writeFileSync(join(root, "src", "server.ts"), "export const port = 3000;\n");
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[6]).toMatchObject({
+    expect(report.checks[7]).toMatchObject({
       status: "flagged",
       outside: ["src/server.ts"],
       untraced: [],
@@ -201,7 +234,7 @@ describe("runChecks on the basket fixture", () => {
     const config = loadConfig(variantRepo("untraced-helper"));
     config.checks.surplus = "off";
     const report = await runChecks(config);
-    expect(report.checks[6]).toMatchObject({ status: "skipped", reason: expect.stringContaining("checks.surplus") });
+    expect(report.checks[7]).toMatchObject({ status: "skipped", reason: expect.stringContaining("checks.surplus") });
     expect(formatReport(report)).toMatch(/All blocking checks passed\.\n$/);
   });
 });
@@ -232,7 +265,7 @@ describe("the target the checks use", () => {
     git(root, "commit", "-qam", "declare");
     git(root, "checkout", "-q", "controller-imports-repository");
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[0]).toMatchObject({ status: "skipped", base: "main", proposed: [] });
+    expect(report.checks[1]).toMatchObject({ status: "skipped", base: "main", proposed: [] });
     expect(statuses(report)).toMatchObject({ claim: "passed", boundaries: "passed" });
   });
 
@@ -240,7 +273,7 @@ describe("the target the checks use", () => {
     const root = variantRepo("controller-imports-repository");
     declareControllerToRepository(root);
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[0]).toMatchObject({
+    expect(report.checks[1]).toMatchObject({
       status: "passed",
       proposed: ["architecture/workspace.json"],
       moved: [],
@@ -260,7 +293,7 @@ describe("the target the checks use", () => {
     git(root, "checkout", "-q", "controller-imports-repository");
 
     const report = await runChecks(loadConfig(root));
-    expect(report.checks[0]).toMatchObject({ status: "failed", moved: ["architecture/adrs/0002-cache-baskets.md"] });
+    expect(report.checks[1]).toMatchObject({ status: "failed", moved: ["architecture/adrs/0002-cache-baskets.md"] });
     expect(report.passed).toBe(false);
     expect(formatReport(report)).toContain(
       "Target change: failed, main's target changed after this branch forked, so the proposal isn't built on it\n" +
@@ -269,7 +302,7 @@ describe("the target the checks use", () => {
     );
 
     git(root, "rebase", "-q", "main");
-    expect((await runChecks(loadConfig(root))).checks[0]).toMatchObject({ status: "passed", moved: [] });
+    expect((await runChecks(loadConfig(root))).checks[1]).toMatchObject({ status: "passed", moved: [] });
   });
 });
 
@@ -429,6 +462,7 @@ describe("bearing check", () => {
     const report = JSON.parse(result.stdout) as CheckReport;
     expect(report.passed).toBe(true);
     expect(report.checks.map((check) => [check.check, check.status, check.blocking])).toEqual([
+      ["valid", "passed", true],
       ["target", "skipped", true],
       ["claim", "passed", true],
       ["boundaries", "passed", true],
