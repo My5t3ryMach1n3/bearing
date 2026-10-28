@@ -28,13 +28,6 @@ runs:
         mkdir -p "$RUNNER_TEMP/bearing/report"
         # Traces the branch commits are never read: `bearing test` writes its own.
         rm -rf .bearing/traces
-    - id: validate
-      name: bearing validate
-      continue-on-error: true
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.token }}
-      run: bearing validate
     # A failing test isn't the job's failure on its own: Criteria coverage reports it against its criterion.
     - name: bearing test
       continue-on-error: true
@@ -48,6 +41,8 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
       run: bearing derive > "$RUNNER_TEMP/bearing/report/as-built.json"
+    # Target valid is one of its checks, run on the target the PR is checked against: main's current target, unless the
+    # PR changes it. The model the branch has on disk is stale once a target change merges after it forked.
     - id: check
       name: bearing check
       continue-on-error: true
@@ -82,9 +77,7 @@ runs:
     - name: Result
       shell: bash
       env:
-        VALIDATE: ${{ steps.validate.outcome }}
         CHECK: ${{ steps.check.outcome }}
       run: |
-        if [ "$VALIDATE" != success ]; then echo "::error::The target isn't valid: see bearing validate above."; fi
         if [ "$CHECK" != success ]; then echo "::error::A blocking check failed: see bearing check above."; fi
-        [ "$VALIDATE" = success ] && [ "$CHECK" = success ]
+        [ "$CHECK" = success ]
