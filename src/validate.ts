@@ -59,7 +59,16 @@ function checkRequirements(model: Model, requirements: Requirement[]): Problem[]
     const closed = item.requirements.filter((id) => byId.get(id)?.state === "closed");
     const open = item.requirements.filter((id) => byId.get(id)?.state === "open");
     const notPlanned = closed.filter((id) => byId.get(id)!.stateReason === "not_planned");
-    if (open.length === 0 && notPlanned.length > 0) {
+    // Closed any other way, usually by a PR's `Closes #n`, the issue was most likely closed by mistake: the code still
+    // serves it. Telling the agent to drop it would strip it from the target, so say to reopen it instead.
+    const done = closed.filter((id) => !notPlanned.includes(id));
+    if (done.length > 0) {
+      problems.push({
+        rule: "requirements",
+        id: item.id,
+        message: `"bearing.requirements" lists ${done.map((id) => closedAs(byId.get(id)!)).join(", ")}; ${reopenAdvice(done)}`,
+      });
+    } else if (open.length === 0 && notPlanned.length > 0) {
       const code = "path" in item && item.path !== undefined ? `, and delete its code under ${item.path}` : "";
       problems.push({
         rule: "requirements",
@@ -81,6 +90,20 @@ function checkRequirements(model: Model, requirements: Requirement[]): Problem[]
     }
   }
   return problems;
+}
+
+// "#2, closed as completed": a closed issue and why, as GitHub gives it.
+function closedAs(requirement: Requirement): string {
+  const reason = { completed: "closed as completed", duplicate: "closed as a duplicate" }[
+    requirement.stateReason ?? ""
+  ];
+  return `${requirement.id}, ${reason ?? "closed"}`;
+}
+
+// A requirement stays open for as long as the code serves it, so the fix for one closed as done is to reopen it.
+function reopenAdvice(ids: string[]): string {
+  const them = ids.length === 1 ? "it" : "them";
+  return `a requirement stays open while the code serves it, so reopen ${them}, or close ${them} as not planned to prune what serves only ${them}`;
 }
 
 // Every component owns a folder, and no folder is owned twice: one path can't sit inside another.
@@ -146,7 +169,7 @@ function checkDynamicViews(model: Model, requirements: Requirement[]): Problem[]
       message =
         requirement.stateReason === "not_planned"
           ? `dynamic view is for ${requirement.id}, closed as not planned; prune it from the target`
-          : `dynamic view is for ${requirement.id}, which is closed; only open stories get one, so remove it`;
+          : `dynamic view is for ${closedAs(requirement)}; ${reopenAdvice([requirement.id])}`;
     }
     if (message !== undefined) problems.push({ rule: "dynamic-view", id: view.id, message });
   }
