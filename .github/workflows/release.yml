@@ -37,4 +37,11 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
-      - run: npm publish --access public
+      # A prerelease such as 0.1.0-rc.1 goes out under `next`, so `npm install bearing-cli` stays on the last release.
+      - name: npm publish
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            npm publish --access public --tag next
+          else
+            npm publish --access public
+          fi

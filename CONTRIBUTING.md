@@ -54,7 +54,7 @@ CI runs these on every pull request, and they should pass locally first:
 
 ## Releases
 
-The [release workflow](.github/workflows/release.yml) publishes `bearing-cli` to npm when a `v*` tag is pushed. It uses npm trusted publishing, so there is no npm token to manage, and it refuses to publish if the tag doesn't match the version in `package.json`.
+The [release workflow](.github/workflows/release.yml) publishes `bearing-cli` to npm when a `v*` tag is pushed. It uses npm trusted publishing, so there is no npm token to manage, and it refuses to publish if the tag doesn't match the version in `package.json`. A prerelease version such as `0.1.0-rc.1` is published under npm's `next` tag, so it's only installed when asked for by version.
 
 To cut a release:
 
