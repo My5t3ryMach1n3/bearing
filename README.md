@@ -6,7 +6,7 @@ The as-built state comes from deterministic analysis of code, infrastructure and
 
 ## Status
 
-Early. `bearing init` and `bearing diff` work; the rest of the build is planned as GitHub issues.
+The TypeScript MVP is built: design from requirements, the checks, the PR comment and the GitHub Action. The [walkthrough](docs/product-spec.md#walkthrough-a-greenfield-service) has been run end to end on real PRs in [My5t3ryMach1n3/basket](https://github.com/My5t3ryMach1n3/basket). Other languages are planned as GitHub issues.
 
 ## Install
 
@@ -19,7 +19,7 @@ bearing --help
 
 The npm package is `bearing-cli`; the command it installs is `bearing`.
 
-To adopt Bearing in a repo, run `bearing init` at its root. It writes the model, config, requirement issue form, workflows and the AGENTS.md section, then prints the branch-protection settings to turn on. Re-running it only adds what's missing.
+To adopt Bearing in a repo, follow the [quickstart](docs/quickstart.md). In short: run `bearing init` at its root. It writes the model, config, requirement issue form, workflows and the AGENTS.md section, then prints the branch-protection settings to turn on. Re-running it only adds what's missing.
 
 Whoever merges a PR approves any target change it makes; Bearing labels those PRs and shows the model diff first. To require a second reviewer instead, pass owners, e.g. `bearing init --owner @your-org/architects`: init adds CODEOWNERS entries for the model, config and workflows, and asks you to require code-owner review.
 
@@ -37,6 +37,7 @@ date-fns was mapped as one component per function folder, 254 in all, so nearly 
 
 ## Docs
 
+- [Quickstart](docs/quickstart.md): set up a repo, design the target and land the first governed PR.
 - [Product spec](docs/product-spec.md): the problem, the proposed solution, how it works, and a walkthrough on a greenfield service.
 - [Build plan](docs/build-plan.md): the three milestones, how the issues sequence, and the open questions they settle.
 - [E2E scenario](e2e/README.md): Shelf, a test app built with Bearing stage by stage as Bearing's issues close.
