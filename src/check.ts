@@ -144,6 +144,8 @@ export interface CoverageCheck extends CheckBase {
   criteria: CriterionCoverage[];
   // How many test results the last `bearing test` recorded.
   recorded: number;
+  // Components the branch changes code in with no issue known, from the claim or the branch's name.
+  unlinked?: string[];
 }
 
 export interface PathsCheck extends CheckBase {
@@ -366,15 +368,24 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     deployment = { check: "deployment", status: failed ? "failed" : "passed", blocking: true, ...result };
   }
 
-  const issues = options.issues?.map((issue) => `#${issue}`) ?? claim?.issues ?? issuesInBranch(branch);
+  const claimed = claim === undefined || claim.issues.length === 0 ? undefined : claim.issues;
+  const issues = options.issues?.map((issue) => `#${issue}`) ?? claimed ?? issuesInBranch(branch);
   let coverage: CoverageCheck;
   let paths: PathsCheck;
   if (issues.length === 0) {
     const reason =
       claim === undefined
         ? "no issues: the branch has no claims file and its name names none"
-        : `no issues: ${toPosix(claimFile(branch))} lists none`;
-    coverage = { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
+        : `no issues: ${toPosix(claimFile(branch))} lists none and the branch's name names none`;
+    // Code in a component has to serve an issue. A branch that only changes the model, Terraform or files outside
+    // every component has no criteria to check.
+    const owners = componentPaths(target);
+    const changed = await changedSourceFiles(config.root, fork);
+    const unlinked = [...new Set(changed.flatMap((path) => componentOf(path, owners) ?? []))].sort();
+    coverage =
+      unlinked.length > 0
+        ? { check: "coverage", status: "failed", blocking: true, issues, criteria: [], recorded: 0, unlinked }
+        : { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
     paths = { check: "paths", status: "skipped", blocking: true, reason, issues, views: [] };
   } else {
     const tests = readTestRecords(join(config.root, tracesDir));
@@ -481,7 +492,9 @@ export function formatCheck(check: CheckReport["checks"][number]): string {
     case "deployment":
       return formatDeployment(check);
     case "coverage":
-      return formatCoverage(check.criteria, check.recorded);
+      return check.unlinked === undefined
+        ? formatCoverage(check.criteria, check.recorded)
+        : formatUnlinked(check.unlinked);
     case "paths":
       return formatTracePaths(check.views);
     case "surplus":
@@ -494,6 +507,14 @@ function formatValidCheck(check: ValidCheck): string {
   return [
     `Target valid: failed, ${check.model} breaks ${check.problems.length} Bearing ${check.problems.length === 1 ? "rule" : "rules"}`,
     ...check.problems.map((problem) => `  ${problem.id}: ${problem.message}`),
+    "",
+  ].join("\n");
+}
+
+function formatUnlinked(components: string[]): string {
+  return [
+    `Criteria coverage: failed, the branch changes code in ${components.join(", ")} but names no issue`,
+    "  List the issues it works on in the claims file, or start the branch's name with one, e.g. 2-add-item.",
     "",
   ].join("\n");
 }

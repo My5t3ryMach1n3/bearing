@@ -479,7 +479,9 @@ Criteria coverage reads the test outcomes from the last `bearing test` run. For 
 
 A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
 
-The check fails if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. It checks the issues the claims file names, or, with no claims file, the ones in the branch name. Issues given as arguments, `bearing check 2 4`, replace both.
+The check fails if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. It checks the issues the claims file names, or, if it has none or there's no claims file, the ones in the branch name. Issues given as arguments, `bearing check 2 4`, replace both.
+
+If that leaves no issues, it fails when the branch changes source files in a component, naming the components, since code in a component has to serve an issue. That holds for a human's refactor too. A branch that only changes the model, Terraform or files outside every component skips it, and Trace paths with it.
 
 ### How requirement changes are caught
 
