@@ -54,8 +54,8 @@ On the PR, the conformance job runs the checks again from scratch and the commen
 | Claim | The claims file doesn't match the code |
 | Boundaries | Code in one component imports another along a relationship the target doesn't declare |
 | Deployment | The Terraform has a node the target doesn't, lacks one, or counts instances differently |
-| Criteria coverage | A criterion of the PR's issues has no passing tagged test |
-| Trace paths | A tagged test's calls between components don't follow its issue's dynamic view |
+| Criteria coverage | A criterion of the PR's issues has no passing tagged test, or the PR changes a component's code and names no issue |
+| Trace paths | A tagged test's calls between components stray from its issue's dynamic view, or no tagged test takes one of the view's steps |
 | Surplus (advisory) | Code is outside every component, or no tagged test reaches it |
 
 ## 5. When the target is wrong
