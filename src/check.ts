@@ -32,6 +32,7 @@ import { StructurizrError } from "./structurizr.js";
 import { checkSurplus, closedComponents, formatSurplus, type SurplusResult } from "./surplus.js";
 import { readSpanRecords, tracesDir } from "./test.js";
 import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths.js";
+import { validateModel, type Problem } from "./validate.js";
 import {
   deriveTerraform,
   TerraformError,
@@ -40,14 +41,23 @@ import {
   type TerraformResource,
 } from "./terraform.js";
 
-// The checks `bearing check` runs. The blocking ones, Target change, Claim, Boundaries, Deployment, Criteria coverage
-// and Trace paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus,
+// The checks `bearing check` runs. The blocking ones, Target valid, Target change, Claim, Boundaries, Deployment,
+// Criteria coverage and Trace paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus,
 // passes, is flagged or is skipped when turned off, and never fails the run: its result sets `bearing/advisory`. This
 // is the JSON `bearing check --json` prints for `bearing report`. See the Checks section of docs/product-spec.md.
 export interface CheckReport {
   // False if any blocking check failed.
   passed: boolean;
-  checks: [TargetCheck, ClaimCheck, BoundariesCheck, DeploymentCheck, CoverageCheck, PathsCheck, SurplusCheck];
+  checks: [
+    ValidCheck,
+    TargetCheck,
+    ClaimCheck,
+    BoundariesCheck,
+    DeploymentCheck,
+    CoverageCheck,
+    PathsCheck,
+    SurplusCheck,
+  ];
 }
 
 export type CheckStatus = "passed" | "failed" | "skipped";
@@ -64,6 +74,15 @@ export interface SurplusCheck extends SurplusResult {
   status: "passed" | "flagged" | "skipped";
   blocking: false;
   reason?: string;
+}
+
+// The checked target against Bearing's rules, as `bearing validate` checks it. Structurizr's own validation already
+// passed, or the target wouldn't have loaded.
+export interface ValidCheck extends CheckBase {
+  check: "valid";
+  // The model file, relative to the repo root.
+  model: string;
+  problems: Problem[];
 }
 
 // Whether a branch that proposes a target change is built on the base branch's current target. The first proposal
@@ -267,6 +286,19 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   const branch = options.branch ?? (await currentBranch(config.root));
   const claim = await readClaim(config, branch);
 
+  // Read from GitHub at most once, and only by the checks that need them.
+  let loaded: Promise<Requirement[]> | undefined;
+  const requirements = () => (loaded ??= loadRequirements(config));
+
+  const problems = validateModel(target, await requirements(), config.tests.tag);
+  const validCheck: ValidCheck = {
+    check: "valid",
+    status: problems.length === 0 ? "passed" : "failed",
+    blocking: true,
+    model: config.model,
+    problems,
+  };
+
   const targetCheck: TargetCheck =
     proposed.length === 0
       ? {
@@ -334,10 +366,6 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     deployment = { check: "deployment", status: failed ? "failed" : "passed", blocking: true, ...result };
   }
 
-  // Read from GitHub at most once, and only by the checks that need them.
-  let loaded: Promise<Requirement[]> | undefined;
-  const requirements = () => (loaded ??= loadRequirements(config));
-
   const issues = options.issues?.map((issue) => `#${issue}`) ?? claim?.issues ?? issuesInBranch(branch);
   let coverage: CoverageCheck;
   let paths: PathsCheck;
@@ -402,11 +430,21 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     surplus = { check: "surplus", status: flagged ? "flagged" : "passed", blocking: false, ...result };
   }
 
-  const checks: CheckReport["checks"] = [targetCheck, claimCheck, boundaries, deployment, coverage, paths, surplus];
+  const checks: CheckReport["checks"] = [
+    validCheck,
+    targetCheck,
+    claimCheck,
+    boundaries,
+    deployment,
+    coverage,
+    paths,
+    surplus,
+  ];
   return { passed: checks.every((check) => check.status !== "failed"), checks };
 }
 
 export const checkTitles = {
+  valid: "Target valid",
   target: "Target change",
   claim: "Claim",
   boundaries: "Boundaries",
@@ -432,6 +470,8 @@ export function formatReport(report: CheckReport): string {
 export function formatCheck(check: CheckReport["checks"][number]): string {
   if (check.status === "skipped") return `${checkTitles[check.check]}: skipped, ${check.reason}\n`;
   switch (check.check) {
+    case "valid":
+      return formatValidCheck(check);
     case "target":
       return formatTargetCheck(check);
     case "claim":
@@ -447,6 +487,15 @@ export function formatCheck(check: CheckReport["checks"][number]): string {
     case "surplus":
       return formatSurplus(check);
   }
+}
+
+function formatValidCheck(check: ValidCheck): string {
+  if (check.status === "passed") return `Target valid: passed, ${check.model} follows Bearing's rules\n`;
+  return [
+    `Target valid: failed, ${check.model} breaks ${check.problems.length} Bearing ${check.problems.length === 1 ? "rule" : "rules"}`,
+    ...check.problems.map((problem) => `  ${problem.id}: ${problem.message}`),
+    "",
+  ].join("\n");
 }
 
 function formatTargetCheck(check: TargetCheck): string {
@@ -541,7 +590,7 @@ function toPosix(path: string): string {
 export function checkCommand(): Command {
   return new Command("check")
     .description(
-      "run the blocking checks: a target change against the base branch's current target (Target change), the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
+      "run the blocking checks: the target against Bearing's rules (Target valid), a target change against the base branch's current target (Target change), the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
     )
     .argument("[issues...]", "the issues to check coverage for, e.g. 2 4; defaults to the claims file's")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")

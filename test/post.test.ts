@@ -192,17 +192,17 @@ describe("the conformance workflow", () => {
   it("re-derives everything, never reading traces the branch commits", () => {
     const runs = steps.map((step) => step.run ?? "").join("\n");
     expect(runs).toContain("rm -rf .bearing/traces");
-    for (const command of ["validate", "test", "derive", "check", "report"]) {
+    for (const command of ["test", "derive", "check", "report"]) {
       expect(runs).toMatch(new RegExp(`^\\s*bearing ${command}\\b`, "m"));
     }
+    // `bearing check` runs Target valid on the target it checks against; the model on disk may be stale.
+    expect(runs).not.toMatch(/^\s*bearing validate\b/m);
     const index = (pattern: RegExp) => steps.findIndex((step) => pattern.test(step.run ?? ""));
     expect(index(/rm -rf \.bearing\/traces/)).toBeLessThan(index(/^bearing test$/m));
   });
 
   it("gives Bearing the token to read requirements, and expands nothing from the PR into a script", () => {
-    for (const step of steps.filter((step) =>
-      /^\s*bearing (validate|test|derive|check|report)/m.test(step.run ?? ""),
-    )) {
+    for (const step of steps.filter((step) => /^\s*bearing (test|derive|check|report)/m.test(step.run ?? ""))) {
       expect(step.env?.GH_TOKEN).toBe("${{ inputs.token }}");
     }
     for (const step of [...workflow.jobs.conformance.steps, ...steps]) expect(step.run ?? "").not.toContain("${{");
