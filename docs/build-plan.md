@@ -80,7 +80,7 @@ Nine questions are left open by the spec or exposed by the worked example. Each 
 | --- | --- | --- |
 | How is the self-heal limit of 3 attempts enforced when Bearing can't see agent retries? | [#10](https://github.com/My5t3ryMach1n3/bearing/issues/10) | Instruction only in AGENTS.md for v0.1; count failed `bearing/conformance` runs per branch later |
 | What do the ESM/CJS hook and its overhead cost on large suites? | [#13](https://github.com/My5t3ryMach1n3/bearing/issues/13) | Measure before committing; fall back to tracing only files a PR touches if overhead is high |
-| Does a dynamic view need an exact trace match or a partial one? | [#17](https://github.com/My5t3ryMach1n3/bearing/issues/17) | Ordered subsequence with no undeclared component between steps |
+| Does a dynamic view need an exact trace match or a partial one? | [#17](https://github.com/My5t3ryMach1n3/bearing/issues/17) | Decided: ordered subsequence with no undeclared component between steps, and no call anywhere in the trace that the target doesn't declare |
 | How does the PR comment get posted for fork PRs with no secrets? | [#23](https://github.com/My5t3ryMach1n3/bearing/issues/23) | Decided: the conformance job uploads the comment as an artifact, and a `workflow_run` job posts it after checking the PR is at the commit that was checked |
 | Is the responsibilities check in v0.1 at all, given SRP scoring is out of MVP scope? | [#18](https://github.com/My5t3ryMach1n3/bearing/issues/18) | Leave it out of v0.1 and run validation experiment 5 first |
 | Monorepo or multi-repo first? | [#25](https://github.com/My5t3ryMach1n3/bearing/issues/25) | Single repo, as the MVP scope says; ask pilot teams (experiment 6) |

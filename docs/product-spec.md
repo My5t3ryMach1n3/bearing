@@ -505,6 +505,7 @@ The target they compare against depends on the branch. A branch that changes the
 - **Boundaries** fails each relationship between two components that the code makes and the target doesn't declare, listing the imports that make it. Anything inside one component passes.
 - **Deployment** compares the nodes `bearing derive` reads from the Terraform with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when `iac.terraform` isn't set.
 - **Criteria coverage** is the check above.
+- **Trace paths** compares each passing tagged test's trace with its issue's dynamic view. The view's steps between components must appear in order, with no call into a component the view doesn't declare between them. Any call in the trace between two components the target declares no relationship for also fails it, even if a later read-back takes the view's steps. That catches a shortcut imports can't show, such as through a port the caller is handed. A call the target declares but the view doesn't draw passes, since setup and read-back run them.
 
 ### How `bearing report` works
 

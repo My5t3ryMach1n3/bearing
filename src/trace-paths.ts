@@ -19,6 +19,10 @@ import { criterionTag, type TestRecord } from "./trace/runtime.js";
 // matters because a test's setup and its read-back often run another issue's path: #2's tests read the basket back
 // along #1's path, which has the same steps between components as #2's. Letting the match start at a later call
 // would let that read-back stand in for the add.
+//
+// A test also fails on a call anywhere in its trace between two components the target declares no relationship
+// between. A read-back can't hide such a shortcut, and tracing sees one that imports can't, such as through a port
+// the caller is handed. A call the target declares but the view doesn't draw is fine, as setup and read-back run them.
 
 // A step of a view, between two components.
 export interface PathStep {
@@ -47,6 +51,8 @@ export interface TestPath {
   // Indexes in `observed` of calls into or out of components the view doesn't declare, between the first matched
   // step and the last, or the end of the trace if a step is missing.
   undeclared: number[];
+  // Indexes in `observed` of calls anywhere in the trace between two components the target has no relationship for.
+  offTarget: number[];
 }
 
 export interface ViewPaths {
@@ -72,6 +78,7 @@ export function checkTracePaths(
 ): ViewPaths[] {
   const { target, requirements, issues, tests, spans } = inputs;
   const traced = new Set(componentPaths(target).map((component) => component.id));
+  const declaredCalls = new Set([...target.relationships.values()].map(callKey));
   const byNumber = new Map(requirements.map((requirement) => [requirement.number, requirement]));
   // Each test's traces by ID. A test has one trace per process that ran it, so usually one.
   const traces = new Map<string, Map<string, SpanRecord[]>>();
@@ -132,12 +139,17 @@ export function checkTracePaths(
         return (found.length === 0 ? [[]] : found).map((trace) => {
           const observed = observedPath(trace);
           const match = matchPath(expected, observed, declared);
+          const offTarget = offTargetCalls(observed, declaredCalls);
           const path: TestPath = {
             name: test.name,
             criterion: test.criterion!,
-            status: match.steps.includes(null) || match.undeclared.length > 0 ? "unmatched" : "matched",
+            status:
+              match.steps.includes(null) || match.undeclared.length > 0 || offTarget.length > 0
+                ? "unmatched"
+                : "matched",
             observed,
             ...match,
+            offTarget,
           };
           if (test.file !== undefined) path.file = test.file;
           return path;
@@ -205,6 +217,14 @@ export function matchPath(
   return { steps, undeclared };
 }
 
+const callKey = (call: { source?: string; destination: string }) => `${call.source}->${call.destination}`;
+
+// The indexes of calls between two components that the target has no relationship for. A call from the test has no
+// source, so it's never one.
+export function offTargetCalls(observed: ObservedCall[], declared: Set<string>): number[] {
+  return observed.flatMap((call, index) => (call.source === undefined || declared.has(callKey(call)) ? [] : [index]));
+}
+
 function mergeSteps(steps: PathStep[]): PathStep[] {
   const merged: PathStep[] = [];
   for (const step of steps) {
@@ -252,6 +272,7 @@ function sideBySide(view: ViewPaths, test: TestPath): string[] {
   const rows: Array<[string, string]> = [[`Expected (${view.view})`, "Observed"]];
   const byCall = new Map(test.steps.flatMap((call, step) => (call === null ? [] : [[call, step]])));
   const undeclared = new Set(test.undeclared);
+  const offTarget = new Set(test.offTarget);
   test.observed.forEach((call, index) => {
     const step = byCall.get(index);
     let observed = `${call.source ?? "(test)"} -> ${call.destination}: ${call.functions.map((name) => `${name}()`).join(", ")}`;
@@ -261,6 +282,7 @@ function sideBySide(view: ViewPaths, test: TestPath): string[] {
       );
       observed += `  <- ${outside.join(" and ")} ${outside.length === 1 ? "isn't" : "aren't"} in ${view.view}`;
     }
+    if (offTarget.has(index)) observed += "  <- the target declares no relationship for this call";
     rows.push([step === undefined ? "" : pair(view.expected[step]!), observed]);
   });
   test.steps.forEach((call, step) => {
