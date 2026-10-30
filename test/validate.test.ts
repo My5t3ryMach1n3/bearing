@@ -118,7 +118,7 @@ describe("validateModel", () => {
       for (const problem of found) expect(problem.message).toMatch(/lists #4, closed; drop it and keep #/);
     });
 
-    it("fails an element that serves only an issue closed as completed", () => {
+    it("says to reopen an issue closed as completed rather than drop it", () => {
       const target = model();
       target.elements.get("basketService")!.requirements = ["#9"];
       const issues = [...requirements, requirement(9, { state: "closed", stateReason: "completed" })];
@@ -126,9 +126,25 @@ describe("validateModel", () => {
         {
           rule: "requirements",
           id: "basketService",
-          message: expect.stringContaining("component serves no open requirement"),
+          message:
+            '"bearing.requirements" lists #9, closed as completed; a requirement stays open while the code serves it, so reopen it, or close it as not planned to prune what serves only it',
         },
       ]);
+    });
+
+    it("says to reopen a story closed as completed, next to open ones and on its view", () => {
+      const found = problems(model(), close(2, "completed"));
+      expect(found.length).toBeGreaterThan(0);
+      for (const problem of found) {
+        expect(problem.message).toContain("#2, closed as completed; a requirement stays open while the code serves it");
+      }
+      expect(found).toContainEqual({
+        rule: "dynamic-view",
+        id: "req-2",
+        message:
+          "dynamic view is for #2, closed as completed; a requirement stays open while the code serves it, so reopen it, or close it as not planned to prune what serves only it",
+      });
+      expect(found.map((problem) => problem.message).join("\n")).not.toContain("drop it");
     });
 
     it("fails an issue that isn't a requirement, even next to one that is", () => {
