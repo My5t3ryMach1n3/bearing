@@ -195,10 +195,10 @@ export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "fo
             found.criteria.add(test.criterion);
             for (const name of call.functions) found.functions.add(`${name}()`);
           }
-          test.steps.forEach((call, step) => {
-            const missed = view.expected[step]!;
-            if (call === null) edge({ ...endpoints(missed), label: `${view.view}: ${missed.description}` });
-          });
+        }
+        for (const step of view.uncovered) {
+          const missed = view.expected[step]!;
+          edge({ ...endpoints(missed), label: `${view.view}: ${missed.description}` });
         }
         for (const call of calls.values()) {
           edge({
@@ -391,11 +391,14 @@ function summarise(check: CheckReport["checks"][number]): string {
     case "paths": {
       const tests = check.views.flatMap((view) => view.tests);
       const unmatched = tests.filter((test) => test.status === "unmatched").length;
+      const uncovered = check.views.reduce((sum, view) => sum + view.uncovered.length, 0);
       return check.status === "passed"
         ? `${count(tests.length, "tagged test")} ${tests.length === 1 ? "follows its" : "follow their"} issue's dynamic view`
         : unmatched > 0
           ? `${unmatched} of ${count(tests.length, "tagged test")} off their issue's dynamic view`
-          : (check.views.find((view) => view.status === "failed")?.reason ?? "");
+          : uncovered > 0
+            ? `${count(uncovered, "dynamic view step")} no tagged test takes`
+            : (check.views.find((view) => view.status === "failed")?.reason ?? "");
     }
     case "surplus": {
       const functions = check.untraced.reduce((sum, file) => sum + file.functions.length, 0);

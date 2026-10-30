@@ -5,8 +5,8 @@ import type { Requirement } from "./requirements.js";
 import type { SpanRecord } from "./test.js";
 import { criterionTag, type TestRecord } from "./trace/runtime.js";
 
-// Trace paths: each passing test tagged with a criterion of a touched issue must take that issue's dynamic view.
-// See the Checks section of docs/product-spec.md.
+// Trace paths: each passing test tagged with a criterion of a touched issue must follow part of that issue's dynamic
+// view, and together a story's tests must take all of it. See the Checks section of docs/product-spec.md.
 //
 // A test can only observe calls between components, since only components' code is traced. So the path a view
 // expects is its steps between two components; steps to people, containers and external systems are dropped, and
@@ -14,11 +14,15 @@ import { criterionTag, type TestRecord } from "./trace/runtime.js";
 // component from a different one, in the order the calls started. Consecutive calls between the same two
 // components count as one step, in both.
 //
-// A view matches when its steps appear in order in the observed path with no call into an undeclared component in
-// between. Each step matches its earliest occurrence after the step before, as a plain subsequence test does. That
-// matters because a test's setup and its read-back often run another issue's path: #2's tests read the basket back
-// along #1's path, which has the same steps between components as #2's. Letting the match start at a later call
-// would let that read-back stand in for the add.
+// A story has one view, but its criteria can take different parts of it, so a test matches the longest unbroken run of
+// the view's steps it takes, earliest in the view on a tie, with no call into an undeclared component in between. A run
+// that stops short of the view's end is checked for those calls to the end of the trace, since it never got to its
+// end. Any step that no test's run takes fails the view.
+//
+// Each step matches its earliest occurrence after the step before, as a plain subsequence test does. That matters
+// because a test's setup and its read-back often run another issue's path: #2's tests read the basket back along #1's
+// path, which has the same steps between components as #2's. Letting the match start at a later call would let that
+// read-back stand in for the add.
 //
 // A test also fails on a call anywhere in its trace between two components the target declares no relationship
 // between. A read-back can't hide such a shortcut, and tracing sees one that imports can't, such as through a port
@@ -46,10 +50,10 @@ export interface TestPath {
   criterion: string;
   status: "matched" | "unmatched";
   observed: ObservedCall[];
-  // For each expected step, the index in `observed` of the call it matched, or null if it wasn't found.
+  // For each expected step, the index in `observed` of the call it matched, or null if it's not in the test's run.
   steps: Array<number | null>;
   // Indexes in `observed` of calls into or out of components the view doesn't declare, between the first matched
-  // step and the last, or the end of the trace if a step is missing.
+  // step and the last, or the end of the trace if the run stops short of the view.
   undeclared: number[];
   // Indexes in `observed` of calls anywhere in the trace between two components the target has no relationship for.
   offTarget: number[];
@@ -69,6 +73,8 @@ export interface ViewPaths {
   components: string[];
   expected: PathStep[];
   tests: TestPath[];
+  // Indexes in `expected` of the steps no test's run took.
+  uncovered: number[];
 }
 
 // Checks the passing tagged tests of each issue against its dynamic view, in issue order.
@@ -106,6 +112,7 @@ export function checkTracePaths(
         components,
         expected: [],
         tests: [],
+        uncovered: [],
       };
       if (view === undefined) {
         return [
@@ -144,7 +151,7 @@ export function checkTracePaths(
             name: test.name,
             criterion: test.criterion!,
             status:
-              match.steps.includes(null) || match.undeclared.length > 0 || offTarget.length > 0
+              match.steps.every((call) => call === null) || match.undeclared.length > 0 || offTarget.length > 0
                 ? "unmatched"
                 : "matched",
             observed,
@@ -155,8 +162,9 @@ export function checkTracePaths(
           return path;
         });
       });
-      const failed = paths.some((path) => path.status === "unmatched");
-      return [{ ...base, expected, tests: paths, status: failed ? "failed" : "passed" }];
+      const uncovered = expected.flatMap((_, step) => (paths.some((path) => path.steps[step] !== null) ? [] : [step]));
+      const failed = uncovered.length > 0 || paths.some((path) => path.status === "unmatched");
+      return [{ ...base, expected, tests: paths, uncovered, status: failed ? "failed" : "passed" }];
     });
 }
 
@@ -185,28 +193,23 @@ export function observedPath(spans: SpanRecord[]): ObservedCall[] {
   return calls;
 }
 
-// Matches each expected step to its earliest occurrence after the step before, stopping at the first that isn't
-// found, then finds the calls between the first match and the last that involve a component the view doesn't
-// declare.
+// Finds the longest unbroken run of expected steps in the observed path, earliest in the view on a tie, then the calls
+// between its first match and its last that involve a component the view doesn't declare.
 export function matchPath(
   expected: PathStep[],
   observed: ObservedCall[],
   declared: Set<string>,
 ): Pick<TestPath, "steps" | "undeclared"> {
-  const steps: Array<number | null> = [];
-  let from = 0;
-  for (const step of expected) {
-    const index = observed.findIndex(
-      (call, at) => at >= from && call.source === step.source && call.destination === step.destination,
-    );
-    // Once a step is missing, the order is broken, so the rest count as missing too.
-    steps.push(index === -1 ? null : index);
-    from = index === -1 ? Infinity : index + 1;
+  const taken = (run: Array<number | null>) => run.filter((index) => index !== null).length;
+  let steps: Array<number | null> = expected.map(() => null);
+  for (let start = 0; start < expected.length; start++) {
+    const run = matchRun(expected, observed, start);
+    if (taken(run) > taken(steps)) steps = run;
   }
   const matched = steps.filter((index) => index !== null);
   const undeclared: number[] = [];
   if (matched.length > 0) {
-    // A path with a step missing never got to its end, so everything after its first step counts as in between.
+    // A run that stops short never got to the view's end, so everything after its first step counts as in between.
     const last = steps.includes(null) ? observed.length - 1 : matched.at(-1)!;
     for (let index = matched[0]!; index <= last; index++) {
       const call = observed[index]!;
@@ -215,6 +218,26 @@ export function matchPath(
     }
   }
   return { steps, undeclared };
+}
+
+// Matches each step from `start` to its earliest occurrence after the step before, stopping at the first that isn't
+// found. Steps outside the run are null.
+function matchRun(expected: PathStep[], observed: ObservedCall[], start: number): Array<number | null> {
+  const steps: Array<number | null> = [];
+  let from = 0;
+  for (const [position, step] of expected.entries()) {
+    if (position < start) {
+      steps.push(null);
+      continue;
+    }
+    const index = observed.findIndex(
+      (call, at) => at >= from && call.source === step.source && call.destination === step.destination,
+    );
+    // Once a step is missing, the run is broken, so the rest are outside it too.
+    steps.push(index === -1 ? null : index);
+    from = index === -1 ? Infinity : index + 1;
+  }
+  return steps;
 }
 
 const callKey = (call: { source?: string; destination: string }) => `${call.source}->${call.destination}`;
@@ -260,8 +283,11 @@ export function formatTracePaths(views: ViewPaths[]): string {
     for (const test of view.tests.filter((each) => each.status === "unmatched")) {
       lines.push(`  ${test.name}${test.file === undefined ? "" : ` (${test.file})`}`, ...sideBySide(view, test));
     }
+    for (const step of view.uncovered) {
+      lines.push(`  ${view.issue}: no tagged test takes ${pair(view.expected[step]!)} in ${view.view}`);
+    }
   }
-  if (unmatched > 0) {
+  if (unmatched > 0 || views.some((view) => view.uncovered.length > 0)) {
     lines.push("  Move the code into the components each view declares, or propose a change to the view in the model.");
   }
   return `${lines.join("\n")}\n`;
@@ -286,7 +312,7 @@ function sideBySide(view: ViewPaths, test: TestPath): string[] {
     rows.push([step === undefined ? "" : pair(view.expected[step]!), observed]);
   });
   test.steps.forEach((call, step) => {
-    if (call === null) rows.push([pair(view.expected[step]!), "missing"]);
+    if (call === null && view.uncovered.includes(step)) rows.push([pair(view.expected[step]!), "missing"]);
   });
   const width = Math.max(...rows.map(([expected]) => expected.length));
   return rows.map(([expected, observed]) => `    ${expected.padEnd(width)}  ${observed}`.trimEnd());
