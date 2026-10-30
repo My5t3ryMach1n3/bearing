@@ -61,6 +61,8 @@ const restore: Call = [
   ["sessionRestore.restoreSession", ["authMiddleware.authenticate"], ["basketRepository.loadBasket"]],
 ];
 
+const addRepository: Call = ["basketRepository.saveBasket"];
+
 const step = (source: string, destination: string): PathStep => ({ source, destination, description: "" });
 const pairs = (path: Array<{ source?: string; destination: string }>) =>
   path.map((call) => `${call.source ?? "(test)"}->${call.destination}`);
@@ -162,7 +164,76 @@ describe("matchPath", () => {
         ["authMiddleware.authenticate"],
       ]),
     );
-    expect(matchPath(expected, observed, declared).steps).toEqual([3, null, null]);
+    expect(matchPath(expected, observed, declared).steps).toEqual([null, 1, 2]);
+  });
+
+  it("takes the longest unbroken run, wherever it starts in the view", () => {
+    const observed = observedPath(spans("t", ["basketController.handle", ["basketService.addItem", addRepository]]));
+    expect(matchPath(expected, observed, declared)).toEqual({ steps: [null, 1, 2], undeclared: [] });
+  });
+
+  it("doesn't join steps with a gap between them into one run", () => {
+    const observed = observedPath(
+      spans(
+        "t",
+        ["basketController.handle", ["authMiddleware.authenticate"]],
+        ["basketService.addItem", addRepository],
+      ),
+    );
+    expect(matchPath(expected, observed, declared).steps).toEqual([1, null, null]);
+  });
+
+  it("matches none of a path that takes no step", () => {
+    const observed = observedPath(spans("t", ["basketController.handle"]));
+    expect(matchPath(expected, observed, declared).steps).toEqual([null, null, null]);
+  });
+});
+
+describe("a story whose criteria take different paths through its view", () => {
+  const req2 = target.dynamicViews.get("req-2")!;
+  const req4 = target.dynamicViews.get("req-4")!;
+  const model: Model = {
+    ...target,
+    dynamicViews: new Map([["req-2", { ...req2, steps: [...req2.steps, ...req4.steps] }]]),
+  };
+  const check = (tests: TestRecord[], records: SpanRecord[]) =>
+    checkTracePaths(config, { target: model, requirements, issues: [2], tests, spans: records })[0]!;
+  const tests = [passed("a", "#2/AC1"), passed("b", "#2/AC2")];
+
+  it("passes when each test takes its part and together they take the whole view", () => {
+    const view = check(tests, [...spans("a", addItem), ...spans("b", restore)]);
+    expect(view).toMatchObject({ status: "passed", uncovered: [] });
+    expect(view.tests.map((test) => test.status)).toEqual(["matched", "matched"]);
+    expect(view.tests[0]!.steps.slice(3).every((call) => call === null)).toBe(true);
+    expect(view.tests[1]!.steps.slice(0, 3).every((call) => call === null)).toBe(true);
+  });
+
+  it("fails on the steps no test takes, though every test matched", () => {
+    const view = check(tests, [...spans("a", addItem), ...spans("b", addItem)]);
+    expect(view.status).toBe("failed");
+    expect(view.tests.map((test) => test.status)).toEqual(["matched", "matched"]);
+    expect(view.uncovered.map((step) => view.expected[step]!.destination)).toEqual([
+      "sessionRestore",
+      "authMiddleware",
+      "basketRepository",
+    ]);
+    const printed = formatTracePaths([view]);
+    expect(printed).toContain("#2: no tagged test takes basketController -> sessionRestore in req-2");
+    expect(printed).toContain("propose a change to the view");
+  });
+
+  it("keeps the advice when another view failed with a reason", () => {
+    const view = check(tests, [...spans("a", addItem), ...spans("b", addItem)]);
+    const noView = { ...view, issue: "#9", status: "failed" as const, reason: "no view", tests: [], uncovered: [] };
+    expect(formatTracePaths([noView, view])).toContain("propose a change to the view");
+  });
+
+  it("doesn't call a step missing from one test when another takes it", () => {
+    const strayed: Call = ["basketController.handle", ["authMiddleware.authenticate"], ["catalogue.lookUp"]];
+    const view = check(tests, [...spans("a", strayed), ...spans("b", addItem, restore)]);
+    expect(view.status).toBe("failed");
+    expect(view.tests[0]).toMatchObject({ status: "unmatched", undeclared: [2] });
+    expect(formatTracePaths([view])).not.toContain("missing");
   });
 });
 
