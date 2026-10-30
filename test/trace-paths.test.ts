@@ -5,7 +5,7 @@ import { loadConfig } from "../src/config.js";
 import { modelFromWorkspace, type Model } from "../src/model.js";
 import { loadRequirements } from "../src/requirements.js";
 import type { SpanRecord } from "../src/test.js";
-import { checkTracePaths, matchPath, observedPath, type PathStep } from "../src/trace-paths.js";
+import { checkTracePaths, formatTracePaths, matchPath, observedPath, type PathStep } from "../src/trace-paths.js";
 import type { TestRecord } from "../src/trace/runtime.js";
 import { basketDir } from "./basket.js";
 
@@ -64,6 +64,13 @@ const restore: Call = [
 const step = (source: string, destination: string): PathStep => ({ source, destination, description: "" });
 const pairs = (path: Array<{ source?: string; destination: string }>) =>
   path.map((call) => `${call.source ?? "(test)"}->${call.destination}`);
+
+// controller-imports-repository's add, which skips the service, then a read-back along #1's path.
+const addItemSkippingService: Call = [
+  "basketController.handle",
+  ["authMiddleware.authenticate"],
+  ["basketRepository.saveBasket"],
+];
 
 describe("observedPath", () => {
   it("lists calls between components in the order they started, skipping calls within one", () => {
@@ -171,6 +178,20 @@ describe("checkTracePaths", () => {
       "basketService->basketRepository",
     ]);
     expect(view).toMatchObject({ issue: "#2", view: "req-2", status: "passed", tests: [{ status: "matched" }] });
+  });
+
+  it("fails a shortcut the target doesn't declare, though a read-back still takes the view's steps", () => {
+    const [view] = check([passed("a", "#2/AC1")], spans("a", addItemSkippingService, getBasket));
+    expect(view).toMatchObject({ status: "failed", tests: [{ status: "unmatched", offTarget: [2] }] });
+    const [test] = view!.tests;
+    expect(test!.steps).not.toContain(null);
+    expect(test!.observed[2]).toMatchObject({ source: "basketController", destination: "basketRepository" });
+    expect(formatTracePaths([view!])).toContain("<- the target declares no relationship for this call");
+  });
+
+  it("passes a call the target declares but the view doesn't draw", () => {
+    const [view] = check([passed("a", "#2/AC1")], spans("a", restore, addItem));
+    expect(view!.tests[0]!.offTarget).toEqual([]);
   });
 
   it("checks every passing tagged test of the issue, and only those", () => {
