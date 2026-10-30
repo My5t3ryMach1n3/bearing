@@ -35,7 +35,7 @@ Ask your agent to design from the open requirements. The AGENTS.md section point
 
 The design PR changes only the model. Give its branch a name that doesn't start with an issue number, such as `design-target`; see step 4 for why.
 
-Review it before merging: the PR comment shows the model diff first, and links to the PR's target as a Structurizr static site. Download the `bearing-site` artifact from that run and open its `index.html`, then walk the dynamic views one requirement at a time. Merging the PR makes it the target that every later PR is checked against.
+Review it before merging: the PR comment shows the design first, as diagrams of the model, and links to the PR's target as a Structurizr static site. Download the `bearing-site` artifact from that run and open its `index.html`, then walk the dynamic views one requirement at a time. Merging the PR makes it the target that every later PR is checked against.
 
 ## 4. Build against it
 

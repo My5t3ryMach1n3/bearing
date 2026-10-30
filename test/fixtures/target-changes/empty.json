@@ -1,0 +1,21 @@
+{
+  "configuration": {},
+  "description": "The approved target architecture: the desired state every PR is checked against.",
+  "documentation": {},
+  "id": 0,
+  "model": {},
+  "name": "basket",
+  "properties": {
+    "structurizr.inspection.error": "3",
+    "structurizr.dsl": "d29ya3NwYWNlICJiYXNrZXQiICJUaGUgYXBwcm92ZWQgdGFyZ2V0IGFyY2hpdGVjdHVyZTogdGhlIGRlc2lyZWQgc3RhdGUgZXZlcnkgUFIgaXMgY2hlY2tlZCBhZ2FpbnN0LiIgewogIC8vIEVtcHR5IHVudGlsIHRoZSBkZXNpZ24gbG9vcCBkcmFmdHMgaXQgZnJvbSB0aGUgb3BlbiByZXF1aXJlbWVudHMuIFNlZSB0aGUgQmVhcmluZyBzZWN0aW9uIG9mIEFHRU5UUy5tZC4KICBtb2RlbCB7CiAgfQoKICB2aWV3cyB7CiAgfQp9",
+    "structurizr.inspection.info": "0",
+    "structurizr.inspection.ignore": "0",
+    "structurizr.inspection.warning": "0"
+  },
+  "views": {
+    "configuration": {
+      "styles": {},
+      "terminology": {}
+    }
+  }
+}

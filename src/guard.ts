@@ -62,14 +62,16 @@ export function targetFiles(files: PullFile[], model: string): PullFile[] {
 }
 
 // The guard's section of Bearing's comment: each target file's diff, up to `guardLimit` characters. Undefined when
-// the PR doesn't change the target.
+// the PR doesn't change the target. It always comes first in the comment: the report under it is written by the PR's
+// own run, so anything put below that could be swallowed by an unclosed fence or HTML comment. The diffs are folded so
+// the report's diagrams are what a reviewer meets next.
 export function formatGuard(files: PullFile[], base: string): string | undefined {
   if (files.length === 0) return undefined;
   const head = [
     guardStart,
-    "### ⚠️ Target change: the files",
+    "### ⚠️ Target change: the authoritative diff",
     "",
-    `This PR changes the target, Bearing's config or its workflows, so merging it approves the change. Read these diffs before the code. Bearing's guard lists them from \`${base}\`, so the PR can't hide them.`,
+    `This PR changes the target, Bearing's config or its workflows, so merging it approves the change. Bearing's guard lists these diffs from \`${base}\`, so the PR can't hide them. Everything below this section comes from the PR's own run, so if it disagrees with these diffs, believe the diffs.`,
   ].join("\n");
   const sections: string[] = [];
   let length = head.length + guardEnd.length;
@@ -79,7 +81,7 @@ export function formatGuard(files: PullFile[], base: string): string | undefined
       file.previous_filename === undefined || file.previous_filename === file.filename
         ? `<code>${html(file.filename)}</code>`
         : `<code>${html(file.previous_filename)}</code> → <code>${html(file.filename)}</code>`;
-    const summary = `<details open><summary>${name} (${file.status})</summary>`;
+    const summary = `<details><summary>${name} (${file.status})</summary>`;
     // The PR writes the patch, so it can't close the fence or the guard's section early.
     const patch = file.patch?.replaceAll(guardEnd, guardEnd.replace("guard", "guard​"));
     const fence = "`".repeat(Math.max(3, ...[...(patch ?? "").matchAll(/`+/g)].map((run) => run[0].length + 1)));

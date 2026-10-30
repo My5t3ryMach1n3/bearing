@@ -1,0 +1,1713 @@
+{
+  "configuration": {},
+  "description": "The approved target architecture: the desired state every PR is checked against.",
+  "documentation": {},
+  "id": 0,
+  "model": {
+    "deploymentNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "6",
+                    "environment": "Production",
+                    "id": "46",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "a0482d06-49c8-431f-82f8-b2107e02729f"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Makes API calls to",
+                        "destinationId": "49",
+                        "id": "50",
+                        "linkedRelationshipId": "20",
+                        "sourceId": "46",
+                        "technology": "JSON/HTTPS"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "45",
+                "instances": "1",
+                "name": "Static site",
+                "properties": {
+                  "structurizr.dsl.identifier": "site"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Amazon S3"
+              },
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "7",
+                    "environment": "Production",
+                    "id": "49",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "37797f09-6a11-432d-b999-1f8839da71be"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Stores queued email in",
+                        "destinationId": "52",
+                        "id": "53",
+                        "linkedRelationshipId": "30",
+                        "sourceId": "49",
+                        "technology": "SQL"
+                      }
+                    ],
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "48",
+                "instances": "2",
+                "name": "ECS service",
+                "properties": {
+                  "structurizr.dsl.identifier": "ecs"
+                },
+                "tags": "Element,Deployment Node,",
+                "technology": "AWS Fargate"
+              },
+              {
+                "containerInstances": [
+                  {
+                    "containerId": "15",
+                    "environment": "Production",
+                    "id": "52",
+                    "instanceId": 1,
+                    "properties": {
+                      "structurizr.dsl.identifier": "f4a1a2fd-1771-4d7e-adbe-62e29da18c07"
+                    },
+                    "tags": "Container Instance"
+                  }
+                ],
+                "environment": "Production",
+                "id": "51",
+                "instances": "1",
+                "name": "RDS",
+                "properties": {
+                  "structurizr.dsl.identifier": "rds"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Amazon RDS for PostgreSQL 16"
+              }
+            ],
+            "environment": "Production",
+            "id": "44",
+            "infrastructureNodes": [
+              {
+                "description": "Terminates HTTPS for the basket API",
+                "environment": "Production",
+                "id": "47",
+                "name": "Load balancer",
+                "properties": {
+                  "structurizr.dsl.identifier": "lb"
+                },
+                "relationships": [
+                  {
+                    "description": "Forwards requests to",
+                    "destinationId": "48",
+                    "id": "55",
+                    "sourceId": "47",
+                    "tags": "Relationship",
+                    "technology": "HTTPS"
+                  }
+                ],
+                "tags": "Element,Infrastructure Node",
+                "technology": "Application Load Balancer"
+              }
+            ],
+            "instances": "1",
+            "name": "eu-west-2",
+            "properties": {
+              "structurizr.dsl.identifier": "region"
+            },
+            "tags": "Element,Deployment Node"
+          }
+        ],
+        "environment": "Production",
+        "id": "42",
+        "infrastructureNodes": [
+          {
+            "description": "Serves the web app to shoppers",
+            "environment": "Production",
+            "id": "43",
+            "name": "CDN",
+            "properties": {
+              "structurizr.dsl.identifier": "cdn"
+            },
+            "relationships": [
+              {
+                "description": "Serves files from",
+                "destinationId": "45",
+                "id": "54",
+                "sourceId": "43",
+                "tags": "Relationship",
+                "technology": "HTTPS"
+              }
+            ],
+            "tags": "Element,Infrastructure Node",
+            "technology": "Amazon CloudFront"
+          }
+        ],
+        "instances": "1",
+        "name": "Amazon Web Services",
+        "properties": {
+          "structurizr.dsl.identifier": "aws"
+        },
+        "tags": "Element,Deployment Node"
+      }
+    ],
+    "people": [
+      {
+        "description": "Someone filling a basket to check out later",
+        "id": "1",
+        "name": "Shopper",
+        "properties": {
+          "structurizr.dsl.identifier": "shopper",
+          "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+        },
+        "relationships": [
+          {
+            "description": "Fills their basket using",
+            "destinationId": "6",
+            "id": "16",
+            "properties": {
+              "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+            },
+            "sourceId": "1",
+            "tags": "Relationship"
+          },
+          {
+            "description": "Fills their basket using",
+            "destinationId": "5",
+            "id": "17",
+            "linkedRelationshipId": "16",
+            "sourceId": "1"
+          },
+          {
+            "description": "Signs in using",
+            "destinationId": "2",
+            "id": "18",
+            "properties": {
+              "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+            },
+            "sourceId": "1",
+            "tags": "Relationship"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "description": "Signs shoppers in and vouches for their tokens",
+        "documentation": {},
+        "id": "2",
+        "name": "Identity provider",
+        "properties": {
+          "structurizr.dsl.identifier": "identityProvider",
+          "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+        },
+        "tags": "Element,Software System,External"
+      },
+      {
+        "description": "Delivers transactional email",
+        "documentation": {},
+        "id": "3",
+        "name": "Email provider",
+        "properties": {
+          "structurizr.dsl.identifier": "emailProvider",
+          "bearing.requirements": "#5"
+        },
+        "tags": "Element,Software System,External"
+      },
+      {
+        "description": "Names and prices every product on sale",
+        "documentation": {},
+        "id": "4",
+        "name": "Product catalogue",
+        "properties": {
+          "structurizr.dsl.identifier": "productCatalogue",
+          "bearing.requirements": "#1,#2,#5"
+        },
+        "tags": "Element,Software System,External"
+      },
+      {
+        "containers": [
+          {
+            "description": "The shop front shoppers browse and fill their basket in",
+            "documentation": {},
+            "id": "6",
+            "name": "Web app",
+            "properties": {
+              "structurizr.dsl.identifier": "webApp",
+              "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+            },
+            "relationships": [
+              {
+                "description": "Makes API calls to",
+                "destinationId": "9",
+                "id": "19",
+                "properties": {
+                  "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                },
+                "sourceId": "6",
+                "tags": "Relationship",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "description": "Makes API calls to",
+                "destinationId": "7",
+                "id": "20",
+                "linkedRelationshipId": "19",
+                "sourceId": "6",
+                "technology": "JSON/HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "TypeScript, React"
+          },
+          {
+            "components": [
+              {
+                "description": "Checks every request's token with the identity provider",
+                "documentation": {},
+                "id": "8",
+                "name": "Auth middleware",
+                "properties": {
+                  "structurizr.dsl.identifier": "authMiddleware",
+                  "bearing.path": "src/basket-api/auth-middleware",
+                  "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Introspects tokens with",
+                    "destinationId": "2",
+                    "id": "34",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                    },
+                    "sourceId": "8",
+                    "tags": "Relationship",
+                    "technology": "OAuth 2.0/HTTPS"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Routes basket API requests and maps errors to HTTP responses",
+                "documentation": {},
+                "id": "9",
+                "name": "Basket controller",
+                "properties": {
+                  "structurizr.dsl.identifier": "basketController",
+                  "bearing.path": "src/basket-api/basket-controller",
+                  "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Authenticates requests using",
+                    "destinationId": "8",
+                    "id": "21",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#3,#6,#7,#5"
+                    },
+                    "sourceId": "9",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Reads and changes baskets using",
+                    "destinationId": "10",
+                    "id": "22",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#3,#6,#7"
+                    },
+                    "sourceId": "9",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Restores saved baskets using",
+                    "destinationId": "14",
+                    "id": "23",
+                    "properties": {
+                      "bearing.requirements": "#4"
+                    },
+                    "sourceId": "9",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Shares baskets using",
+                    "destinationId": "12",
+                    "id": "26",
+                    "properties": {
+                      "bearing.requirements": "#5"
+                    },
+                    "sourceId": "9",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Adds, removes, prices and persists basket items",
+                "documentation": {},
+                "id": "10",
+                "name": "Basket service",
+                "properties": {
+                  "structurizr.dsl.identifier": "basketService",
+                  "bearing.path": "src/basket-api/basket-service",
+                  "bearing.requirements": "#1,#2,#3,#6,#7,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Loads and saves baskets using",
+                    "destinationId": "11",
+                    "id": "37",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#3,#6,#7,#5"
+                    },
+                    "sourceId": "10",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Looks up products and prices in",
+                    "destinationId": "4",
+                    "id": "38",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#5"
+                    },
+                    "sourceId": "10",
+                    "tags": "Relationship",
+                    "technology": "JSON/HTTPS"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Loads and saves each shopper's basket, one row per shopper, in Postgres",
+                "documentation": {},
+                "id": "11",
+                "name": "Basket repository",
+                "properties": {
+                  "structurizr.dsl.identifier": "basketRepository",
+                  "bearing.path": "src/basket-api/basket-repository",
+                  "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads from and writes to",
+                    "destinationId": "15",
+                    "id": "41",
+                    "properties": {
+                      "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+                    },
+                    "sourceId": "11",
+                    "tags": "Relationship",
+                    "technology": "SQL"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Shares a shopper's basket with an email address",
+                "documentation": {},
+                "id": "12",
+                "name": "Basket sharing",
+                "properties": {
+                  "structurizr.dsl.identifier": "basketSharing",
+                  "bearing.path": "src/basket-api/basket-sharing",
+                  "bearing.requirements": "#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads the priced basket using",
+                    "destinationId": "10",
+                    "id": "27",
+                    "properties": {
+                      "bearing.requirements": "#5"
+                    },
+                    "sourceId": "12",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Queues the email in",
+                    "destinationId": "13",
+                    "id": "28",
+                    "properties": {
+                      "bearing.requirements": "#5"
+                    },
+                    "sourceId": "12",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Queues outbound email in Postgres and sends it on a schedule, so the provider never holds up a request",
+                "documentation": {},
+                "id": "13",
+                "name": "Email outbox",
+                "properties": {
+                  "structurizr.dsl.identifier": "emailOutbox",
+                  "bearing.path": "src/basket-api/email-outbox",
+                  "bearing.requirements": "#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Stores queued email in",
+                    "destinationId": "15",
+                    "id": "29",
+                    "properties": {
+                      "bearing.requirements": "#5"
+                    },
+                    "sourceId": "13",
+                    "tags": "Relationship",
+                    "technology": "SQL"
+                  },
+                  {
+                    "description": "Sends queued email with, on a schedule",
+                    "destinationId": "3",
+                    "id": "31",
+                    "properties": {
+                      "bearing.requirements": "#5"
+                    },
+                    "sourceId": "13",
+                    "tags": "Relationship",
+                    "technology": "JSON/HTTPS"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Hands a shopper back their saved basket when they sign in after their session expired",
+                "documentation": {},
+                "id": "14",
+                "name": "Session restore",
+                "properties": {
+                  "structurizr.dsl.identifier": "sessionRestore",
+                  "bearing.path": "src/basket-api/session-restore",
+                  "bearing.requirements": "#4"
+                },
+                "relationships": [
+                  {
+                    "description": "Checks the new sign-in using",
+                    "destinationId": "8",
+                    "id": "24",
+                    "properties": {
+                      "bearing.requirements": "#4"
+                    },
+                    "sourceId": "14",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Loads saved baskets from",
+                    "destinationId": "11",
+                    "id": "25",
+                    "properties": {
+                      "bearing.requirements": "#4"
+                    },
+                    "sourceId": "14",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              }
+            ],
+            "description": "Reads and changes baskets on behalf of the web app",
+            "documentation": {},
+            "id": "7",
+            "name": "Basket API",
+            "properties": {
+              "structurizr.dsl.identifier": "basketApi",
+              "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+            },
+            "relationships": [
+              {
+                "description": "Stores queued email in",
+                "destinationId": "15",
+                "id": "30",
+                "linkedRelationshipId": "29",
+                "sourceId": "7",
+                "technology": "SQL"
+              },
+              {
+                "description": "Sends queued email with, on a schedule",
+                "destinationId": "3",
+                "id": "32",
+                "linkedRelationshipId": "31",
+                "sourceId": "7",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "description": "Introspects tokens with",
+                "destinationId": "2",
+                "id": "35",
+                "linkedRelationshipId": "34",
+                "sourceId": "7",
+                "technology": "OAuth 2.0/HTTPS"
+              },
+              {
+                "description": "Looks up products and prices in",
+                "destinationId": "4",
+                "id": "39",
+                "linkedRelationshipId": "38",
+                "sourceId": "7",
+                "technology": "JSON/HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "TypeScript, Node.js"
+          },
+          {
+            "description": "One row per shopper holding their saved basket",
+            "documentation": {},
+            "id": "15",
+            "name": "Database",
+            "properties": {
+              "structurizr.dsl.identifier": "database",
+              "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+            },
+            "tags": "Element,Container,Database",
+            "technology": "PostgreSQL"
+          }
+        ],
+        "description": "Keeps each shopper's basket until they check out",
+        "documentation": {},
+        "id": "5",
+        "name": "Basket",
+        "properties": {
+          "structurizr.dsl.identifier": "basket",
+          "bearing.requirements": "#1,#2,#3,#4,#6,#7,#5"
+        },
+        "relationships": [
+          {
+            "description": "Sends queued email with, on a schedule",
+            "destinationId": "3",
+            "id": "33",
+            "linkedRelationshipId": "31",
+            "sourceId": "5",
+            "technology": "JSON/HTTPS"
+          },
+          {
+            "description": "Introspects tokens with",
+            "destinationId": "2",
+            "id": "36",
+            "linkedRelationshipId": "34",
+            "sourceId": "5",
+            "technology": "OAuth 2.0/HTTPS"
+          },
+          {
+            "description": "Looks up products and prices in",
+            "destinationId": "4",
+            "id": "40",
+            "linkedRelationshipId": "38",
+            "sourceId": "5",
+            "technology": "JSON/HTTPS"
+          }
+        ],
+        "tags": "Element,Software System"
+      }
+    ]
+  },
+  "name": "Basket",
+  "properties": {
+    "structurizr.inspection.error": "22",
+    "structurizr.dsl": "d29ya3NwYWNlICJCYXNrZXQiICJUaGUgYXBwcm92ZWQgdGFyZ2V0IGFyY2hpdGVjdHVyZTogdGhlIGRlc2lyZWQgc3RhdGUgZXZlcnkgUFIgaXMgY2hlY2tlZCBhZ2FpbnN0LiIgewogIG1vZGVsIHsKICAgIHNob3BwZXIgPSBwZXJzb24gIlNob3BwZXIiICJTb21lb25lIGZpbGxpbmcgYSBiYXNrZXQgdG8gY2hlY2sgb3V0IGxhdGVyIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CiAgICB9CgogICAgaWRlbnRpdHlQcm92aWRlciA9IHNvZnR3YXJlU3lzdGVtICJJZGVudGl0eSBwcm92aWRlciIgIlNpZ25zIHNob3BwZXJzIGluIGFuZCB2b3VjaGVzIGZvciB0aGVpciB0b2tlbnMiIHsKICAgICAgdGFncyAiRXh0ZXJuYWwiCiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CiAgICB9CiAgICBlbWFpbFByb3ZpZGVyID0gc29mdHdhcmVTeXN0ZW0gIkVtYWlsIHByb3ZpZGVyIiAiRGVsaXZlcnMgdHJhbnNhY3Rpb25hbCBlbWFpbCIgewogICAgICB0YWdzICJFeHRlcm5hbCIKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzUiCiAgICAgIH0KICAgIH0KICAgIHByb2R1Y3RDYXRhbG9ndWUgPSBzb2Z0d2FyZVN5c3RlbSAiUHJvZHVjdCBjYXRhbG9ndWUiICJOYW1lcyBhbmQgcHJpY2VzIGV2ZXJ5IHByb2R1Y3Qgb24gc2FsZSIgewogICAgICB0YWdzICJFeHRlcm5hbCIKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzIsIzUiCiAgICAgIH0KICAgIH0KCiAgICBiYXNrZXQgPSBzb2Z0d2FyZVN5c3RlbSAiQmFza2V0IiAiS2VlcHMgZWFjaCBzaG9wcGVyJ3MgYmFza2V0IHVudGlsIHRoZXkgY2hlY2sgb3V0IiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CgogICAgICB3ZWJBcHAgPSBjb250YWluZXIgIldlYiBhcHAiICJUaGUgc2hvcCBmcm9udCBzaG9wcGVycyBicm93c2UgYW5kIGZpbGwgdGhlaXIgYmFza2V0IGluIiAiVHlwZVNjcmlwdCwgUmVhY3QiIHsKICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICAgIH0KICAgICAgfQoKICAgICAgYmFza2V0QXBpID0gY29udGFpbmVyICJCYXNrZXQgQVBJIiAiUmVhZHMgYW5kIGNoYW5nZXMgYmFza2V0cyBvbiBiZWhhbGYgb2YgdGhlIHdlYiBhcHAiICJUeXBlU2NyaXB0LCBOb2RlLmpzIiB7CiAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNCwjNiwjNywjNSIKICAgICAgICB9CgogICAgICAgIGF1dGhNaWRkbGV3YXJlID0gY29tcG9uZW50ICJBdXRoIG1pZGRsZXdhcmUiIHsKICAgICAgICAgIGRlc2NyaXB0aW9uICJDaGVja3MgZXZlcnkgcmVxdWVzdCdzIHRva2VuIHdpdGggdGhlIGlkZW50aXR5IHByb3ZpZGVyIgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJzcmMvYmFza2V0LWFwaS9hdXRoLW1pZGRsZXdhcmUiCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBiYXNrZXRDb250cm9sbGVyID0gY29tcG9uZW50ICJCYXNrZXQgY29udHJvbGxlciIgewogICAgICAgICAgZGVzY3JpcHRpb24gIlJvdXRlcyBiYXNrZXQgQVBJIHJlcXVlc3RzIGFuZCBtYXBzIGVycm9ycyB0byBIVFRQIHJlc3BvbnNlcyIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAic3JjL2Jhc2tldC1hcGkvYmFza2V0LWNvbnRyb2xsZXIiCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBiYXNrZXRTZXJ2aWNlID0gY29tcG9uZW50ICJCYXNrZXQgc2VydmljZSIgewogICAgICAgICAgZGVzY3JpcHRpb24gIkFkZHMsIHJlbW92ZXMsIHByaWNlcyBhbmQgcGVyc2lzdHMgYmFza2V0IGl0ZW1zIgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJzcmMvYmFza2V0LWFwaS9iYXNrZXQtc2VydmljZSIKICAgICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzIsIzMsIzYsIzcsIzUiCiAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGJhc2tldFJlcG9zaXRvcnkgPSBjb21wb25lbnQgIkJhc2tldCByZXBvc2l0b3J5IiB7CiAgICAgICAgICBkZXNjcmlwdGlvbiAiTG9hZHMgYW5kIHNhdmVzIGVhY2ggc2hvcHBlcidzIGJhc2tldCwgb25lIHJvdyBwZXIgc2hvcHBlciwgaW4gUG9zdGdyZXMiCiAgICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICAgImJlYXJpbmcucGF0aCIgInNyYy9iYXNrZXQtYXBpL2Jhc2tldC1yZXBvc2l0b3J5IgogICAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNCwjNiwjNywjNSIKICAgICAgICAgIH0KICAgICAgICB9CiAgICAgICAgYmFza2V0U2hhcmluZyA9IGNvbXBvbmVudCAiQmFza2V0IHNoYXJpbmciIHsKICAgICAgICAgIGRlc2NyaXB0aW9uICJTaGFyZXMgYSBzaG9wcGVyJ3MgYmFza2V0IHdpdGggYW4gZW1haWwgYWRkcmVzcyIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAic3JjL2Jhc2tldC1hcGkvYmFza2V0LXNoYXJpbmciCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBlbWFpbE91dGJveCA9IGNvbXBvbmVudCAiRW1haWwgb3V0Ym94IiB7CiAgICAgICAgICBkZXNjcmlwdGlvbiAiUXVldWVzIG91dGJvdW5kIGVtYWlsIGluIFBvc3RncmVzIGFuZCBzZW5kcyBpdCBvbiBhIHNjaGVkdWxlLCBzbyB0aGUgcHJvdmlkZXIgbmV2ZXIgaG9sZHMgdXAgYSByZXF1ZXN0IgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJzcmMvYmFza2V0LWFwaS9lbWFpbC1vdXRib3giCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBzZXNzaW9uUmVzdG9yZSA9IGNvbXBvbmVudCAiU2Vzc2lvbiByZXN0b3JlIiB7CiAgICAgICAgICBkZXNjcmlwdGlvbiAiSGFuZHMgYSBzaG9wcGVyIGJhY2sgdGhlaXIgc2F2ZWQgYmFza2V0IHdoZW4gdGhleSBzaWduIGluIGFmdGVyIHRoZWlyIHNlc3Npb24gZXhwaXJlZCIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAic3JjL2Jhc2tldC1hcGkvc2Vzc2lvbi1yZXN0b3JlIgogICAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjNCIKICAgICAgICAgIH0KICAgICAgICB9CiAgICAgIH0KCiAgICAgIGRhdGFiYXNlID0gY29udGFpbmVyICJEYXRhYmFzZSIgIk9uZSByb3cgcGVyIHNob3BwZXIgaG9sZGluZyB0aGVpciBzYXZlZCBiYXNrZXQiICJQb3N0Z3JlU1FMIiB7CiAgICAgICAgdGFncyAiRGF0YWJhc2UiCiAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNCwjNiwjNywjNSIKICAgICAgICB9CiAgICAgIH0KICAgIH0KCiAgICBzaG9wcGVyIC0+IHdlYkFwcCAiRmlsbHMgdGhlaXIgYmFza2V0IHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CiAgICB9CiAgICBzaG9wcGVyIC0+IGlkZW50aXR5UHJvdmlkZXIgIlNpZ25zIGluIHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CiAgICB9CiAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiTWFrZXMgQVBJIGNhbGxzIHRvIiAiSlNPTi9IVFRQUyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNCwjNiwjNywjNSIKICAgICAgfQogICAgfQogICAgYmFza2V0Q29udHJvbGxlciAtPiBhdXRoTWlkZGxld2FyZSAiQXV0aGVudGljYXRlcyByZXF1ZXN0cyB1c2luZyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNiwjNywjNSIKICAgICAgfQogICAgfQogICAgYmFza2V0Q29udHJvbGxlciAtPiBiYXNrZXRTZXJ2aWNlICJSZWFkcyBhbmQgY2hhbmdlcyBiYXNrZXRzIHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM2LCM3IgogICAgICB9CiAgICB9CiAgICBiYXNrZXRDb250cm9sbGVyIC0+IHNlc3Npb25SZXN0b3JlICJSZXN0b3JlcyBzYXZlZCBiYXNrZXRzIHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM0IgogICAgICB9CiAgICB9CiAgICBzZXNzaW9uUmVzdG9yZSAtPiBhdXRoTWlkZGxld2FyZSAiQ2hlY2tzIHRoZSBuZXcgc2lnbi1pbiB1c2luZyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjNCIKICAgICAgfQogICAgfQogICAgc2Vzc2lvblJlc3RvcmUgLT4gYmFza2V0UmVwb3NpdG9yeSAiTG9hZHMgc2F2ZWQgYmFza2V0cyBmcm9tIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM0IgogICAgICB9CiAgICB9CiAgICBiYXNrZXRDb250cm9sbGVyIC0+IGJhc2tldFNoYXJpbmcgIlNoYXJlcyBiYXNrZXRzIHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICB9CiAgICB9CiAgICBiYXNrZXRTaGFyaW5nIC0+IGJhc2tldFNlcnZpY2UgIlJlYWRzIHRoZSBwcmljZWQgYmFza2V0IHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICB9CiAgICB9CiAgICBiYXNrZXRTaGFyaW5nIC0+IGVtYWlsT3V0Ym94ICJRdWV1ZXMgdGhlIGVtYWlsIGluIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICB9CiAgICB9CiAgICBlbWFpbE91dGJveCAtPiBkYXRhYmFzZSAiU3RvcmVzIHF1ZXVlZCBlbWFpbCBpbiIgIlNRTCIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjNSIKICAgICAgfQogICAgfQogICAgZW1haWxPdXRib3ggLT4gZW1haWxQcm92aWRlciAiU2VuZHMgcXVldWVkIGVtYWlsIHdpdGgsIG9uIGEgc2NoZWR1bGUiICJKU09OL0hUVFBTIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiM1IgogICAgICB9CiAgICB9CiAgICBhdXRoTWlkZGxld2FyZSAtPiBpZGVudGl0eVByb3ZpZGVyICJJbnRyb3NwZWN0cyB0b2tlbnMgd2l0aCIgIk9BdXRoIDIuMC9IVFRQUyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNCwjNiwjNywjNSIKICAgICAgfQogICAgfQogICAgYmFza2V0U2VydmljZSAtPiBiYXNrZXRSZXBvc2l0b3J5ICJMb2FkcyBhbmQgc2F2ZXMgYmFza2V0cyB1c2luZyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjMywjNiwjNywjNSIKICAgICAgfQogICAgfQogICAgYmFza2V0U2VydmljZSAtPiBwcm9kdWN0Q2F0YWxvZ3VlICJMb29rcyB1cCBwcm9kdWN0cyBhbmQgcHJpY2VzIGluIiAiSlNPTi9IVFRQUyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjMiwjNSIKICAgICAgfQogICAgfQogICAgYmFza2V0UmVwb3NpdG9yeSAtPiBkYXRhYmFzZSAiUmVhZHMgZnJvbSBhbmQgd3JpdGVzIHRvIiAiU1FMIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCMyLCMzLCM0LCM2LCM3LCM1IgogICAgICB9CiAgICB9CgogICAgcHJvZHVjdGlvbiA9IGRlcGxveW1lbnRFbnZpcm9ubWVudCAiUHJvZHVjdGlvbiIgewogICAgICBhd3MgPSBkZXBsb3ltZW50Tm9kZSAiQW1hem9uIFdlYiBTZXJ2aWNlcyIgewogICAgICAgIGNkbiA9IGluZnJhc3RydWN0dXJlTm9kZSAiQ0ROIiAiU2VydmVzIHRoZSB3ZWIgYXBwIHRvIHNob3BwZXJzIiAiQW1hem9uIENsb3VkRnJvbnQiCiAgICAgICAgcmVnaW9uID0gZGVwbG95bWVudE5vZGUgImV1LXdlc3QtMiIgewogICAgICAgICAgc2l0ZSA9IGRlcGxveW1lbnROb2RlICJTdGF0aWMgc2l0ZSIgIiIgIkFtYXpvbiBTMyIgewogICAgICAgICAgICBjb250YWluZXJJbnN0YW5jZSB3ZWJBcHAKICAgICAgICAgIH0KICAgICAgICAgIGxiID0gaW5mcmFzdHJ1Y3R1cmVOb2RlICJMb2FkIGJhbGFuY2VyIiAiVGVybWluYXRlcyBIVFRQUyBmb3IgdGhlIGJhc2tldCBBUEkiICJBcHBsaWNhdGlvbiBMb2FkIEJhbGFuY2VyIgogICAgICAgICAgZWNzID0gZGVwbG95bWVudE5vZGUgIkVDUyBzZXJ2aWNlIiAiIiAiQVdTIEZhcmdhdGUiICIiIDIgewogICAgICAgICAgICBjb250YWluZXJJbnN0YW5jZSBiYXNrZXRBcGkKICAgICAgICAgIH0KICAgICAgICAgIHJkcyA9IGRlcGxveW1lbnROb2RlICJSRFMiICIiICJBbWF6b24gUkRTIGZvciBQb3N0Z3JlU1FMIDE2IiB7CiAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGRhdGFiYXNlCiAgICAgICAgICB9CiAgICAgICAgfQogICAgICB9CiAgICAgIGNkbiAtPiBzaXRlICJTZXJ2ZXMgZmlsZXMgZnJvbSIgIkhUVFBTIgogICAgICBsYiAtPiBlY3MgIkZvcndhcmRzIHJlcXVlc3RzIHRvIiAiSFRUUFMiCiAgICB9CiAgfQoKICB2aWV3cyB7CiAgICBzeXN0ZW1Db250ZXh0IGJhc2tldCAiY29udGV4dCIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQogICAgY29udGFpbmVyIGJhc2tldCAiY29udGFpbmVycyIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQogICAgY29tcG9uZW50IGJhc2tldEFwaSAiY29tcG9uZW50cyIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQoKICAgIGR5bmFtaWMgYmFza2V0QXBpICJyZXEtMSIgIiMxIFZpZXcgdGhlIGJhc2tldCIgewogICAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiR0VUIC9iYXNrZXQiCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYXV0aE1pZGRsZXdhcmUgImF1dGhlbnRpY2F0ZSgpIgogICAgICBhdXRoTWlkZGxld2FyZSAtPiBpZGVudGl0eVByb3ZpZGVyICJJbnRyb3NwZWN0cyB0aGUgdG9rZW4iCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYmFza2V0U2VydmljZSAiZ2V0QmFza2V0KCkiCiAgICAgIGJhc2tldFNlcnZpY2UgLT4gYmFza2V0UmVwb3NpdG9yeSAibG9hZEJhc2tldCgpIgogICAgICBiYXNrZXRSZXBvc2l0b3J5IC0+IGRhdGFiYXNlICJTZWxlY3RzIHRoZSBiYXNrZXQiCiAgICAgIGJhc2tldFNlcnZpY2UgLT4gcHJvZHVjdENhdGFsb2d1ZSAiTG9va3MgdXAgY3VycmVudCBwcmljZXMiCiAgICAgIGF1dG9MYXlvdXQKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcuY3JpdGVyaWEiICJBQzE6ODg2MjY0Y2EsQUMyOmRjYmI3Y2U4IgogICAgICB9CiAgICB9CiAgICBkeW5hbWljIGJhc2tldEFwaSAicmVxLTIiICIjMiBBZGQgYW4gaXRlbSB0byB0aGUgYmFza2V0IiB7CiAgICAgIHdlYkFwcCAtPiBiYXNrZXRDb250cm9sbGVyICJQT1NUIC9iYXNrZXQvaXRlbXMiCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYXV0aE1pZGRsZXdhcmUgImF1dGhlbnRpY2F0ZSgpIgogICAgICBhdXRoTWlkZGxld2FyZSAtPiBpZGVudGl0eVByb3ZpZGVyICJJbnRyb3NwZWN0cyB0aGUgdG9rZW4iCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYmFza2V0U2VydmljZSAiYWRkSXRlbSgpIgogICAgICBiYXNrZXRTZXJ2aWNlIC0+IHByb2R1Y3RDYXRhbG9ndWUgIkNoZWNrcyB0aGUgcHJvZHVjdCBleGlzdHMiCiAgICAgIGJhc2tldFNlcnZpY2UgLT4gYmFza2V0UmVwb3NpdG9yeSAibG9hZEJhc2tldCgpLCBzYXZlQmFza2V0KCkiCiAgICAgIGJhc2tldFJlcG9zaXRvcnkgLT4gZGF0YWJhc2UgIlNlbGVjdHMgYW5kIHVwc2VydHMgdGhlIGJhc2tldCIKICAgICAgYXV0b0xheW91dAogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5jcml0ZXJpYSIgIkFDMTplNjY1YTlkNixBQzI6ZTk4NGNmODgiCiAgICAgIH0KICAgIH0KICAgIGR5bmFtaWMgYmFza2V0QXBpICJyZXEtMyIgIiMzIFJlbW92ZSBhbiBpdGVtIGZyb20gdGhlIGJhc2tldCIgewogICAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiREVMRVRFIC9iYXNrZXQvaXRlbXMve3NrdX0iCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYXV0aE1pZGRsZXdhcmUgImF1dGhlbnRpY2F0ZSgpIgogICAgICBhdXRoTWlkZGxld2FyZSAtPiBpZGVudGl0eVByb3ZpZGVyICJJbnRyb3NwZWN0cyB0aGUgdG9rZW4iCiAgICAgIGJhc2tldENvbnRyb2xsZXIgLT4gYmFza2V0U2VydmljZSAicmVtb3ZlSXRlbSgpIgogICAgICBiYXNrZXRTZXJ2aWNlIC0+IGJhc2tldFJlcG9zaXRvcnkgImxvYWRCYXNrZXQoKSwgc2F2ZUJhc2tldCgpIgogICAgICBiYXNrZXRSZXBvc2l0b3J5IC0+IGRhdGFiYXNlICJTZWxlY3RzIGFuZCB1cHNlcnRzIHRoZSBiYXNrZXQiCiAgICAgIGF1dG9MYXlvdXQKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcuY3JpdGVyaWEiICJBQzE6MmJjMjNiZmQsQUMyOmVjZGFmN2NjIgogICAgICB9CiAgICB9CiAgICBkeW5hbWljIGJhc2tldEFwaSAicmVxLTQiICIjNCBSZXN0b3JlIHRoZSBiYXNrZXQgYWZ0ZXIgdGhlIHNlc3Npb24gZXhwaXJlcyIgewogICAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiUE9TVCAvc2Vzc2lvbi9yZXN0b3JlIgogICAgICBiYXNrZXRDb250cm9sbGVyIC0+IHNlc3Npb25SZXN0b3JlICJyZXN0b3JlU2Vzc2lvbigpIgogICAgICBzZXNzaW9uUmVzdG9yZSAtPiBhdXRoTWlkZGxld2FyZSAiYXV0aGVudGljYXRlKCkiCiAgICAgIGF1dGhNaWRkbGV3YXJlIC0+IGlkZW50aXR5UHJvdmlkZXIgIkludHJvc3BlY3RzIHRoZSBuZXcgdG9rZW4iCiAgICAgIHNlc3Npb25SZXN0b3JlIC0+IGJhc2tldFJlcG9zaXRvcnkgImxvYWRCYXNrZXQoKSIKICAgICAgYmFza2V0UmVwb3NpdG9yeSAtPiBkYXRhYmFzZSAiU2VsZWN0cyB0aGUgc2F2ZWQgYmFza2V0IgogICAgICBhdXRvTGF5b3V0CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLmNyaXRlcmlhIiAiQUMxOmM0MTdiMWJhLEFDMjowNzZmY2NhMiIKICAgICAgfQogICAgfQogICAgZHluYW1pYyBiYXNrZXRBcGkgInJlcS01IiAiIzUgU2hhcmUgdGhlIGJhc2tldCBieSBlbWFpbCIgewogICAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiUE9TVCAvYmFza2V0L3NoYXJlIgogICAgICBiYXNrZXRDb250cm9sbGVyIC0+IGF1dGhNaWRkbGV3YXJlICJhdXRoZW50aWNhdGUoKSIKICAgICAgYXV0aE1pZGRsZXdhcmUgLT4gaWRlbnRpdHlQcm92aWRlciAiSW50cm9zcGVjdHMgdGhlIHRva2VuIgogICAgICBiYXNrZXRDb250cm9sbGVyIC0+IGJhc2tldFNoYXJpbmcgInNoYXJlQmFza2V0KCkiCiAgICAgIGJhc2tldFNoYXJpbmcgLT4gYmFza2V0U2VydmljZSAiZ2V0QmFza2V0KCkiCiAgICAgIGJhc2tldFNlcnZpY2UgLT4gYmFza2V0UmVwb3NpdG9yeSAibG9hZEJhc2tldCgpIgogICAgICBiYXNrZXRSZXBvc2l0b3J5IC0+IGRhdGFiYXNlICJTZWxlY3RzIHRoZSBiYXNrZXQiCiAgICAgIGJhc2tldFNlcnZpY2UgLT4gcHJvZHVjdENhdGFsb2d1ZSAiTG9va3MgdXAgY3VycmVudCBwcmljZXMiCiAgICAgIGJhc2tldFNoYXJpbmcgLT4gZW1haWxPdXRib3ggInF1ZXVlRW1haWwoKSIKICAgICAgZW1haWxPdXRib3ggLT4gZGF0YWJhc2UgIkluc2VydHMgdGhlIGVtYWlsIgogICAgICBlbWFpbE91dGJveCAtPiBlbWFpbFByb3ZpZGVyICJTZW5kcyBpdCBsYXRlciwgZnJvbSBzZW5kUGVuZGluZ0VtYWlscygpIgogICAgICBhdXRvTGF5b3V0CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLmNyaXRlcmlhIiAiQUMxOmUzNzY5MWQ4LEFDMjo3MDMzNTk0ZiIKICAgICAgfQogICAgfQogICAgZHluYW1pYyBiYXNrZXRBcGkgInJlcS02IiAiIzYgQ2hhbmdlIGFuIGl0ZW0ncyBxdWFudGl0eSIgewogICAgICB3ZWJBcHAgLT4gYmFza2V0Q29udHJvbGxlciAiUEFUQ0ggL2Jhc2tldC9pdGVtcy97c2t1fSIKICAgICAgYmFza2V0Q29udHJvbGxlciAtPiBhdXRoTWlkZGxld2FyZSAiYXV0aGVudGljYXRlKCkiCiAgICAgIGF1dGhNaWRkbGV3YXJlIC0+IGlkZW50aXR5UHJvdmlkZXIgIkludHJvc3BlY3RzIHRoZSB0b2tlbiIKICAgICAgYmFza2V0Q29udHJvbGxlciAtPiBiYXNrZXRTZXJ2aWNlICJzZXRRdWFudGl0eSgpIgogICAgICBiYXNrZXRTZXJ2aWNlIC0+IGJhc2tldFJlcG9zaXRvcnkgImxvYWRCYXNrZXQoKSwgc2F2ZUJhc2tldCgpIgogICAgICBiYXNrZXRSZXBvc2l0b3J5IC0+IGRhdGFiYXNlICJTZWxlY3RzIGFuZCB1cHNlcnRzIHRoZSBiYXNrZXQiCiAgICAgIGF1dG9MYXlvdXQKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcuY3JpdGVyaWEiICJBQzE6MDQ4YWZiMjksQUMyOmFiM2Q1MjEzIgogICAgICB9CiAgICB9CiAgICBkeW5hbWljIGJhc2tldEFwaSAicmVxLTciICIjNyBFbXB0eSB0aGUgYmFza2V0IiB7CiAgICAgIHdlYkFwcCAtPiBiYXNrZXRDb250cm9sbGVyICJERUxFVEUgL2Jhc2tldCIKICAgICAgYmFza2V0Q29udHJvbGxlciAtPiBhdXRoTWlkZGxld2FyZSAiYXV0aGVudGljYXRlKCkiCiAgICAgIGF1dGhNaWRkbGV3YXJlIC0+IGlkZW50aXR5UHJvdmlkZXIgIkludHJvc3BlY3RzIHRoZSB0b2tlbiIKICAgICAgYmFza2V0Q29udHJvbGxlciAtPiBiYXNrZXRTZXJ2aWNlICJjbGVhckJhc2tldCgpIgogICAgICBiYXNrZXRTZXJ2aWNlIC0+IGJhc2tldFJlcG9zaXRvcnkgInNhdmVCYXNrZXQoKSIKICAgICAgYmFza2V0UmVwb3NpdG9yeSAtPiBkYXRhYmFzZSAiVXBzZXJ0cyB0aGUgZW1wdHkgYmFza2V0IgogICAgICBhdXRvTGF5b3V0CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLmNyaXRlcmlhIiAiQUMxOmQ0ZjkzMjk1IgogICAgICB9CiAgICB9CgogICAgZGVwbG95bWVudCBiYXNrZXQgcHJvZHVjdGlvbiAiZGVwbG95bWVudCIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQoKICAgIHN0eWxlcyB7CiAgICAgIGVsZW1lbnQgIkV4dGVybmFsIiB7CiAgICAgICAgYmFja2dyb3VuZCAjOTk5OTk5CiAgICAgIH0KICAgICAgZWxlbWVudCAiRGF0YWJhc2UiIHsKICAgICAgICBzaGFwZSBjeWxpbmRlcgogICAgICB9CiAgICB9CiAgfQp9",
+    "structurizr.inspection.info": "0",
+    "structurizr.inspection.ignore": "0",
+    "structurizr.inspection.warning": "0"
+  },
+  "views": {
+    "componentViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "containerId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "12",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "13",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "14",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalContainerBoundariesVisible": false,
+        "key": "components",
+        "name": "Component View: Basket - Basket API",
+        "order": 3,
+        "relationships": [
+          {
+            "id": "19"
+          },
+          {
+            "id": "21"
+          },
+          {
+            "id": "22"
+          },
+          {
+            "id": "23"
+          },
+          {
+            "id": "24"
+          },
+          {
+            "id": "25"
+          },
+          {
+            "id": "26"
+          },
+          {
+            "id": "27"
+          },
+          {
+            "id": "28"
+          },
+          {
+            "id": "29"
+          },
+          {
+            "id": "31"
+          },
+          {
+            "id": "34"
+          },
+          {
+            "id": "37"
+          },
+          {
+            "id": "38"
+          },
+          {
+            "id": "41"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "styles": {
+        "elements": [
+          {
+            "shape": "Cylinder",
+            "tag": "Database"
+          },
+          {
+            "background": "#999999",
+            "tag": "External"
+          }
+        ]
+      },
+      "terminology": {}
+    },
+    "containerViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalSoftwareSystemBoundariesVisible": false,
+        "key": "containers",
+        "name": "Container View: Basket",
+        "order": 2,
+        "relationships": [
+          {
+            "id": "16"
+          },
+          {
+            "id": "18"
+          },
+          {
+            "id": "20"
+          },
+          {
+            "id": "30"
+          },
+          {
+            "id": "32"
+          },
+          {
+            "id": "35"
+          },
+          {
+            "id": "39"
+          }
+        ],
+        "softwareSystemId": "5"
+      }
+    ],
+    "deploymentViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "42",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "43",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "44",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "45",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "46",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "47",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "48",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "49",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "51",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "52",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "environment": "Production",
+        "key": "deployment",
+        "name": "Deployment View: Basket - Production",
+        "order": 11,
+        "relationships": [
+          {
+            "id": "50"
+          },
+          {
+            "id": "53"
+          },
+          {
+            "id": "54"
+          },
+          {
+            "id": "55"
+          }
+        ],
+        "softwareSystemId": "5"
+      }
+    ],
+    "dynamicViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#1 View the basket",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-1",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 4,
+        "properties": {
+          "bearing.criteria": "AC1:886264ca,AC2:dcbb7ce8"
+        },
+        "relationships": [
+          {
+            "description": "GET /basket",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "getBasket()",
+            "id": "22",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "loadBasket()",
+            "id": "37",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "Selects the basket",
+            "id": "41",
+            "order": "6",
+            "response": false
+          },
+          {
+            "description": "Looks up current prices",
+            "id": "38",
+            "order": "7",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#2 Add an item to the basket",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-2",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 5,
+        "properties": {
+          "bearing.criteria": "AC1:e665a9d6,AC2:e984cf88"
+        },
+        "relationships": [
+          {
+            "description": "POST /basket/items",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "addItem()",
+            "id": "22",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "Checks the product exists",
+            "id": "38",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "loadBasket(), saveBasket()",
+            "id": "37",
+            "order": "6",
+            "response": false
+          },
+          {
+            "description": "Selects and upserts the basket",
+            "id": "41",
+            "order": "7",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#3 Remove an item from the basket",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-3",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 6,
+        "properties": {
+          "bearing.criteria": "AC1:2bc23bfd,AC2:ecdaf7cc"
+        },
+        "relationships": [
+          {
+            "description": "DELETE /basket/items/{sku}",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "removeItem()",
+            "id": "22",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "loadBasket(), saveBasket()",
+            "id": "37",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "Selects and upserts the basket",
+            "id": "41",
+            "order": "6",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#4 Restore the basket after the session expires",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "14",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-4",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 7,
+        "properties": {
+          "bearing.criteria": "AC1:c417b1ba,AC2:076fcca2"
+        },
+        "relationships": [
+          {
+            "description": "POST /session/restore",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "restoreSession()",
+            "id": "23",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "24",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "Introspects the new token",
+            "id": "34",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "loadBasket()",
+            "id": "25",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "Selects the saved basket",
+            "id": "41",
+            "order": "6",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#5 Share the basket by email",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "12",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "13",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-5",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 8,
+        "properties": {
+          "bearing.criteria": "AC1:e37691d8,AC2:7033594f"
+        },
+        "relationships": [
+          {
+            "description": "POST /basket/share",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "shareBasket()",
+            "id": "26",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "getBasket()",
+            "id": "27",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "loadBasket()",
+            "id": "37",
+            "order": "6",
+            "response": false
+          },
+          {
+            "description": "Selects the basket",
+            "id": "41",
+            "order": "7",
+            "response": false
+          },
+          {
+            "description": "Looks up current prices",
+            "id": "38",
+            "order": "8",
+            "response": false
+          },
+          {
+            "description": "queueEmail()",
+            "id": "28",
+            "order": "9",
+            "response": false
+          },
+          {
+            "description": "Inserts the email",
+            "id": "29",
+            "order": "10",
+            "response": false
+          },
+          {
+            "description": "Sends it later, from sendPendingEmails()",
+            "id": "31",
+            "order": "11",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#6 Change an item's quantity",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-6",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 9,
+        "properties": {
+          "bearing.criteria": "AC1:048afb29,AC2:ab3d5213"
+        },
+        "relationships": [
+          {
+            "description": "PATCH /basket/items/{sku}",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "setQuantity()",
+            "id": "22",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "loadBasket(), saveBasket()",
+            "id": "37",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "Selects and upserts the basket",
+            "id": "41",
+            "order": "6",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#7 Empty the basket",
+        "elementId": "7",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-7",
+        "name": "Dynamic View: Basket - Basket API",
+        "order": 10,
+        "properties": {
+          "bearing.criteria": "AC1:d4f93295"
+        },
+        "relationships": [
+          {
+            "description": "DELETE /basket",
+            "id": "19",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "authenticate()",
+            "id": "21",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "Introspects the token",
+            "id": "34",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "clearBasket()",
+            "id": "22",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "saveBasket()",
+            "id": "37",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "Upserts the empty basket",
+            "id": "41",
+            "order": "6",
+            "response": false
+          }
+        ]
+      }
+    ],
+    "systemContextViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "enterpriseBoundaryVisible": true,
+        "key": "context",
+        "name": "System Context View: Basket",
+        "order": 1,
+        "relationships": [
+          {
+            "id": "17"
+          },
+          {
+            "id": "18"
+          },
+          {
+            "id": "33"
+          },
+          {
+            "id": "36"
+          },
+          {
+            "id": "40"
+          }
+        ],
+        "softwareSystemId": "5"
+      }
+    ]
+  }
+}
