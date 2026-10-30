@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { actionsBot, formatGuard, guard, targetFiles, type PullFile } from "../src/guard.js";
 import { init } from "../src/init.js";
-import { guardEnd, guardLimit, guardStart, reportMarker, splitComment } from "../src/report.js";
+import { guardEnd, guardLimit, guardStart, joinComment, reportMarker, splitComment } from "../src/report.js";
 import { version } from "../src/version.js";
 
 const api = "https://api.github.com/repos/acme/basket";
@@ -58,6 +58,25 @@ const file = (filename: string, patch = "@@ -1 +1 @@\n-a\n+b", status = "modifie
   filename,
   status,
   patch,
+});
+
+describe("formatGuard's place in the comment", () => {
+  it("marks its diffs as authoritative and folds them, so the report's diagrams come next", () => {
+    const section = formatGuard(
+      [{ filename: "architecture/workspace.dsl", status: "modified", patch: "@@ -1 +1 @@" }],
+      "main",
+    )!;
+    expect(section).toContain("### ⚠️ Target change: the authoritative diff");
+    expect(section).toContain("if it disagrees with these diffs, believe the diffs");
+    expect(section).toContain("<details><summary>");
+    expect(section).not.toContain("<details open>");
+  });
+
+  it("stays above the report, so nothing the PR's run writes can swallow it", () => {
+    const report = "## Bearing\n\n<!-- ```";
+    const body = joinComment({ guard: `${guardStart}\nthe diffs\n${guardEnd}`, report });
+    expect(body.indexOf(guardEnd)).toBeLessThan(body.indexOf("<!-- ```"));
+  });
 });
 
 describe("targetFiles", () => {

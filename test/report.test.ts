@@ -4,19 +4,19 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runChecks, type CheckReport } from "../src/check.js";
 import { loadConfig } from "../src/config.js";
+import { formatMermaid, type Overlay } from "../src/mermaid.js";
 import { createProgram } from "../src/program.js";
 import {
   buildOverlay,
   formatComment,
-  formatMermaid,
   gatherReport,
   overlayLimit,
   guardEnd,
+  guardLimit,
   guardStart,
   postComment,
   pullRequestNumber,
   reportMarker,
-  type Overlay,
 } from "../src/report.js";
 import { basketDir, basketRepo, basketVariants, git, variantRepo } from "./basket.js";
 
@@ -133,21 +133,20 @@ describe("the overlay on the basket fixture", () => {
   it("draws nothing when nothing drifted", async () => {
     const { overlay, comment } = await report(variantRepo("untraced-helper"));
     expect(overlay.nodes).toEqual([]);
-    expect(comment).toContain("Nothing is added to, removed from or drifted from the target.");
+    expect(comment).toContain("Nothing has drifted from the target.");
     expect(comment).not.toContain("```mermaid");
   });
 
-  it("colours what a target change adds, removes and drifts", async () => {
+  it("leaves a target change to the target-change section, and draws only drift", async () => {
     const root = basketRepo();
     git(root, "checkout", "-q", "-b", "share-basket");
     changeTarget(root);
-    const { overlay } = await report(root);
-    expect(marked(overlay)).toEqual({ shareService: "added", basketService: "drifted" });
-    expect(edgesOf(overlay)).toContain("basketController -> shareService (added)");
-    expect(edgesOf(overlay)).toContain("sessionRestore -> authMiddleware (removed)");
-    const mermaid = formatMermaid(overlay);
-    expect(mermaid).toContain("classDef added fill:#dafbe1");
-    expect(mermaid).toMatch(/n\d+ -\.->\|"Checks the new sign-in using"\| n\d+/);
+    const { overlay, comment } = await report(root);
+    // The target drops this relationship, but the code still imports it, so it's drift. What the target adds isn't.
+    expect(edgesOf(overlay)).toContain("sessionRestore -> authMiddleware (drifted)");
+    expect(overlay.nodes.map((node) => node.id)).not.toContain("shareService");
+    expect(marked(overlay)).toEqual({});
+    expect(comment).toContain("#### Components: what changes in Basket API");
   });
 });
 
@@ -254,6 +253,24 @@ describe("the comment", () => {
     const comment = formatComment({ check, ...(await gatherReport(config)) });
     expect(comment.length).toBeLessThan(65_536);
     expect(comment).toContain("The details are too long for a comment; run `bearing check` to see them.");
+  });
+
+  it("drops the sequence diagrams after the details, keeping the summary and the level diagrams", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "share-basket");
+    changeTarget(root);
+    const config = loadConfig(root);
+    const check = await runChecks(config);
+    const gathered = await gatherReport(config);
+    const view = gathered.target.dynamicViews.get("req-2")!;
+    const step = view.steps[0]!;
+    const steps = Array.from({ length: 4000 }, () => ({ ...step, description: "x".repeat(40) }));
+    gathered.target.dynamicViews.set("req-99", { ...view, id: "req-99", steps });
+    const comment = formatComment({ check, ...gathered });
+    expect(comment.length).toBeLessThanOrEqual(65_536 - guardLimit);
+    expect(comment).toContain("The dynamic views are too long for the comment");
+    expect(comment).toContain("#### Components: what changes in Basket API");
+    expect(comment).toContain("New dynamic view: #99.");
   });
 });
 

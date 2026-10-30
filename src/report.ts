@@ -7,18 +7,18 @@ import { checkedTarget, checkTitles, formatCheck, runChecks, type CheckOptions, 
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { CoverageError } from "./coverage.js";
 import { DeriveError } from "./derive.js";
-import { diffModels, type Changes, type Drift, type ModelDiff } from "./diff.js";
 import { GitHubError, githubApi, githubRepository, githubToken, type GitHubCall } from "./github.js";
+import { formatMermaid, type Mark, type Overlay, type OverlayEdge, type OverlayNode } from "./mermaid.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
 import { RequirementsError } from "./requirements.js";
 import { exportStaticSite, StructurizrError } from "./structurizr.js";
+import { cell, describeKind, formatTargetChange, kinds, type Adr } from "./target-change.js";
 import { TerraformError } from "./terraform.js";
 
-// `bearing report`: the PR comment. A summary of every check comes first, then one Mermaid overlay of the elements
-// the PR affects, with what it adds, removes and drifts in colour, then each failing or flagged check's details. In
-// target-change mode the target's own diff and the ADRs that give its reason come before all of it, so whoever
-// merges sees them first. See the How
+// `bearing report`: the PR comment. A summary of every check comes first, then one Mermaid overlay of where the code
+// or the Terraform drifts from the target, then each failing or flagged check's details. In target-change mode the
+// target-change section from target-change.ts comes before all of it, so whoever merges sees it first. See the How
 // `bearing report` works section of docs/product-spec.md.
 
 // Marks Bearing's comment, so each run updates it in place rather than adding another.
@@ -40,55 +40,11 @@ export interface ReportInputs {
   siteUrl?: string;
 }
 
-export interface Adr {
-  path: string;
-  text: string;
-}
-
 // The overlay stops adding context, the elements around the affected ones, once it has this many. The affected
 // elements themselves are always drawn.
 export const overlayLimit = 15;
 
-// Added and removed are the PR's changes to the target; drifted is a change to the target's fields, or code that
-// doesn't do what the target says.
-export type Mark = "added" | "removed" | "drifted";
-
-export interface Overlay {
-  nodes: OverlayNode[];
-  edges: OverlayEdge[];
-}
-
-export interface OverlayNode {
-  // Stable ID of the element or deployment element; a Terraform resource's address for a node only it has.
-  id: string;
-  name: string;
-  // What it is, e.g. "Component" or "Deployment node", and its technology.
-  kind: string;
-  // The name of the box it's drawn in: its container or software system, or its deployment environment.
-  group?: string;
-  mark?: Mark;
-}
-
-export interface OverlayEdge {
-  source: string;
-  destination: string;
-  label: string;
-  mark?: Mark;
-}
-
-const kinds = {
-  person: "Person",
-  softwareSystem: "Software system",
-  container: "Container",
-  component: "Component",
-  deploymentNode: "Deployment node",
-  infrastructureNode: "Infrastructure node",
-  containerInstance: "Container instance",
-  softwareSystemInstance: "Software system instance",
-};
-
-// The elements the PR affects, and the relationships between them:
-// - in target-change mode, what the PR's target adds, removes or changes in the fork point's;
+// Where the PR drifts from the target, and the relationships between what that touches:
 // - relationships the code makes that the target doesn't declare (Boundaries);
 // - deployment nodes the Terraform adds, lacks or counts differently from the target (Deployment);
 // - calls a tagged test made that its issue's dynamic view doesn't have, and the view's steps it missed (Trace paths).
@@ -97,6 +53,7 @@ const kinds = {
 // undeclared relationship skips, as long as that keeps it within `overlayLimit` elements.
 export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "forked">): Overlay {
   const { check, target, forked } = inputs;
+  // A removed element can still be named by the code, so it's looked up at the fork point too.
   const nodes = new Map<string, OverlayNode>();
   const edges = new Map<string, OverlayEdge>();
   const pairOf = (edge: { source: string; destination: string }) => `${edge.source}->${edge.destination}`;
@@ -115,10 +72,10 @@ export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "fo
         element.parent === undefined
           ? undefined
           : (target.elements.get(element.parent) ?? forked.elements.get(element.parent));
-      added = { id, name: element.name, kind: describe(kinds[element.type], element.technology) };
+      added = { id, name: element.name, kind: describeKind(kinds[element.type], element.technology) };
       if (parent !== undefined) added.group = parent.name;
     } else if (deployment !== undefined) {
-      added = { id, name: deployment.name, kind: describe(kinds[deployment.type], deployment.technology) };
+      added = { id, name: deployment.name, kind: describeKind(kinds[deployment.type], deployment.technology) };
       added.group = deployment.environment;
     } else {
       added = { id, name: id, kind: "" };
@@ -136,23 +93,6 @@ export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "fo
     edges.set(key, added);
   };
 
-  if (forked !== target) {
-    const diff = diffModels(forked, target);
-    for (const mark of ["added", "removed", "drifted"] as const) {
-      for (const item of diff.elements[mark]) node(item.id, mark);
-      for (const item of diff.deployment[mark]) node(item.id, mark);
-    }
-    for (const mark of ["added", "removed"] as const) {
-      for (const relationship of diff.relationships[mark]) {
-        edge({ ...endpoints(relationship), label: relationship.description, mark });
-      }
-    }
-    for (const { id } of diff.relationships.drifted) {
-      const relationship = target.relationships.get(id)!;
-      edge({ ...endpoints(relationship), label: relationship.description, mark: "drifted" });
-    }
-  }
-
   // The undeclared relationships the code makes, which context may route around.
   const skipped: OverlayEdge[] = [];
   for (const each of check.checks) {
@@ -167,7 +107,7 @@ export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "fo
         nodes.set(added.id, {
           id: added.id,
           name: added.resource.address,
-          kind: describe("Not in the target", added.technology),
+          kind: describeKind("Not in the target", added.technology),
           ...(each.environment === undefined ? {} : { group: each.environment }),
           mark: "drifted",
         });
@@ -238,57 +178,6 @@ function endpoints(relationship: { source: string; destination: string }) {
   return { source: relationship.source, destination: relationship.destination };
 }
 
-function describe(kind: string, technology: string): string {
-  return technology === "" ? kind : `${kind}: ${technology}`;
-}
-
-const colours: Record<Mark, { node: string; link: string }> = {
-  added: { node: "fill:#dafbe1,stroke:#1a7f37,color:#1f2328", link: "stroke:#1a7f37,stroke-width:2px" },
-  removed: {
-    node: "fill:#f6f8fa,stroke:#8c959f,stroke-dasharray:4 3,color:#59636e",
-    link: "stroke:#8c959f,stroke-width:2px",
-  },
-  drifted: { node: "fill:#ffebe9,stroke:#cf222e,color:#1f2328", link: "stroke:#cf222e,stroke-width:2px" },
-};
-
-// The overlay as a Mermaid flowchart, each element in a box for its container or environment.
-export function formatMermaid(overlay: Overlay): string {
-  const ids = new Map(overlay.nodes.map((node, index) => [node.id, `n${index}`]));
-  const lines = ["flowchart LR"];
-  const groups = new Map<string | undefined, OverlayNode[]>();
-  for (const node of overlay.nodes) groups.set(node.group, [...(groups.get(node.group) ?? []), node]);
-  const label = (node: OverlayNode) =>
-    `${ids.get(node.id)}["${escape(node.name)}${node.kind === "" ? "" : `<br/>[${escape(node.kind)}]`}"]`;
-  let group = 0;
-  for (const [name, members] of groups) {
-    if (name === undefined) {
-      for (const node of members) lines.push(`  ${label(node)}`);
-      continue;
-    }
-    lines.push(`  subgraph g${group++}["${escape(name)}"]`);
-    for (const node of members) lines.push(`    ${label(node)}`);
-    lines.push("  end");
-  }
-  overlay.edges.forEach((edge) => {
-    const arrow = edge.mark === "removed" ? "-.->" : "-->";
-    const text = edge.label === "" ? "" : `|"${escape(edge.label)}"|`;
-    lines.push(`  ${ids.get(edge.source)} ${arrow}${text} ${ids.get(edge.destination)}`);
-  });
-  for (const mark of ["added", "removed", "drifted"] as const) {
-    const marked = overlay.nodes.filter((node) => node.mark === mark).map((node) => ids.get(node.id));
-    const links = overlay.edges.flatMap((edge, index) => (edge.mark === mark ? [index] : []));
-    if (marked.length > 0)
-      lines.push(`  classDef ${mark} ${colours[mark].node}`, `  class ${marked.join(",")} ${mark}`);
-    if (links.length > 0) lines.push(`  linkStyle ${links.join(",")} ${colours[mark].link}`);
-  }
-  return lines.join("\n");
-}
-
-// Mermaid reads quotes, angle brackets and the like in a label as syntax, so they go in as its entity codes.
-function escape(text: string): string {
-  return text.replace(/["<>#|]/g, (char) => `#${char.charCodeAt(0)};`);
-}
-
 // GitHub rejects a comment longer than this.
 const commentLimit = 65_536;
 // The guard's section stops adding diffs at this length, and leaves the rest of the comment to the report.
@@ -297,6 +186,7 @@ export const guardLimit = 16_384;
 // The PR comment, in GitHub-flavoured Markdown.
 export function formatComment(inputs: ReportInputs): string {
   const { check, target, forked, targetFiles, adrs, files, siteUrl } = inputs;
+  const reportLimit = commentLimit - guardLimit;
   const failed = check.checks.filter((each) => each.status === "failed").map((each) => checkTitles[each.check]);
   const flagged = check.checks.filter((each) => each.status === "flagged").map((each) => checkTitles[each.check]);
   let verdict =
@@ -306,19 +196,19 @@ export function formatComment(inputs: ReportInputs): string {
   if (flagged.length > 0) verdict += ` · ⚠️ advisory: ${flagged.join(", ")} flagged`;
   const sections = [reportMarker, `## Bearing: ${verdict}`];
 
-  if (targetFiles.length > 0)
-    sections.push(formatTargetChange(forked === target ? undefined : diffModels(forked, target), targetFiles, adrs));
+  const targetChange = (options: { sequences?: boolean } = {}) =>
+    targetFiles.length > 0 ? [formatTargetChange(forked, target, targetFiles, adrs, options)] : [];
 
   const rows = check.checks.map((each) => {
     const title = each.blocking ? checkTitles[each.check] : `${checkTitles[each.check]} (advisory)`;
     return `| ${title} | ${statusIcons[each.status]} ${each.status} | ${cell(summarise(each))} |`;
   });
-  sections.push(["### Checks", "", "| Check | Result | |", "| --- | --- | --- |", ...rows].join("\n"));
+  const after = [["### Checks", "", "| Check | Result | |", "| --- | --- | --- |", ...rows].join("\n")];
 
   const overlay = buildOverlay(inputs);
-  sections.push(
+  after.push(
     overlay.nodes.length === 0
-      ? "### Overlay\n\nNothing is added to, removed from or drifted from the target."
+      ? "### Overlay\n\nNothing has drifted from the target."
       : [
           "### Overlay",
           "",
@@ -326,7 +216,7 @@ export function formatComment(inputs: ReportInputs): string {
           formatMermaid(overlay),
           "```",
           "",
-          "Only the affected elements and their neighbours. 🟩 added to the target · ⬜ removed from it, dashed · 🟥 drifted: changed in the target, or code that doesn't do what it says",
+          "Only the affected elements and their neighbours. 🟥 drifted: code that doesn't do what the target says",
         ].join("\n"),
   );
 
@@ -347,11 +237,13 @@ export function formatComment(inputs: ReportInputs): string {
   const footer =
     siteUrl === undefined ? [] : [`[Every view of this PR's target in Structurizr](${siteUrl}), as a static site.`];
 
-  const comment = (parts: string[]) => `${[...sections, ...parts, ...footer].join("\n\n")}\n`;
-  const full = comment(details);
-  return full.length <= commentLimit - guardLimit
-    ? full
-    : comment(["The details are too long for a comment; run `bearing check` to see them."]);
+  const comment = (change: string[], parts: string[]) =>
+    `${[...sections, ...change, ...after, ...parts, ...footer].join("\n\n")}\n`;
+  const tooLong = ["The details are too long for a comment; run `bearing check` to see them."];
+  // Details go first, then the sequence diagrams: the summary and the level diagrams are what a reviewer reads first.
+  const attempts = [comment(targetChange(), details), comment(targetChange(), tooLong)];
+  const fits = attempts.find((attempt) => attempt.length <= reportLimit);
+  return fits ?? comment(targetChange({ sequences: false }), tooLong);
 }
 
 const statusIcons = { passed: "✅", failed: "❌", skipped: "⏭️", flagged: "⚠️" };
@@ -413,59 +305,6 @@ function summarise(check: CheckReport["checks"][number]): string {
           ].join(", ");
     }
   }
-}
-
-// In target-change mode, the model diff, what the PR adds to, removes from and changes in the target, then the ADRs
-// that say why. A model change without one is called out, since its reason is then nowhere a reviewer can see.
-function formatTargetChange(diff: ModelDiff | undefined, files: string[], adrs: Adr[]): string {
-  const lines = [
-    "### ⚠️ Target change",
-    "",
-    "This PR changes the target, so merging it approves the change. Read the model diff before the code.",
-    "",
-    `Changed: ${files.map((file) => `\`${cell(file)}\``).join(", ")}`,
-  ];
-  const sections: Array<[string, Changes<{ id: string }>]> =
-    diff === undefined
-      ? []
-      : [
-          ["Elements", diff.elements],
-          ["Relationships", diff.relationships],
-          ["Dynamic views", diff.dynamicViews],
-          ["Deployment", diff.deployment],
-        ];
-  const rows = sections
-    .filter(([, changes]) => changes.added.length + changes.removed.length + changes.drifted.length > 0)
-    .map(([name, changes]) => {
-      const ids = (items: Array<{ id: string }>) => items.map((item) => `\`${cell(item.id)}\``).join(", ");
-      const drifted = (items: Drift[]) =>
-        items
-          .map((item) => `\`${cell(item.id)}\` (${item.changes.map((change) => change.field).join(", ")})`)
-          .join(", ");
-      return `| ${name} | ${ids(changes.added)} | ${ids(changes.removed)} | ${drifted(changes.drifted)} |`;
-    });
-  lines.push(
-    "",
-    rows.length === 0
-      ? "The model itself is unchanged."
-      : ["| | Added | Removed | Drifted |", "| --- | --- | --- | --- |", ...rows].join("\n"),
-  );
-  for (const adr of adrs) {
-    const title = /^#\s+(.+)$/m.exec(adr.text)?.[1]?.trim() ?? adr.path;
-    lines.push(
-      "",
-      `<details open><summary>${title} (<code>${adr.path}</code>)</summary>\n\n${adr.text.trim()}\n\n</details>`,
-    );
-  }
-  if (rows.length > 0 && adrs.length === 0) {
-    lines.push("", "No ADR in this PR gives the reason for the change or the alternatives considered.");
-  }
-  return lines.join("\n");
-}
-
-// Text for a Markdown table cell, where a pipe would end the cell and a newline the row.
-function cell(text: string): string {
-  return text.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
 export class ReportError extends Error {
@@ -622,7 +461,7 @@ function runUrl(env: NodeJS.ProcessEnv): string | undefined {
 export function reportCommand(): Command {
   return new Command("report")
     .description(
-      "write the PR comment: a summary of every check, then one Mermaid overlay of the elements the PR adds, removes or drifts, then each failing check's details; in target-change mode the target's diff and the PR's ADRs come first. Prints it, and with --post puts it on the PR, updating Bearing's comment from an earlier run",
+      "write the PR comment: a summary of every check, then one Mermaid overlay of where the code drifts from the target, then each failing check's details; in target-change mode a summary of the change, diagrams of each C4 level and dynamic view it changes, the model diff and the PR's ADRs come first. Prints it, and with --post puts it on the PR, updating Bearing's comment from an earlier run",
     )
     .argument("[issues...]", "the issues to check coverage for, as for `bearing check`")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")

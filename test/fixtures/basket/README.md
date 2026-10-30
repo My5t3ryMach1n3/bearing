@@ -9,6 +9,8 @@ The basket service from the spec's [walkthrough](../../../docs/product-spec.md#w
 | `workspace.json` | `repo/architecture/workspace.dsl` as the pinned Structurizr exports it, so unit tests can read the target without running Structurizr |
 | `variants/<name>/` | The seeded broken branches, as files laid over `repo/` |
 
+`../target-changes/` holds the real target at each step of the walkthrough as Structurizr exports it, for the target-change section's tests: `empty` and `initial` are basket#8's base and head, `sharing` is basket#16's head, and `before-guest` and `guest` are basket#21's base and head.
+
 ## The repo
 
 - `architecture/workspace.dsl` is the approved target. It has the system context, containers (web app, basket API, Postgres), five components under `src/basket-api/` with their `bearing.path`, one dynamic view per requirement, and the AWS deployment view. Every element and relationship lists the issues it serves.

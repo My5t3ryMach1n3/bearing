@@ -21,7 +21,7 @@ The npm package is `bearing-cli`; the command it installs is `bearing`.
 
 To adopt Bearing in a repo, follow the [quickstart](docs/quickstart.md). In short: run `bearing init` at its root. It writes the model, config, requirement issue form, workflows and the AGENTS.md section, then prints the branch-protection settings to turn on. Re-running it only adds what's missing.
 
-Whoever merges a PR approves any target change it makes; Bearing labels those PRs and shows the model diff first. To require a second reviewer instead, pass owners, e.g. `bearing init --owner @your-org/architects`: init adds CODEOWNERS entries for the model, config and workflows, and asks you to require code-owner review.
+Whoever merges a PR approves any target change it makes; Bearing labels those PRs and shows what changes about the architecture first. To require a second reviewer instead, pass owners, e.g. `bearing init --owner @your-org/architects`: init adds CODEOWNERS entries for the model, config and workflows, and asks you to require code-owner review.
 
 ## Trace overhead
 
