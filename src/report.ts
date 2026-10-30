@@ -384,6 +384,7 @@ function summarise(check: CheckReport["checks"][number]): string {
         : `${count(differ, "node")} ${differ === 1 ? "differs" : "differ"} from the target's ${check.environment} deployment`;
     }
     case "coverage": {
+      if (check.unlinked !== undefined) return `${count(check.unlinked.length, "component")} changed with no issue`;
       const covered = check.criteria.filter((criterion) => criterion.status === "covered").length;
       return `${covered} of ${count(check.criteria.length, "criterion", "criteria")} covered`;
     }

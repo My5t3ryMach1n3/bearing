@@ -152,6 +152,15 @@ describe("the overlay on the basket fixture", () => {
 });
 
 describe("the comment", () => {
+  it("says which check failed when a branch changes a component's code and names no issue", async () => {
+    const root = variantRepo("untraced-helper");
+    const claim = join(root, ".bearing", "claims", "untraced-helper.yaml");
+    writeFileSync(claim, readFileSync(claim, "utf8").replace('issues: ["#2"]', "issues: []"));
+    const { comment } = await report(root);
+    expect(comment).toContain("| Criteria coverage | ❌ failed | 1 component changed with no issue |\n");
+    expect(comment).toContain("the branch changes code in basketService but names no issue");
+  });
+
   it("summarises every check, then the overlay, then the failing checks' details", async () => {
     const { comment } = await report(variantRepo("controller-imports-repository"));
     expect(comment.startsWith(`${reportMarker}\n\n## Bearing: ❌ 2 blocking checks failed: Claim, Boundaries`)).toBe(

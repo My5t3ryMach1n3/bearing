@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommanderError } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -94,6 +94,36 @@ describe("runChecks on the basket fixture", () => {
       surplus: "passed",
     });
     expect(report.passed).toBe(true);
+  });
+
+  describe("with a claims file that lists no issues", () => {
+    const claimNoIssues = (root: string, branch: string) => {
+      const file = join(root, ".bearing", "claims", "untraced-helper.yaml");
+      const renamed = join(root, ".bearing", "claims", `${branch}.yaml`);
+      const claim = readFileSync(file, "utf8").replace('issues: ["#2"]', "issues: []");
+      rmSync(file);
+      writeFileSync(renamed, claim.replace("branch: untraced-helper", `branch: ${branch}`));
+    };
+
+    it("fails Criteria coverage when the branch changes a component's code", async () => {
+      const root = variantRepo("untraced-helper");
+      claimNoIssues(root, "untraced-helper");
+      const report = await runChecks(loadConfig(root));
+      expect(report.passed).toBe(false);
+      expect(statuses(report)).toMatchObject({ coverage: "failed", paths: "skipped" });
+      expect(report.checks[5]).toMatchObject({ unlinked: ["basketService"], criteria: [] });
+      expect(formatReport(report)).toContain(
+        "Criteria coverage: failed, the branch changes code in basketService but names no issue\n",
+      );
+    });
+
+    it("falls back to the issue in the branch's name", async () => {
+      const root = variantRepo("untraced-helper");
+      git(root, "switch", "-q", "-c", "2-retry-helper");
+      claimNoIssues(root, "2-retry-helper");
+      const report = await runChecks(loadConfig(root));
+      expect(report.checks[5]).toMatchObject({ status: "passed", issues: ["#2"] });
+    });
   });
 
   it("fails Target valid when a new requirement has no dynamic view yet", async () => {
