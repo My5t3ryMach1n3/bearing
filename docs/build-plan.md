@@ -86,4 +86,4 @@ Nine questions are left open by the spec or exposed by the worked example. Each 
 | Monorepo or multi-repo first? | [#25](https://github.com/My5t3ryMach1n3/bearing/issues/25) | Single repo, as the MVP scope says; ask pilot teams (experiment 6) |
 | Should the deployment view go below an RDS instance to individual databases? | [#12](https://github.com/My5t3ryMach1n3/bearing/issues/12) | No in v0.1; note it as a known gap |
 | Where does the injectable-clock convention for time-based criteria live? | [#10](https://github.com/My5t3ryMach1n3/bearing/issues/10) | In the AGENTS.md section, not in Bearing |
-| How are Go functions traced without hand instrumentation? | [#29](https://github.com/My5t3ryMach1n3/bearing/issues/29) | Decided by the spike |
+| How are Go functions traced without hand instrumentation? | [#29](https://github.com/My5t3ryMach1n3/bearing/issues/29) | Decided: `bearing test` rewrites the traced files into a build overlay and runs the tests with `GOFLAGS=-overlay=…` ([ADR 0001](adrs/0001-trace-go-with-an-overlay.md)) |
