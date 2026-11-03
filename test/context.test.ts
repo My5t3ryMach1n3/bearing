@@ -76,7 +76,9 @@ describe("designContext", () => {
       'version: 1\nmodel: m.dsl\nlanguage: typescript\ntests:\n  tag: "[<issue>.<n>]"\n',
       repo,
     );
-    expect(formatDesignContext(designContext(tagged, requirements))).toContain('tagged with it, e.g. "[2.1]"');
+    expect(formatDesignContext(designContext(tagged, requirements))).toContain(
+      'tagged with it in its name, e.g. "[2.1]"',
+    );
   });
 });
 

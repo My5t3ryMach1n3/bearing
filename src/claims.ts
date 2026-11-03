@@ -8,6 +8,7 @@ import { Command } from "commander";
 import { Document, isSeq, parseDocument } from "yaml";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { diffModels, loadModel } from "./diff.js";
+import { languageOf } from "./lang/index.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths, declarationFile, testFile } from "./paths.js";
 import { StructurizrError } from "./structurizr.js";
@@ -152,7 +153,7 @@ export async function draftClaim(config: Config, options: DraftOptions): Promise
   }
 
   const components = componentPaths(target);
-  const files = (await changedSourceFiles(config.root, base)).map((path) => {
+  const files = (await changedSourceFiles(config, base)).map((path) => {
     const component = componentOf(path, components);
     return component === undefined ? { path } : { path, component };
   });
@@ -167,9 +168,6 @@ export async function draftClaim(config: Config, options: DraftOptions): Promise
     note: previous?.note ?? "",
   };
 }
-
-// The source files a language adapter reads. TypeScript only for now.
-const sourceFile = /\.[cm]?[jt]sx?$/;
 
 // `issue-2-add-item`, `issues/2`, `2-add-item` and `feat/2-add-item` all work on #2.
 export function issuesInBranch(branch: string): string[] {
@@ -195,9 +193,9 @@ export async function targetAtFork(config: Config, base: string, target: Model):
 
 // The source files a branch adds or changes since the fork point, as a claim lists them: tests and declaration files
 // are left out.
-export async function changedSourceFiles(root: string, base: string): Promise<string[]> {
-  return (await changedFiles(root, base)).filter(
-    (path) => sourceFile.test(path) && !testFile.test(path) && !declarationFile.test(path),
+export async function changedSourceFiles(config: Pick<Config, "root" | "languages">, base: string): Promise<string[]> {
+  return (await changedFiles(config.root, base)).filter(
+    (path) => languageOf(config, path) !== undefined && !testFile.test(path) && !declarationFile.test(path),
   );
 }
 

@@ -66,6 +66,7 @@ describe("criteriaCoverage", () => {
       {
         id: "#7/AC1",
         tag: "[REQ-7.1]",
+        where: "in its name",
         text: "Given a basket with items, when the shopper empties it, then the basket is empty.",
         status: "covered",
         tests: [{ name: "[REQ-7.1] works", file: "test/integration/basket.test.ts", status: "passed" }],

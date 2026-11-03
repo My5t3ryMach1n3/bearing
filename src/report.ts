@@ -328,7 +328,7 @@ export async function gatherReport(
     ".github/workflows",
   ]);
   const components = componentPaths(target);
-  const files = (await changedSourceFiles(config.root, fork)).map((path) => {
+  const files = (await changedSourceFiles(config, fork)).map((path) => {
     const component = componentOf(path, components);
     return component === undefined ? { path } : { path, component };
   });

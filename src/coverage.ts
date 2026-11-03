@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.js";
+import { tagWhere } from "./lang/index.js";
 import type { Requirement } from "./requirements.js";
 import { tracesDir } from "./test.js";
 import { criterionTag, testsFile, type TestRecord } from "./trace/runtime.js";
@@ -14,6 +15,8 @@ export interface CriterionCoverage {
   id: string;
   // The tag tests carry for it, from `tests.tag`.
   tag: string;
+  // Where tests carry it, from the languages' adapters, e.g. "in its name".
+  where: string;
   text: string;
   // Covered: a tagged test passed and none failed. Failing: a tagged test failed. Missing: no tagged test ran.
   status: "covered" | "missing" | "failing";
@@ -54,6 +57,7 @@ export function criteriaCoverage(
     const ids = unknown.map((issue) => `#${issue}`).join(", ");
     throw new CoverageError(`${ids} ${unknown.length === 1 ? "is not a requirement" : "are not requirements"}`);
   }
+  const where = tagWhere(config);
   return [...new Set(issues)]
     .sort((a, b) => a - b)
     .flatMap((issue) => byNumber.get(issue)!.criteria.map((criterion) => ({ issue, criterion })))
@@ -67,7 +71,7 @@ export function criteriaCoverage(
         : tagged.some((test) => test.status === "passed")
           ? "covered"
           : "missing";
-      return { id: criterion.id, tag, text: criterion.text, status, tests: tagged };
+      return { id: criterion.id, tag, where, text: criterion.text, status, tests: tagged };
     });
 }
 
@@ -84,7 +88,7 @@ export function formatCoverage(coverage: CriterionCoverage[], recorded: number):
       const skipped = criterion.tests.length;
       lines.push(
         skipped === 0
-          ? `    no test tagged ${criterion.tag} ran; add an integration test with ${criterion.tag} in its name`
+          ? `    no test tagged ${criterion.tag} ran; add an integration test with ${criterion.tag} ${criterion.where}`
           : `    ${skipped === 1 ? "its one tagged test was" : `all ${skipped} tagged tests were`} skipped`,
       );
     }

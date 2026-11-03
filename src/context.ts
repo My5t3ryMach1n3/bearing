@@ -1,3 +1,4 @@
+import { tagWhere } from "./lang/index.js";
 import { join } from "node:path";
 import { Command } from "commander";
 import { ConfigError, loadConfig, type Config } from "./config.js";
@@ -51,7 +52,7 @@ export function designContext(config: Config, requirements: Requirement[]): Desi
         'Every dynamic view sets "bearing.criteria" to its issue\'s criteria pin, which this context prints. When the criteria are edited, the pin stops matching and the view and its tests are stale until checked against them and re-pinned.',
         "Every dynamic view step follows a relationship declared in the model.",
         "Code in one component may only depend on another along a declared relationship; anything goes inside a component.",
-        `Each criterion is proven by an integration test tagged with it, e.g. "${tag}", whose trace must follow the issue's dynamic view.`,
+        `Each criterion is proven by an integration test tagged with it ${tagWhere(config)}, e.g. "${tag}", whose trace must follow the issue's dynamic view.`,
       ],
       dsl: [
         `The model is ${config.model}, in Structurizr DSL.`,
