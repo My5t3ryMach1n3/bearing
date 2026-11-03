@@ -43,8 +43,7 @@ describe("parseConfig", () => {
       version: 1,
       model: "architecture/workspace.dsl",
       structurizr: { runner: "docker" },
-      languages: ["typescript"],
-      tsconfig: "tsconfig.json",
+      languages: [{ name: "typescript", root: ".", project: "tsconfig.json" }],
       requirements: { source: "github-issues", label: "requirement" },
       tests: { integration: "npm run test:integration", tag: "#<issue>/AC<n>" },
       iac: { terraform: "infra/" },
@@ -60,8 +59,7 @@ describe("parseConfig", () => {
       version: 1,
       model: "architecture/workspace.dsl",
       structurizr: { runner: "docker" },
-      languages: ["typescript"],
-      tsconfig: "tsconfig.json",
+      languages: [{ name: "typescript", root: ".", project: "tsconfig.json" }],
       requirements: { source: "github-issues", label: "requirement" },
       tests: { tag: "#<issue>/AC<n>" },
       iac: {},
@@ -81,7 +79,61 @@ describe("parseConfig", () => {
   });
 
   it("names missing required keys", () => {
-    expect(problems("version: 1\n")).toEqual(['missing required key "model"', 'missing required key "language"']);
+    expect(problems("version: 1\n")).toEqual([
+      'missing required key "model"',
+      'missing required key "language" or "languages"',
+    ]);
+  });
+
+  describe("languages", () => {
+    const base = "version: 1\nmodel: architecture/workspace.dsl\n";
+
+    it("lists each language with its root and project file", () => {
+      const text = `${base}languages:
+  - name: typescript
+    root: services/web/
+  - name: typescript
+    root: ./services/api
+    project: tsconfig.build.json
+  - name: typescript
+`;
+      expect(parseConfig(text, "/repo").languages).toEqual([
+        { name: "typescript", root: "services/web", project: "tsconfig.json" },
+        { name: "typescript", root: "services/api", project: "tsconfig.build.json" },
+        { name: "typescript", root: ".", project: "tsconfig.json" },
+      ]);
+    });
+
+    it("reads language and tsconfig as one language at the repo root", () => {
+      expect(parseConfig(`${base}language: typescript\ntsconfig: tsconfig.app.json\n`, "/repo").languages).toEqual([
+        { name: "typescript", root: ".", project: "tsconfig.app.json" },
+      ]);
+    });
+
+    it("takes language or languages, not both", () => {
+      expect(problems(`${base}language: typescript\nlanguages:\n  - name: typescript\n`)).toEqual([
+        'line 4: "language" and "languages" can\'t both be set; list every language under "languages"',
+      ]);
+      expect(problems(`${base}tsconfig: tsconfig.json\nlanguages:\n  - name: typescript\n`)).toEqual([
+        'line 3: "tsconfig" only goes with "language"; under "languages", set each one\'s "project"',
+      ]);
+    });
+
+    it("rejects unknown languages and keys, and an empty list", () => {
+      expect(problems(`${base}languages:\n  - name: cobol\n    rot: x\n`)).toEqual([
+        'line 5: unknown key "languages.0.rot"',
+        'line 4: "languages.0.name" must be one of: typescript',
+      ]);
+      expect(problems(`${base}languages: []\n`)).toEqual(['line 3: "languages" must NOT have fewer than 1 items']);
+    });
+
+    it("rejects a language listed twice at one root, and roots outside the repo", () => {
+      const text = `${base}languages:\n  - name: typescript\n  - name: typescript\n    root: ./\n  - name: typescript\n    root: ../other\n`;
+      expect(problems(text)).toEqual([
+        'line 5: typescript is listed twice at root "."',
+        'line 8: "languages.2.root" must be inside the repo',
+      ]);
+    });
   });
 
   it("rejects languages other than TypeScript", () => {
@@ -122,7 +174,7 @@ describe("parseConfig", () => {
     expect(problems("")).toEqual([
       'missing required key "version"',
       'missing required key "model"',
-      'missing required key "language"',
+      'missing required key "language" or "languages"',
     ]);
   });
 });

@@ -58,6 +58,47 @@ const ids = (graph: ReturnType<typeof deriveImports>) => graph.relationships.map
 describe("deriveImports", () => {
   const components = target({ a: "src/a", b: "src/b", c: "src/c" });
 
+  it("reads every configured language from its own root and project file", () => {
+    const config = repo({
+      "web/tsconfig.json": JSON.stringify({ ...tsconfig, include: ["src"] }),
+      "web/src/page/index.ts": 'import { api } from "../client/index.js";\nexport const page = api;\n',
+      "web/src/client/index.ts": "export const api = 1;\n",
+      "api/tsconfig.app.json": JSON.stringify({ ...tsconfig, include: ["src"] }),
+      "api/src/routes/index.ts": 'import { db } from "../store/index.js";\nexport const routes = db;\n',
+      "api/src/store/index.ts": "export const db = 1;\n",
+      "api/src/stray.ts": "export const stray = 1;\n",
+    });
+    config.languages = [
+      { name: "typescript", root: "web", project: "tsconfig.json" },
+      { name: "typescript", root: "api", project: "tsconfig.app.json" },
+    ];
+    const paths = { page: "web/src/page", client: "web/src/client", routes: "api/src/routes", store: "api/src/store" };
+    const graph = deriveImports(config, target(paths));
+    expect(ids(graph)).toEqual(["page->client", "routes->store"]);
+    expect(graph.unmapped).toEqual(["api/src/stray.ts"]);
+  });
+
+  it("counts a file under nested roots once, for the deepest root", () => {
+    const config = repo({
+      "src/a/index.ts": 'import { b } from "../b/index.js";\nexport const a = b;\n',
+      "src/b/tsconfig.json": JSON.stringify({ ...tsconfig, include: ["."] }),
+      "src/b/index.ts": 'import { c } from "../c/index.js";\nexport const b = c;\n',
+      "src/c/index.ts": "export const c = 1;\n",
+    });
+    config.languages = [
+      { name: "typescript", root: ".", project: "tsconfig.json" },
+      { name: "typescript", root: "src/b", project: "tsconfig.json" },
+    ];
+    const graph = deriveImports(config, components);
+    expect(ids(graph)).toEqual(["a->b", "b->c"]);
+    expect(graph.relationships.map(({ imports }) => imports.length)).toEqual([1, 1]);
+    expect(graph.components.map(({ files }) => files)).toEqual([
+      ["src/a/index.ts"],
+      ["src/b/index.ts"],
+      ["src/c/index.ts"],
+    ]);
+  });
+
   it("turns imports between components into relationships, with where each import is", () => {
     const config = repo({
       "src/a/index.ts":
@@ -161,8 +202,9 @@ describe("deriveImports", () => {
 
   it("explains a missing or broken tsconfig", () => {
     const config = repo({ "src/a/index.ts": "" });
-    expect(() => deriveImports({ ...config, tsconfig: "missing.json" }, components)).toThrow(
-      new DeriveError('missing.json not found; check "tsconfig" in .bearing/config.yaml'),
+    const missing = { ...config, languages: [{ name: "typescript" as const, root: ".", project: "missing.json" }] };
+    expect(() => deriveImports(missing, components)).toThrow(
+      new DeriveError("missing.json not found; check the TypeScript project file in .bearing/config.yaml"),
     );
     writeFileSync(join(config.root, "tsconfig.json"), '{ "compilerOptions": { "module": "nope" } }');
     expect(() => deriveImports(config, components)).toThrow(/tsconfig\.json: .*--module/);

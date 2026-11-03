@@ -331,7 +331,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       mismatches: [],
     };
   } else {
-    const changed = await changedSourceFiles(config.root, fork);
+    const changed = await changedSourceFiles(config, fork);
     const mismatches = checkClaim(claim, { forked, target, graph, changed });
     claimCheck = {
       check: "claim",
@@ -380,7 +380,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     // Code in a component has to serve an issue. A branch that only changes the model, Terraform or files outside
     // every component has no criteria to check.
     const owners = componentPaths(target);
-    const changed = await changedSourceFiles(config.root, fork);
+    const changed = await changedSourceFiles(config, fork);
     const unlinked = [...new Set(changed.flatMap((path) => componentOf(path, owners) ?? []))].sort();
     coverage =
       unlinked.length > 0
@@ -436,7 +436,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     };
   } else {
     const spans = readSpanRecords(join(config.root, tracesDir));
-    const result = checkSurplus(config.root, graph, spans, closedComponents(target, await requirements()));
+    const result = checkSurplus(config, graph, spans, closedComponents(target, await requirements()));
     const flagged = result.outside.length + result.closed.length + result.untraced.length > 0;
     surplus = { check: "surplus", status: flagged ? "flagged" : "passed", blocking: false, ...result };
   }

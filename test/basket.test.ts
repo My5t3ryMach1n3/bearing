@@ -24,7 +24,7 @@ describe("basket fixture", () => {
     expect(loadConfig(repo)).toMatchObject({
       root: repo,
       model: "architecture/workspace.dsl",
-      languages: ["typescript"],
+      languages: [{ name: "typescript", root: ".", project: "tsconfig.json" }],
     });
   });
 

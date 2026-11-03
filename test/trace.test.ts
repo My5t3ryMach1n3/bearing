@@ -375,7 +375,7 @@ describe("surplus", () => {
     const root = copyBasket(variant);
     const config = loadConfig(root);
     await runTraced(config, basketComponents, [config.tests.integration!], quiet);
-    return checkSurplus(root, deriveImports(config, basketTarget), readSpanRecords(join(root, tracesDir)), closed);
+    return checkSurplus(config, deriveImports(config, basketTarget), readSpanRecords(join(root, tracesDir)), closed);
   }
 
   it("flags nothing on main", { timeout: 60_000 }, async () => {

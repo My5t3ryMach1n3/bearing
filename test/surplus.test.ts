@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Element, Model } from "../src/model.js";
 import type { Requirement } from "../src/requirements.js";
-import { closedComponents, exportedFunctions, formatSurplus } from "../src/surplus.js";
+import { exportedFunctions } from "../src/lang/typescript.js";
+import { closedComponents, formatSurplus } from "../src/surplus.js";
 
 describe("exportedFunctions", () => {
   it("lists the functions the trace hook wraps, by exported name", () => {

@@ -1,15 +1,15 @@
-import { existsSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { join } from "node:path";
 import { Command } from "commander";
-import ts from "typescript";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
+import { DeriveError } from "./lang/adapter.js";
+import { adapters, languageOf } from "./lang/index.js";
 import type { Model, Relationship } from "./model.js";
-import { componentOf, componentPaths, declarationFile, testFile } from "./paths.js";
+import { componentOf, componentPaths } from "./paths.js";
 import { StructurizrError } from "./structurizr.js";
 import { deriveTerraform, TerraformError, type TerraformGraph } from "./terraform.js";
 
-// What the TypeScript extractor finds in the code. This is the JSON `bearing derive` prints.
+// What the language adapters find in the code. This is the JSON `bearing derive` prints.
 export interface ImportGraph {
   // Components that own at least one source file, with the files they own. Sorted by ID.
   components: Array<{ id: string; path: string; files: string[] }>;
@@ -41,61 +41,35 @@ export interface ImportSite {
   module: string;
 }
 
-export class DeriveError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DeriveError";
-  }
-}
+export { DeriveError } from "./lang/adapter.js";
 
-// Maps every source file in the configured tsconfig to the component whose `bearing.path` holds it, then turns each
-// import between two components into a relationship.
-//
-// An import counts towards the component that declares what it imports, not the module it names: imports are
-// followed through `tsconfig` paths, barrels and re-exports, so importing the repository's `saveBasket` through
-// the service's index is still a dependency on the repository. `import * as` and `export * from` depend on
-// everything the module exports. Side-effect imports, `import()`, `require()` and `import("x").T` depend on the
-// module's own file. Packages and anything outside the repo are ignored.
+// Reads the code of every configured language with its adapter, maps each source file to the component whose
+// `bearing.path` holds it, and turns each import between two components into a relationship. A file two languages
+// read, such as one under nested roots, counts once, for the language `languageOf` gives it.
 export function deriveImports(config: Config, target: Model): ImportGraph {
-  const root = resolve(config.root);
   const components = componentPaths(target);
-  const repoPath = (file: string) => relative(root, file).split(sep).join("/");
-  const ownerOf = (file: string) => componentOf(file, components);
-
-  const program = createProgram(root, config.tsconfig);
-  const checker = program.getTypeChecker();
-  const sources = program
-    .getRootFileNames()
-    .map((name) => program.getSourceFile(name))
-    .filter((file): file is ts.SourceFile => file !== undefined);
-
   const files = new Map<string, string>();
-  const unmapped: string[] = [];
+  const unmapped = new Set<string>();
   const relationships = new Map<string, ImportRelationship>();
-  for (const source of sources) {
-    const file = repoPath(source.fileName);
-    const owner = ownerOf(file);
-    if (owner === undefined) {
-      unmapped.push(file);
-      continue;
+  for (const language of config.languages) {
+    const extracted = adapters[language.name].extractImports(config.root, language, components);
+    const ours = (file: string) => languageOf(config, file) === language;
+    for (const file of extracted.files.filter(ours)) {
+      const owner = componentOf(file, components);
+      if (owner === undefined) unmapped.add(file);
+      else files.set(file, owner);
     }
-    files.set(file, owner);
-    for (const { specifier, line, declaredIn } of importsOf(source, program, checker)) {
-      for (const declaration of declaredIn) {
-        const path = repoPath(declaration);
-        if (path.startsWith("../") || path.includes("/node_modules/") || path.startsWith("node_modules/")) continue;
-        const destination = ownerOf(path);
-        if (destination === undefined || destination === owner) continue;
-        const id = `${owner}->${destination}`;
-        let relationship = relationships.get(id);
-        if (relationship === undefined) {
-          relationship = { id, source: owner, destination, imports: [] };
-          relationships.set(id, relationship);
-        }
-        const site = { file, line, module: specifier.text };
-        const seen = relationship.imports.some((other) => other.file === file && other.line === line);
-        if (!seen) relationship.imports.push(site);
+    for (const { file, line, module, destination } of extracted.imports) {
+      const owner = files.get(file);
+      if (!ours(file) || owner === undefined || owner === destination) continue;
+      const id = `${owner}->${destination}`;
+      let relationship = relationships.get(id);
+      if (relationship === undefined) {
+        relationship = { id, source: owner, destination, imports: [] };
+        relationships.set(id, relationship);
       }
+      const seen = relationship.imports.some((other) => other.file === file && other.line === line);
+      if (!seen) relationship.imports.push({ file, line, module });
     }
   }
 
@@ -114,7 +88,7 @@ export function deriveImports(config: Config, target: Model): ImportGraph {
   return {
     components: owned.sort(byId),
     relationships: [...relationships.values()].sort(byId),
-    unmapped: unmapped.sort(),
+    unmapped: [...unmapped].sort(),
   };
 }
 
@@ -141,118 +115,6 @@ export function importModel(target: Model, graph: ImportGraph): Model {
     model.relationships.set(id, relationship);
   }
   return model;
-}
-
-// A program over the tsconfig's own files, less tests and declaration files. What they import is pulled in as
-// needed, so the checker can follow it.
-function createProgram(root: string, tsconfig: string): ts.Program {
-  const path = join(root, tsconfig);
-  if (!existsSync(path)) throw new DeriveError(`${tsconfig} not found; check "tsconfig" in .bearing/config.yaml`);
-  const format = (diagnostic: ts.Diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
-  const read = ts.readConfigFile(path, (file) => ts.sys.readFile(file));
-  if (read.error !== undefined) throw new DeriveError(`${tsconfig}: ${format(read.error)}`);
-  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, resolve(path, ".."), undefined, path);
-  // "No inputs were found" is left for the empty graph to show.
-  const errors = parsed.errors.filter((error) => error.code !== 18003);
-  if (errors.length > 0) throw new DeriveError(`${tsconfig}: ${errors.map(format).join("; ")}`);
-  const rootNames = parsed.fileNames.filter((file) => {
-    const repoFile = relative(root, file).split(sep).join("/");
-    return !repoFile.startsWith("../") && !testFile.test(repoFile) && !declarationFile.test(file);
-  });
-  return ts.createProgram({ rootNames, options: { ...parsed.options, noEmit: true } });
-}
-
-interface Import {
-  specifier: ts.StringLiteralLike;
-  // Where the import statement or call starts, 1-based.
-  line: number;
-  // Absolute paths of the files declaring what the import uses.
-  declaredIn: string[];
-}
-
-function importsOf(source: ts.SourceFile, program: ts.Program, checker: ts.TypeChecker): Import[] {
-  const imports: Import[] = [];
-  const moduleOf = (specifier: ts.StringLiteralLike) => checker.getSymbolAtLocation(specifier);
-  // The file a module specifier resolves to, falling back to plain resolution for `require()` in TypeScript files.
-  const moduleFile = (specifier: ts.StringLiteralLike): string[] => {
-    const declaration = moduleOf(specifier)?.declarations?.[0];
-    if (declaration !== undefined) return [declaration.getSourceFile().fileName];
-    const mode = program.getModeForUsageLocation(source, specifier);
-    const resolved = ts.resolveModuleName(
-      specifier.text,
-      source.fileName,
-      program.getCompilerOptions(),
-      ts.sys,
-      undefined,
-      undefined,
-      mode,
-    );
-    return resolved.resolvedModule === undefined ? [] : [resolved.resolvedModule.resolvedFileName];
-  };
-  const everyExport = (specifier: ts.StringLiteralLike): string[] => {
-    const module = moduleOf(specifier);
-    const exports = module === undefined ? [] : checker.getExportsOfModule(module);
-    return exports.length === 0 ? moduleFile(specifier) : exports.flatMap((symbol) => declaringFiles(symbol, checker));
-  };
-  const named = (name: ts.Node): string[] => {
-    const symbol = checker.getSymbolAtLocation(name);
-    return symbol === undefined ? [] : declaringFiles(symbol, checker);
-  };
-  const add = (at: ts.Node, specifier: ts.Expression | undefined, declaredIn: () => string[]) => {
-    if (specifier !== undefined && ts.isStringLiteralLike(specifier)) {
-      const line = source.getLineAndCharacterOfPosition(at.getStart(source)).line + 1;
-      imports.push({ specifier, line, declaredIn: [...new Set(declaredIn())] });
-    }
-  };
-
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node)) {
-      const clause = node.importClause;
-      const bindings = clause?.namedBindings;
-      add(node, node.moduleSpecifier, () => {
-        if (clause === undefined) return moduleFile(node.moduleSpecifier as ts.StringLiteralLike);
-        if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
-          return everyExport(node.moduleSpecifier as ts.StringLiteralLike);
-        }
-        return [
-          ...(clause.name === undefined ? [] : named(clause.name)),
-          ...(bindings === undefined ? [] : bindings.elements.flatMap((element) => named(element.name))),
-        ];
-      });
-    } else if (ts.isExportDeclaration(node)) {
-      const clause = node.exportClause;
-      add(node, node.moduleSpecifier, () =>
-        clause === undefined || ts.isNamespaceExport(clause)
-          ? everyExport(node.moduleSpecifier as ts.StringLiteralLike)
-          : clause.elements.flatMap((element) => {
-              const symbol = checker.getExportSpecifierLocalTargetSymbol(element);
-              return symbol === undefined ? [] : declaringFiles(symbol, checker);
-            }),
-      );
-    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      const expression = node.moduleReference.expression;
-      if (ts.isStringLiteralLike(expression)) add(node, expression, () => moduleFile(expression));
-    } else if (ts.isCallExpression(node) && node.arguments.length >= 1) {
-      const isImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
-      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === "require";
-      const [argument] = node.arguments;
-      if ((isImport || isRequire) && argument !== undefined && ts.isStringLiteralLike(argument)) {
-        add(node, argument, () => moduleFile(argument));
-      }
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
-      const literal = node.argument.literal;
-      if (ts.isStringLiteralLike(literal)) add(node, literal, () => moduleFile(literal));
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return imports;
-}
-
-// The files that declare what a symbol finally stands for, after following every alias and re-export.
-function declaringFiles(symbol: ts.Symbol, checker: ts.TypeChecker): string[] {
-  const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-  return (target.declarations ?? []).map((declaration) => declaration.getSourceFile().fileName);
 }
 
 export function deriveCommand(): Command {

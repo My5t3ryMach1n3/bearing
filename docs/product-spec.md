@@ -344,6 +344,17 @@ checks:
   responsibilities: advisory
 ```
 
+A repo with several languages, or with code below the repo root, lists them under `languages:` in place of `language:` and `tsconfig:`. Each entry gives a `name`, a `root` folder (the repo root by default) and a `project` file relative to it (`tsconfig.json` for TypeScript by default). Each language is read by its adapter; see [Writing a language adapter](language-adapters.md).
+
+```yaml
+languages:
+  - name: typescript
+    root: services/web
+  - name: typescript
+    root: services/api
+    project: tsconfig.build.json
+```
+
 ### Commands
 
 | Command | Who runs it | What it does |
@@ -420,7 +431,7 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
 
 ### How imports map to relationships
 
-`bearing derive` maps every file in the configured tsconfig to the component whose `bearing.path` holds it. Each import from one component's file to code another component declares is an as-built relationship, `<source>-><destination>`, listed with the file and line of every import that makes it. Imports inside one component make none.
+`bearing derive` maps every file in each configured language's project, the tsconfig for TypeScript, to the component whose `bearing.path` holds it. Each import from one component's file to code another component declares is an as-built relationship, `<source>-><destination>`, listed with the file and line of every import that makes it. Imports inside one component make none.
 
 Imports are resolved the way TypeScript resolves them, `tsconfig` paths included, and followed through barrels and re-exports to the file that declares what they use, so reaching the repository's code through the service's index still reads as a dependency on the repository. Type-only imports count. `import * as` and `export * from` depend on everything the module exports; side-effect imports, `import()` and `require()` depend on the module's file. Packages are ignored.
 

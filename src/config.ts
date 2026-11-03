@@ -1,20 +1,37 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { Ajv, type ErrorObject, type JSONSchemaType } from "ajv";
-import { isMap, isScalar, LineCounter, parseDocument, type Document } from "yaml";
+import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Document } from "yaml";
+import { normalizePath } from "./paths.js";
 
 export const configPath = join(".bearing", "config.yaml");
 
-export type Language = "typescript";
+export const languageNames = ["typescript"] as const;
+export type Language = (typeof languageNames)[number];
 export type CheckMode = "advisory" | "off";
+
+// The project file each language reads when `project` isn't given, relative to the language's root.
+const defaultProject: Record<Language, string> = { typescript: "tsconfig.json" };
+
+// One entry of `languages:`, or the single language `language:` names.
+export interface LanguageConfig {
+  name: Language;
+  // The folder holding the language's code and project file, relative to the repo root and normalized; "." for the
+  // repo root.
+  root: string;
+  // The project file, e.g. tsconfig.json, relative to `root`.
+  project: string;
+}
 
 // `.bearing/config.yaml` as written. See the Config section of docs/product-spec.md.
 interface ConfigFile {
   version: 1;
   model: string;
   structurizr: { runner: "docker" | "java" };
-  language: Language;
-  tsconfig: string;
+  // Either `language` (with `tsconfig`) for a repo in one language, or `languages`.
+  language?: Language;
+  tsconfig?: string;
+  languages?: Array<{ name: Language; root: string; project?: string }>;
   requirements: { source: "github-issues"; label: string };
   tests: { integration?: string; tag: string };
   iac: { terraform?: string };
@@ -23,11 +40,11 @@ interface ConfigFile {
 }
 
 // The loaded config every command works from. Paths are relative to `root`.
-export interface Config extends Omit<ConfigFile, "language"> {
+export interface Config extends Omit<ConfigFile, "language" | "tsconfig" | "languages"> {
   // The repo root: the directory holding `.bearing/`.
   root: string;
-  // A list so M2 can accept `languages:` without changing callers; only TypeScript for now.
-  languages: Language[];
+  // Every language in the repo, with `language:` read as a one-entry list at the repo root.
+  languages: LanguageConfig[];
 }
 
 // Ajv inserts this for a missing section, then fills the section's own defaults.
@@ -38,7 +55,7 @@ const checkMode = { type: "string", enum: ["advisory", "off"], default: "advisor
 export const configSchema: JSONSchemaType<ConfigFile> = {
   type: "object",
   additionalProperties: false,
-  required: ["version", "model", "language"],
+  required: ["version", "model"],
   properties: {
     version: { type: "number", const: 1 },
     model: { type: "string", minLength: 1 },
@@ -49,8 +66,23 @@ export const configSchema: JSONSchemaType<ConfigFile> = {
       properties: { runner: { type: "string", enum: ["docker", "java"], default: "docker" } },
       default: emptyObject,
     },
-    language: { type: "string", enum: ["typescript"] },
-    tsconfig: { type: "string", minLength: 1, default: "tsconfig.json" },
+    language: { type: "string", enum: languageNames, nullable: true },
+    tsconfig: { type: "string", minLength: 1, nullable: true },
+    languages: {
+      type: "array",
+      minItems: 1,
+      nullable: true,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name"],
+        properties: {
+          name: { type: "string", enum: languageNames },
+          root: { type: "string", minLength: 1, default: "." },
+          project: { type: "string", minLength: 1, nullable: true },
+        },
+      },
+    },
     requirements: {
       type: "object",
       additionalProperties: false,
@@ -136,12 +168,52 @@ export function parseConfig(text: string, root: string, file = configPath): Conf
     );
   }
   const data: unknown = doc.toJS() ?? {};
+  // Neither is required by the schema, since either will do.
+  const noLanguage =
+    typeof data === "object" && data !== null && !("language" in data) && !("languages" in data)
+      ? ['missing required key "language" or "languages"']
+      : [];
   if (!validate(data)) {
     const problems = (validate.errors ?? []).map((error) => describe(error, doc, lineCounter));
-    throw new ConfigError(file, [...new Set(problems)]);
+    throw new ConfigError(file, [...new Set([...problems, ...noLanguage])]);
   }
-  const { language, ...rest } = data;
-  return { ...rest, root, languages: [language] };
+  const { language, tsconfig, languages, ...rest } = data;
+  const problems: string[] = [...noLanguage];
+  const at = (path: string[]) => {
+    const offset = keyOffset(doc, path) ?? valueOffset(doc, path);
+    return offset === undefined ? "" : `line ${lineCounter.linePos(offset).line}: `;
+  };
+  if (language !== undefined && languages !== undefined) {
+    problems.push(
+      `${at(["languages"])}"language" and "languages" can't both be set; list every language under "languages"`,
+    );
+  }
+  if (tsconfig !== undefined && language === undefined) {
+    problems.push(
+      `${at(["tsconfig"])}"tsconfig" only goes with "language"; under "languages", set each one's "project"`,
+    );
+  }
+  const list: LanguageConfig[] =
+    languages === undefined
+      ? language === undefined
+        ? []
+        : [{ name: language, root: ".", project: tsconfig ?? defaultProject[language] }]
+      : languages.map(({ name, root: folder, project }) => ({
+          name,
+          root: normalizePath(folder) || ".",
+          project: project ?? defaultProject[name],
+        }));
+  const seen = new Set<string>();
+  list.forEach(({ name, root: folder }, index) => {
+    const key = `${name} ${folder}`;
+    if (seen.has(key)) problems.push(`${at(["languages", String(index)])}${name} is listed twice at root "${folder}"`);
+    seen.add(key);
+    if (folder === ".." || folder.startsWith("../") || isAbsolute(folder)) {
+      problems.push(`${at(["languages", String(index), "root"])}"languages.${index}.root" must be inside the repo`);
+    }
+  });
+  if (problems.length > 0) throw new ConfigError(file, problems);
+  return { ...rest, root, languages: list };
 }
 
 function describe(error: ErrorObject, doc: Document, lineCounter: LineCounter): string {
@@ -180,7 +252,7 @@ function explain(error: ErrorObject): string {
 
 function valueOffset(doc: Document, path: string[]): number | undefined {
   const node = doc.getIn(path, true);
-  return isScalar(node) || isMap(node) ? node.range?.[0] : undefined;
+  return isScalar(node) || isMap(node) || isSeq(node) ? node.range?.[0] : undefined;
 }
 
 function keyOffset(doc: Document, path: string[]): number | undefined {

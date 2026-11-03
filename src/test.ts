@@ -1,22 +1,20 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import * as nodeModule from "node:module";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
 import { componentPaths, type ComponentPath } from "./paths.js";
+import { TraceHookError } from "./lang/adapter.js";
+import { configuredAdapters } from "./lang/index.js";
 import { StructurizrError } from "./structurizr.js";
-import { traceEnv, type TraceSettings } from "./trace/env.js";
+import type { TraceSettings } from "./trace/env.js";
 import { attributes, spansFile } from "./trace/runtime.js";
 
 export const tracesDir = join(".bearing", "traces");
 
-// The module every Node process the tests start preloads. See src/trace/register.ts.
-const defaultHook = new URL("./trace/register.js", import.meta.url);
-
 export interface TestOptions {
-  // The preload module; tests point it at a build.
+  // Replaces the TypeScript hook's preload module; tests point it at a build.
   hook?: URL;
   // Extra environment for the test command, on top of this process's.
   env?: NodeJS.ProcessEnv;
@@ -38,33 +36,32 @@ export class TestError extends Error {
   }
 }
 
-// Runs a test command with tracing on: clears `.bearing/traces/`, then runs the command with the hook preloaded
-// into every Node process it starts, so each call into a component's exports leaves a span there.
+// Runs a test command with tracing on: clears `.bearing/traces/`, then runs the command with every configured
+// language's trace hook in its environment, so each call into a component's code leaves a span there.
 export async function runTraced(
   config: Config,
   components: ComponentPath[],
   command: string[],
   options: TestOptions = {},
 ): Promise<TestResult> {
-  // `registerHooks` arrived in Node 22.15; `engines` only promises 22.
-  if (typeof (nodeModule as { registerHooks?: unknown }).registerHooks !== "function") {
-    throw new TestError(`tracing needs Node.js 22.15 or later; this is ${process.version}`);
-  }
   const root = resolve(config.root);
   const dir = join(root, tracesDir);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
 
   const settings: TraceSettings = { root, dir, tag: config.tests.tag, components };
-  const env = { ...process.env, ...options.env };
-  const nodeOptions = [env.NODE_OPTIONS, `--import=${(options.hook ?? defaultHook).href}`].filter(Boolean).join(" ");
+  const hookOptions = options.hook === undefined ? {} : { hook: options.hook };
+  const env = configuredAdapters(config).reduce((env, adapter) => adapter.traceHook.env(env, settings, hookOptions), {
+    ...process.env,
+    ...options.env,
+  });
   // One string runs through the shell, as `tests.integration` is written; several run as an argument list.
   const [file, ...args] = command.length === 1 ? [command[0]!] : command;
   const child = spawn(file!, args, {
     cwd: root,
     stdio: options.stdio ?? "inherit",
     shell: command.length === 1 || process.platform === "win32",
-    env: { ...env, NODE_OPTIONS: nodeOptions, [traceEnv]: JSON.stringify(settings) },
+    env,
   });
   const exitCode = await new Promise<number>((done, fail) => {
     child.on("error", (error) => fail(new TestError(`couldn't run ${command.join(" ")}: ${error.message}`)));
@@ -166,7 +163,12 @@ export function testCommand(): Command {
         process.stderr.write(`${summary(result)}\n`);
         process.exitCode = result.exitCode;
       } catch (error) {
-        if (error instanceof ConfigError || error instanceof StructurizrError || error instanceof TestError) {
+        if (
+          error instanceof ConfigError ||
+          error instanceof StructurizrError ||
+          error instanceof TestError ||
+          error instanceof TraceHookError
+        ) {
           this.error(`error: ${error.message}`);
         }
         throw error;
