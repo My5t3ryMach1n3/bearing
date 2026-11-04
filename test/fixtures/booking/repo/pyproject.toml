@@ -1,0 +1,13 @@
+[project]
+name = "booking-api"
+version = "0.1.0"
+description = "Chairside's booking API"
+requires-python = ">=3.9"
+dependencies = ["fastapi>=0.100", "httpx>=0.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

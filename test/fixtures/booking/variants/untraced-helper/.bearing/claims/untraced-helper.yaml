@@ -1,0 +1,9 @@
+branch: untraced-helper
+issues: ["#5"]
+model:
+  added: []
+  removed: []
+files:
+  - path: app/availability/service.py
+    component: availabilityService
+note: "Finds the nearest free slots to offer when one is taken, for #5."

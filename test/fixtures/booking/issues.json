@@ -1,0 +1,26 @@
+[
+  {
+    "number": 1,
+    "title": "Book an open slot",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a patient, I want to book one of a clinician's open slots, so that I can see them at a time that suits me.\n\n**Acceptance criteria**\n1. Given a clinician's slots, when a patient lists them, then every slot not yet booked is shown.\n2. Given an open slot, when a patient books it, then the appointment is confirmed.\n"
+  },
+  {
+    "number": 5,
+    "title": "Never book one slot twice",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a clinician, I want each slot booked by one patient at most, so that I never have two patients waiting for one appointment.\n\n**Acceptance criteria**\n1. Given a booked slot, when another patient books it, then the booking is refused.\n2. Given a booked slot, when another patient tries to book it, then the first patient keeps the appointment.\n"
+  }
+]

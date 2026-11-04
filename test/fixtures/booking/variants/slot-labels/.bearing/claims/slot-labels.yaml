@@ -1,0 +1,9 @@
+branch: slot-labels
+issues: ["#1"]
+model:
+  added: []
+  removed: []
+files:
+  - path: app/routes/api.py
+    component: bookingRoutes
+note: "Labels each open slot with its day, time and clinician for #1."

@@ -1,0 +1,487 @@
+{
+  "configuration": {},
+  "description": "The approved target for Chairside's booking API, cut down to two requirements.",
+  "documentation": {},
+  "id": 0,
+  "model": {
+    "people": [
+      {
+        "description": "Someone booking an appointment at a Chairside clinic",
+        "id": "1",
+        "name": "Patient",
+        "properties": {
+          "structurizr.dsl.identifier": "patient",
+          "bearing.requirements": "#1,#5"
+        },
+        "relationships": [
+          {
+            "description": "Books appointments using",
+            "destinationId": "4",
+            "id": "8",
+            "properties": {
+              "bearing.requirements": "#1,#5"
+            },
+            "sourceId": "1",
+            "tags": "Relationship",
+            "technology": "JSON/HTTPS"
+          },
+          {
+            "description": "Books appointments using",
+            "destinationId": "3",
+            "id": "9",
+            "linkedRelationshipId": "8",
+            "sourceId": "1",
+            "technology": "JSON/HTTPS"
+          },
+          {
+            "description": "Books appointments using",
+            "destinationId": "2",
+            "id": "10",
+            "linkedRelationshipId": "8",
+            "sourceId": "1",
+            "technology": "JSON/HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "containers": [
+          {
+            "components": [
+              {
+                "description": "The HTTP API",
+                "documentation": {},
+                "id": "4",
+                "name": "Booking routes",
+                "properties": {
+                  "structurizr.dsl.identifier": "bookingRoutes",
+                  "bearing.path": "app/routes",
+                  "bearing.requirements": "#1,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Lists free slots using",
+                    "destinationId": "6",
+                    "id": "11",
+                    "properties": {
+                      "bearing.requirements": "#1"
+                    },
+                    "sourceId": "4",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Books appointments using",
+                    "destinationId": "5",
+                    "id": "12",
+                    "properties": {
+                      "bearing.requirements": "#1,#5"
+                    },
+                    "sourceId": "4",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Applies booking rules",
+                "documentation": {},
+                "id": "5",
+                "name": "Booking service",
+                "properties": {
+                  "structurizr.dsl.identifier": "bookingService",
+                  "bearing.path": "app/booking",
+                  "bearing.requirements": "#1,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Reserves slots using",
+                    "destinationId": "6",
+                    "id": "13",
+                    "properties": {
+                      "bearing.requirements": "#1,#5"
+                    },
+                    "sourceId": "5",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Reads appointments from",
+                    "destinationId": "7",
+                    "id": "14",
+                    "properties": {
+                      "bearing.requirements": "#1,#5"
+                    },
+                    "sourceId": "5",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Knows which slots are free, and is the only code that reserves one",
+                "documentation": {},
+                "id": "6",
+                "name": "Availability service",
+                "properties": {
+                  "structurizr.dsl.identifier": "availabilityService",
+                  "bearing.path": "app/availability",
+                  "bearing.requirements": "#1,#5"
+                },
+                "relationships": [
+                  {
+                    "description": "Reads slots and inserts appointments in",
+                    "destinationId": "7",
+                    "id": "15",
+                    "properties": {
+                      "bearing.requirements": "#1,#5"
+                    },
+                    "sourceId": "6",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Stores slots and appointments",
+                "documentation": {},
+                "id": "7",
+                "name": "Appointment repository",
+                "properties": {
+                  "structurizr.dsl.identifier": "appointmentRepository",
+                  "bearing.path": "app/repository",
+                  "bearing.requirements": "#1,#5"
+                },
+                "tags": "Element,Component"
+              }
+            ],
+            "description": "Books appointments in open slots",
+            "documentation": {},
+            "id": "3",
+            "name": "Booking API",
+            "properties": {
+              "structurizr.dsl.identifier": "bookingApi",
+              "bearing.requirements": "#1,#5"
+            },
+            "tags": "Element,Container",
+            "technology": "Python, FastAPI"
+          }
+        ],
+        "description": "Books dental appointments and reminds patients of them",
+        "documentation": {},
+        "id": "2",
+        "name": "Chairside",
+        "properties": {
+          "structurizr.dsl.identifier": "chairside",
+          "bearing.requirements": "#1,#5"
+        },
+        "tags": "Element,Software System"
+      }
+    ]
+  },
+  "name": "Booking",
+  "properties": {
+    "structurizr.inspection.error": "8",
+    "structurizr.dsl": "d29ya3NwYWNlICJCb29raW5nIiAiVGhlIGFwcHJvdmVkIHRhcmdldCBmb3IgQ2hhaXJzaWRlJ3MgYm9va2luZyBBUEksIGN1dCBkb3duIHRvIHR3byByZXF1aXJlbWVudHMuIiB7CiAgbW9kZWwgewogICAgcGF0aWVudCA9IHBlcnNvbiAiUGF0aWVudCIgIlNvbWVvbmUgYm9va2luZyBhbiBhcHBvaW50bWVudCBhdCBhIENoYWlyc2lkZSBjbGluaWMiIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgIH0KICAgIH0KCiAgICBjaGFpcnNpZGUgPSBzb2Z0d2FyZVN5c3RlbSAiQ2hhaXJzaWRlIiAiQm9va3MgZGVudGFsIGFwcG9pbnRtZW50cyBhbmQgcmVtaW5kcyBwYXRpZW50cyBvZiB0aGVtIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCM1IgogICAgICB9CgogICAgICBib29raW5nQXBpID0gY29udGFpbmVyICJCb29raW5nIEFQSSIgIkJvb2tzIGFwcG9pbnRtZW50cyBpbiBvcGVuIHNsb3RzIiAiUHl0aG9uLCBGYXN0QVBJIiB7CiAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjNSIKICAgICAgICB9CgogICAgICAgIGJvb2tpbmdSb3V0ZXMgPSBjb21wb25lbnQgIkJvb2tpbmcgcm91dGVzIiB7CiAgICAgICAgICBkZXNjcmlwdGlvbiAiVGhlIEhUVFAgQVBJIgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJhcHAvcm91dGVzIgogICAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjNSIKICAgICAgICAgIH0KICAgICAgICB9CiAgICAgICAgYm9va2luZ1NlcnZpY2UgPSBjb21wb25lbnQgIkJvb2tpbmcgc2VydmljZSIgewogICAgICAgICAgZGVzY3JpcHRpb24gIkFwcGxpZXMgYm9va2luZyBydWxlcyIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAiYXBwL2Jvb2tpbmciCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCM1IgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBhdmFpbGFiaWxpdHlTZXJ2aWNlID0gY29tcG9uZW50ICJBdmFpbGFiaWxpdHkgc2VydmljZSIgewogICAgICAgICAgZGVzY3JpcHRpb24gIktub3dzIHdoaWNoIHNsb3RzIGFyZSBmcmVlLCBhbmQgaXMgdGhlIG9ubHkgY29kZSB0aGF0IHJlc2VydmVzIG9uZSIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAiYXBwL2F2YWlsYWJpbGl0eSIKICAgICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGFwcG9pbnRtZW50UmVwb3NpdG9yeSA9IGNvbXBvbmVudCAiQXBwb2ludG1lbnQgcmVwb3NpdG9yeSIgewogICAgICAgICAgZGVzY3JpcHRpb24gIlN0b3JlcyBzbG90cyBhbmQgYXBwb2ludG1lbnRzIgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJhcHAvcmVwb3NpdG9yeSIKICAgICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgICAgICB9CiAgICAgICAgfQogICAgICB9CiAgICB9CgogICAgcGF0aWVudCAtPiBib29raW5nUm91dGVzICJCb29rcyBhcHBvaW50bWVudHMgdXNpbmciICJKU09OL0hUVFBTIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxLCM1IgogICAgICB9CiAgICB9CiAgICBib29raW5nUm91dGVzIC0+IGF2YWlsYWJpbGl0eVNlcnZpY2UgIkxpc3RzIGZyZWUgc2xvdHMgdXNpbmciIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEiCiAgICAgIH0KICAgIH0KICAgIGJvb2tpbmdSb3V0ZXMgLT4gYm9va2luZ1NlcnZpY2UgIkJvb2tzIGFwcG9pbnRtZW50cyB1c2luZyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSwjNSIKICAgICAgfQogICAgfQogICAgYm9va2luZ1NlcnZpY2UgLT4gYXZhaWxhYmlsaXR5U2VydmljZSAiUmVzZXJ2ZXMgc2xvdHMgdXNpbmciIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgIH0KICAgIH0KICAgIGJvb2tpbmdTZXJ2aWNlIC0+IGFwcG9pbnRtZW50UmVwb3NpdG9yeSAiUmVhZHMgYXBwb2ludG1lbnRzIGZyb20iIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgIH0KICAgIH0KICAgIGF2YWlsYWJpbGl0eVNlcnZpY2UgLT4gYXBwb2ludG1lbnRSZXBvc2l0b3J5ICJSZWFkcyBzbG90cyBhbmQgaW5zZXJ0cyBhcHBvaW50bWVudHMgaW4iIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEsIzUiCiAgICAgIH0KICAgIH0KICB9CgogIHZpZXdzIHsKICAgIHN5c3RlbUNvbnRleHQgY2hhaXJzaWRlICJjb250ZXh0IiB7CiAgICAgIGluY2x1ZGUgKgogICAgICBhdXRvTGF5b3V0CiAgICB9CiAgICBjb250YWluZXIgY2hhaXJzaWRlICJjb250YWluZXJzIiB7CiAgICAgIGluY2x1ZGUgKgogICAgICBhdXRvTGF5b3V0CiAgICB9CiAgICBjb21wb25lbnQgYm9va2luZ0FwaSAiY29tcG9uZW50cyIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQoKICAgIGR5bmFtaWMgYm9va2luZ0FwaSAicmVxLTEiICIjMSBCb29rIGFuIG9wZW4gc2xvdCIgewogICAgICBwYXRpZW50IC0+IGJvb2tpbmdSb3V0ZXMgIkdFVCAvc2xvdHMiCiAgICAgIGJvb2tpbmdSb3V0ZXMgLT4gYXZhaWxhYmlsaXR5U2VydmljZSAiZnJlZV9zbG90cygpIgogICAgICBhdmFpbGFiaWxpdHlTZXJ2aWNlIC0+IGFwcG9pbnRtZW50UmVwb3NpdG9yeSAiYm9va2VkX3Nsb3RfaWRzKCksIHNsb3RzKCkiCiAgICAgIHBhdGllbnQgLT4gYm9va2luZ1JvdXRlcyAiUE9TVCAvYXBwb2ludG1lbnRzIgogICAgICBib29raW5nUm91dGVzIC0+IGJvb2tpbmdTZXJ2aWNlICJib29rKCkiCiAgICAgIGJvb2tpbmdTZXJ2aWNlIC0+IGF2YWlsYWJpbGl0eVNlcnZpY2UgInJlc2VydmUoKSIKICAgICAgYXZhaWxhYmlsaXR5U2VydmljZSAtPiBhcHBvaW50bWVudFJlcG9zaXRvcnkgImluc2VydCgpIgogICAgICBhdXRvTGF5b3V0CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLmNyaXRlcmlhIiAiQUMxOjlkOTRmNmViLEFDMjo4YTdkZTNhNCIKICAgICAgfQogICAgfQoKICAgIGR5bmFtaWMgYm9va2luZ0FwaSAicmVxLTUiICIjNSBOZXZlciBib29rIG9uZSBzbG90IHR3aWNlIiB7CiAgICAgIHBhdGllbnQgLT4gYm9va2luZ1JvdXRlcyAiUE9TVCAvYXBwb2ludG1lbnRzIgogICAgICBib29raW5nUm91dGVzIC0+IGJvb2tpbmdTZXJ2aWNlICJib29rKCkiCiAgICAgIGJvb2tpbmdTZXJ2aWNlIC0+IGF2YWlsYWJpbGl0eVNlcnZpY2UgInJlc2VydmUoKSIKICAgICAgYXZhaWxhYmlsaXR5U2VydmljZSAtPiBhcHBvaW50bWVudFJlcG9zaXRvcnkgImluc2VydCgpLCByZWZ1c2VkIGlmIHRoZSBzbG90IGlzIHRha2VuIgogICAgICBhdXRvTGF5b3V0CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLmNyaXRlcmlhIiAiQUMxOjQzYWM4MTAxLEFDMjpjY2UyZjAyOCIKICAgICAgfQogICAgfQogIH0KfQ==",
+    "structurizr.inspection.info": "0",
+    "structurizr.inspection.ignore": "0",
+    "structurizr.inspection.warning": "0"
+  },
+  "views": {
+    "componentViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "containerId": "3",
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalContainerBoundariesVisible": false,
+        "key": "components",
+        "name": "Component View: Chairside - Booking API",
+        "order": 3,
+        "relationships": [
+          {
+            "id": "11"
+          },
+          {
+            "id": "12"
+          },
+          {
+            "id": "13"
+          },
+          {
+            "id": "14"
+          },
+          {
+            "id": "15"
+          },
+          {
+            "id": "8"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "styles": {},
+      "terminology": {}
+    },
+    "containerViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalSoftwareSystemBoundariesVisible": false,
+        "key": "containers",
+        "name": "Container View: Chairside",
+        "order": 2,
+        "relationships": [
+          {
+            "id": "9"
+          }
+        ],
+        "softwareSystemId": "2"
+      }
+    ],
+    "dynamicViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#1 Book an open slot",
+        "elementId": "3",
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-1",
+        "name": "Dynamic View: Chairside - Booking API",
+        "order": 4,
+        "properties": {
+          "bearing.criteria": "AC1:9d94f6eb,AC2:8a7de3a4"
+        },
+        "relationships": [
+          {
+            "description": "GET /slots",
+            "id": "8",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "free_slots()",
+            "id": "11",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "booked_slot_ids(), slots()",
+            "id": "15",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "POST /appointments",
+            "id": "8",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "book()",
+            "id": "12",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "reserve()",
+            "id": "13",
+            "order": "6",
+            "response": false
+          },
+          {
+            "description": "insert()",
+            "id": "15",
+            "order": "7",
+            "response": false
+          }
+        ]
+      },
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#5 Never book one slot twice",
+        "elementId": "3",
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-5",
+        "name": "Dynamic View: Chairside - Booking API",
+        "order": 5,
+        "properties": {
+          "bearing.criteria": "AC1:43ac8101,AC2:cce2f028"
+        },
+        "relationships": [
+          {
+            "description": "POST /appointments",
+            "id": "8",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "book()",
+            "id": "12",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "reserve()",
+            "id": "13",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "insert(), refused if the slot is taken",
+            "id": "15",
+            "order": "4",
+            "response": false
+          }
+        ]
+      }
+    ],
+    "systemContextViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "enterpriseBoundaryVisible": true,
+        "key": "context",
+        "name": "System Context View: Chairside",
+        "order": 1,
+        "relationships": [
+          {
+            "id": "10"
+          }
+        ],
+        "softwareSystemId": "2"
+      }
+    ]
+  }
+}

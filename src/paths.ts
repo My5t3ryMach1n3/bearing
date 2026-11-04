@@ -15,7 +15,8 @@ export function within(path: string, folder: string): boolean {
 
 // Tests exercise components rather than belong to them, so they make no relationships, are never surplus and are
 // never traced.
-export const testFile = /(^|\/)(test|tests|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.go$/;
+export const testFile =
+  /(^|\/)(test|tests|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)(test_[^/]*|conftest)\.py$/;
 
 export const declarationFile = /\.d\.[cm]?ts$/;
 
