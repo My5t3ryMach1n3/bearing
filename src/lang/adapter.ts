@@ -39,8 +39,17 @@ export interface ExtractedImports {
 export interface TraceHook {
   // The environment the test command runs with so every process it starts in this language writes a span to
   // `settings.dir` for each call into a component's code, and a test record for each test that ends. `env` is the
-  // environment so far, with other languages' hooks already added; return it with this one's added.
-  env(env: NodeJS.ProcessEnv, settings: TraceSettings, options: TraceHookOptions): NodeJS.ProcessEnv;
+  // environment so far, with other languages' hooks already added; return it with this one's added. `languages` are
+  // the entries of `languages:` this adapter reads.
+  env(
+    env: NodeJS.ProcessEnv,
+    settings: TraceSettings,
+    options: TraceHookOptions,
+    languages: LanguageConfig[],
+  ): NodeJS.ProcessEnv;
+  // Anything the test command's run left in `settings.dir` that makes its traces less than complete, e.g. coverage
+  // that kept some code from being traced. Read after the command exits; optional.
+  warnings?(settings: TraceSettings): string[];
   // The functions in a source file the hook records spans for, as spans name them. The surplus check flags those no
   // tagged test called, so list only what the hook can see called.
   tracedFunctions(code: string, file: string): string[];

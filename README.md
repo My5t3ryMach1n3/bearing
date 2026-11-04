@@ -6,7 +6,7 @@ The as-built state comes from deterministic analysis of code, infrastructure and
 
 ## Status
 
-The TypeScript MVP is built: design from requirements, the checks, the PR comment and the GitHub Action. The [walkthrough](docs/product-spec.md#walkthrough-a-greenfield-service) has been run end to end on real PRs in [My5t3ryMach1n3/basket](https://github.com/My5t3ryMach1n3/basket). Other languages are planned as GitHub issues.
+The TypeScript MVP is built: design from requirements, the checks, the PR comment and the GitHub Action. The [walkthrough](docs/product-spec.md#walkthrough-a-greenfield-service) has been run end to end on real PRs in [My5t3ryMach1n3/basket](https://github.com/My5t3ryMach1n3/basket). Go is supported too, through the adapter in [`src/lang/go.ts`](src/lang/go.ts). Python and Java/Kotlin are planned as GitHub issues.
 
 ## Install
 

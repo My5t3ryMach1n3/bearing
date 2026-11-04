@@ -1,0 +1,9 @@
+branch: reminder-text
+issues: ["#3"]
+model:
+  added: []
+  removed: []
+files:
+  - path: internal/sms/templates.go
+    component: smsSender
+note: "Tells patients how to opt out in each reminder for #3."

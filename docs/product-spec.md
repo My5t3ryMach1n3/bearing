@@ -344,7 +344,7 @@ checks:
   responsibilities: advisory
 ```
 
-A repo with several languages, or with code below the repo root, lists them under `languages:` in place of `language:` and `tsconfig:`. Each entry gives a `name`, a `root` folder (the repo root by default) and a `project` file relative to it (`tsconfig.json` for TypeScript by default). Each language is read by its adapter; see [Writing a language adapter](language-adapters.md).
+A repo with several languages, or with code below the repo root, lists them under `languages:` in place of `language:` and `tsconfig:`. Each entry gives a `name`, a `root` folder (the repo root by default) and a `project` file relative to it (`tsconfig.json` for TypeScript and `go.mod` for Go by default). Each language is read by its adapter; see [Writing a language adapter](language-adapters.md).
 
 ```yaml
 languages:
@@ -353,7 +353,16 @@ languages:
   - name: typescript
     root: services/api
     project: tsconfig.build.json
+  - name: go
+    root: services/reminder-worker
 ```
+
+| Language | `name` | Project file | Where a test carries its tag |
+| --- | --- | --- | --- |
+| TypeScript and JavaScript | `typescript` | `tsconfig.json` | In its name, or a `describe` around it |
+| Go | `go` | `go.mod`, one entry per module | In a subtest's name, `t.Run("#3/AC1 sends a reminder", …)` |
+
+Reading Go code needs the go command on `PATH`, and tracing it needs Go 1.21 or later.
 
 ### Commands
 
@@ -435,7 +444,9 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
 
 Imports are resolved the way TypeScript resolves them, `tsconfig` paths included, and followed through barrels and re-exports to the file that declares what they use, so reaching the repository's code through the service's index still reads as a dependency on the repository. Type-only imports count. `import * as` and `export * from` depend on everything the module exports; side-effect imports, `import()` and `require()` depend on the module's file. Packages are ignored.
 
-Source files under no component path are listed for the surplus check. Tests (`*.test.ts`, `*.spec.ts` and anything under `test/`, `tests/` or `__tests__/`) and declaration files are left out: they make no relationships and are never surplus.
+In Go, an import names a package, so it counts towards the component holding the package's folder. Bearing lists the module's packages with `go list -deps`, so imports reach packages in other modules of the repo, such as those in the same `go.work`. Only files in the current build context count: a file for another OS isn't read. The standard library, packages outside the repo and vendored packages are ignored.
+
+Source files under no component path are listed for the surplus check. Tests (`*.test.ts`, `*.spec.ts`, `*_test.go` and anything under `test/`, `tests/` or `__tests__/`) and declaration files are left out: they make no relationships and are never surplus.
 
 ### How Terraform maps to deployment nodes
 
@@ -479,6 +490,14 @@ Nodes are compared with the target's deployment view, which must have exactly on
 - **Test outcomes**: once a test finishes, the runner's main process records its full name, file, criterion tag and whether it passed, failed or was skipped, in `.bearing/traces/tests-*.jsonl`. Under Vitest the hook's Vite plugin adds a reporter for this; under Jest it wraps `runCLI` in `@jest/core`, which every way of running Jest goes through. Neither changes the project's own test config.
 
 The overhead, measured on the basket fixture and on date-fns, is in the [README](../README.md#trace-overhead): 17% to 29% more test time.
+
+Go code can't be wrapped as it loads, so for Go `bearing test` rewrites it before the command runs ([ADR 0001](adrs/0001-trace-go-with-an-overlay.md)). It writes instrumented copies of each component's Go files to `.bearing/traces/go/`, with a `defer` at the top of every exported function and every exported method of an exported type. It then adds `-overlay=<file>` to `GOFLAGS`, so every `go test` the command runs builds the copies instead of the files in the working tree, which never change. Line directives keep compile errors and panics pointing at the original lines.
+
+- **Criteria**: each `TestXxx` function and each function literal passed to `t.Run` records how it ended, under its full name, `TestReminders/#3/AC1_sends_a_reminder`. Go writes spaces in subtest names as underscores, so a space in `tests.tag` matches either. A goroutine started by the code under test joins the trace of the test that started it.
+- **Cached results**: the go command never replays a cached test result in place of a traced run.
+- **Coverage**: the go command builds packages that `-cover` or `-coverpkg` covers from the files on disk, not the overlay, so their calls go untraced. `bearing test` warns when a run collected coverage; run it without.
+- **Vendored dependencies** aren't supported yet. A module with `vendor/modules.txt` needs `GOFLAGS=-mod=mod`.
+- About 3 µs per traced call. Where the go command downloaded the toolchain into the module cache, Go 1.25 and later won't let the overlay add to the standard library, and goroutine IDs come from stack traces instead, at 10 to 40 µs a call.
 
 ### How criteria coverage is checked
 

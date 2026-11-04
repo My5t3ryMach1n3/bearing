@@ -96,11 +96,14 @@ describe("parseConfig", () => {
     root: ./services/api
     project: tsconfig.build.json
   - name: typescript
+  - name: go
+    root: services/reminder-worker
 `;
       expect(parseConfig(text, "/repo").languages).toEqual([
         { name: "typescript", root: "services/web", project: "tsconfig.json" },
         { name: "typescript", root: "services/api", project: "tsconfig.build.json" },
         { name: "typescript", root: ".", project: "tsconfig.json" },
+        { name: "go", root: "services/reminder-worker", project: "go.mod" },
       ]);
     });
 
@@ -122,7 +125,7 @@ describe("parseConfig", () => {
     it("rejects unknown languages and keys, and an empty list", () => {
       expect(problems(`${base}languages:\n  - name: cobol\n    rot: x\n`)).toEqual([
         'line 5: unknown key "languages.0.rot"',
-        'line 4: "languages.0.name" must be one of: typescript',
+        'line 4: "languages.0.name" must be one of: typescript, go',
       ]);
       expect(problems(`${base}languages: []\n`)).toEqual(['line 3: "languages" must NOT have fewer than 1 items']);
     });
@@ -136,9 +139,9 @@ describe("parseConfig", () => {
     });
   });
 
-  it("rejects languages other than TypeScript", () => {
+  it("rejects languages Bearing has no adapter for", () => {
     expect(problems(specExample.replace("language: typescript", "language: python"))).toEqual([
-      'line 5: "language" must be one of: typescript',
+      'line 5: "language" must be one of: typescript, go',
     ]);
   });
 

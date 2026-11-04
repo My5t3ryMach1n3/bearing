@@ -1,0 +1,14 @@
+[
+  {
+    "number": 3,
+    "title": "Remind patients before their appointment",
+    "state": "open",
+    "state_reason": null,
+    "labels": [
+      {
+        "name": "requirement"
+      }
+    ],
+    "body": "**Story**\nAs a patient, I want a text reminding me of my appointment the day before, so that I don't miss it.\n\n**Acceptance criteria**\n1. Given a confirmed appointment that starts within 24 hours, when the scheduler runs, then the patient is sent an SMS reminder.\n2. Given a confirmed appointment more than 24 hours away, when the scheduler runs, then no reminder is sent yet.\n3. Given an appointment confirmed twice, when the scheduler runs, then the patient is sent one reminder.\n"
+  }
+]
