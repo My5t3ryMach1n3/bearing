@@ -2,7 +2,7 @@
 
 Bearing reads code through one adapter per language. The checks themselves (boundaries, coverage, trace paths and surplus) never look at a language's syntax: they work from what the adapters return. Adding a language means writing an adapter. No check needs to change.
 
-The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScript adapter in [`src/lang/typescript.ts`](../src/lang/typescript.ts) is the reference implementation.
+The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScript adapter in [`src/lang/typescript.ts`](../src/lang/typescript.ts) is the reference implementation. The Go adapter in [`src/lang/go.ts`](../src/lang/go.ts) shows how to handle a language whose code can't be wrapped as it loads. It shells out to a small Go command in [`go/`](../go) for parsing and rewriting, and Bearing builds that command on first use.
 
 ## What an adapter provides
 
@@ -12,6 +12,7 @@ The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScr
 | `sourceFile` | derive, claim, surplus | A pattern matching the language's source files by repo-relative path. Bearing uses it to decide which language owns a file. |
 | `extractImports` | `bearing derive`, Boundaries check | Reads the code under one configured root without running it. Returns every source file found and each import that reaches from one component's code into another's. |
 | `traceHook.env` | `bearing test` | Returns the environment the test command runs with, so the language's test processes write spans and test records to `.bearing/traces/`. |
+| `traceHook.warnings` | `bearing test` | Optional. Called after the test command exits. Returns anything that left the traces incomplete, such as Go coverage, for `bearing test` to print. |
 | `traceHook.tracedFunctions` | Surplus check | Lists the functions in a file that the hook records spans for. The surplus check flags any of them that no tagged test called. |
 | `tagCarrier.where` | coverage and context messages | Says where a test writes its criterion tag, such as "in its name", so Bearing can tell people and agents where to put one. |
 
@@ -39,7 +40,7 @@ For each call into a function under a component path, the hook writes one span a
 
 Calls nested inside a span are its children. When each test ends, the hook writes one record to a `tests-<pid>-<thread>.jsonl` file, in the `TestRecord` shape: name, file, status (`passed`, `failed` or `skipped`) and criterion. Use `criterionPattern(tag)` to find the tag wherever `tagCarrier` says tests carry it.
 
-`env` gets the environment as other adapters have left it, and must add to it rather than replace it. If tracing can't work, for example because the runtime is too old, throw `TraceHookError`.
+`env` gets the environment as other adapters have left it, and must add to it rather than replace it. It also gets the `languages:` entries the adapter reads, so it can find each one's project. If tracing can't work, for example because the runtime is too old, throw `TraceHookError`.
 
 `tracedFunctions` must agree with the hook. If the hook only wraps exported functions, list only exported functions. Otherwise surplus will flag code the hook could never have seen called.
 

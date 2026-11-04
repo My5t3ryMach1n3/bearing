@@ -1,0 +1,474 @@
+{
+  "configuration": {},
+  "description": "The approved target for Chairside's reminder worker, cut down to one requirement.",
+  "documentation": {},
+  "id": 0,
+  "model": {
+    "people": [
+      {
+        "description": "Someone with an appointment at a Chairside clinic",
+        "id": "1",
+        "name": "Patient",
+        "properties": {
+          "structurizr.dsl.identifier": "patient",
+          "bearing.requirements": "#3"
+        },
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "description": "Sends SMS messages",
+        "documentation": {},
+        "id": "2",
+        "name": "Twilio",
+        "properties": {
+          "structurizr.dsl.identifier": "twilio",
+          "bearing.requirements": "#3"
+        },
+        "relationships": [
+          {
+            "description": "Texts",
+            "destinationId": "1",
+            "id": "18",
+            "properties": {
+              "bearing.requirements": "#3"
+            },
+            "sourceId": "2",
+            "tags": "Relationship"
+          }
+        ],
+        "tags": "Element,Software System,External"
+      },
+      {
+        "containers": [
+          {
+            "description": "Carries each appointment's changes to the reminder worker",
+            "documentation": {},
+            "id": "4",
+            "name": "Appointment events",
+            "properties": {
+              "structurizr.dsl.identifier": "appointmentEvents",
+              "bearing.requirements": "#3"
+            },
+            "relationships": [
+              {
+                "description": "Delivers appointment events to",
+                "destinationId": "6",
+                "id": "10",
+                "properties": {
+                  "bearing.requirements": "#3"
+                },
+                "sourceId": "4",
+                "tags": "Relationship",
+                "technology": "SQS"
+              },
+              {
+                "description": "Delivers appointment events to",
+                "destinationId": "5",
+                "id": "11",
+                "linkedRelationshipId": "10",
+                "sourceId": "4",
+                "technology": "SQS"
+              }
+            ],
+            "tags": "Element,Container,Queue",
+            "technology": "Amazon SQS"
+          },
+          {
+            "components": [
+              {
+                "description": "Reads appointment events off the queue",
+                "documentation": {},
+                "id": "6",
+                "name": "Event consumer",
+                "properties": {
+                  "structurizr.dsl.identifier": "eventConsumer",
+                  "bearing.path": "internal/consumer",
+                  "bearing.requirements": "#3"
+                },
+                "relationships": [
+                  {
+                    "description": "Schedules reminders using",
+                    "destinationId": "7",
+                    "id": "12",
+                    "properties": {
+                      "bearing.requirements": "#3"
+                    },
+                    "sourceId": "6",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Holds each reminder until 24 hours before its appointment",
+                "documentation": {},
+                "id": "7",
+                "name": "Scheduler",
+                "properties": {
+                  "structurizr.dsl.identifier": "scheduler",
+                  "bearing.path": "internal/schedule",
+                  "bearing.requirements": "#3"
+                },
+                "relationships": [
+                  {
+                    "description": "Checks and records sent reminders in",
+                    "destinationId": "9",
+                    "id": "13",
+                    "properties": {
+                      "bearing.requirements": "#3"
+                    },
+                    "sourceId": "7",
+                    "tags": "Relationship"
+                  },
+                  {
+                    "description": "Sends reminders using",
+                    "destinationId": "8",
+                    "id": "14",
+                    "properties": {
+                      "bearing.requirements": "#3"
+                    },
+                    "sourceId": "7",
+                    "tags": "Relationship"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "The only code that holds patient numbers in transit to Twilio",
+                "documentation": {},
+                "id": "8",
+                "name": "SMS sender",
+                "properties": {
+                  "structurizr.dsl.identifier": "smsSender",
+                  "bearing.path": "internal/sms",
+                  "bearing.requirements": "#3"
+                },
+                "relationships": [
+                  {
+                    "description": "Posts messages to",
+                    "destinationId": "2",
+                    "id": "15",
+                    "properties": {
+                      "bearing.requirements": "#3"
+                    },
+                    "sourceId": "8",
+                    "tags": "Relationship",
+                    "technology": "JSON/HTTPS"
+                  }
+                ],
+                "tags": "Element,Component"
+              },
+              {
+                "description": "Records which reminders have been sent",
+                "documentation": {},
+                "id": "9",
+                "name": "Reminder store",
+                "properties": {
+                  "structurizr.dsl.identifier": "reminderStore",
+                  "bearing.path": "internal/store",
+                  "bearing.requirements": "#3"
+                },
+                "tags": "Element,Component"
+              }
+            ],
+            "description": "Texts each patient a reminder the day before their appointment",
+            "documentation": {},
+            "id": "5",
+            "name": "Reminder worker",
+            "properties": {
+              "structurizr.dsl.identifier": "reminderWorker",
+              "bearing.requirements": "#3"
+            },
+            "relationships": [
+              {
+                "description": "Posts messages to",
+                "destinationId": "2",
+                "id": "16",
+                "linkedRelationshipId": "15",
+                "sourceId": "5",
+                "technology": "JSON/HTTPS"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Go"
+          }
+        ],
+        "description": "Books dental appointments and reminds patients of them",
+        "documentation": {},
+        "id": "3",
+        "name": "Chairside",
+        "properties": {
+          "structurizr.dsl.identifier": "chairside",
+          "bearing.requirements": "#3"
+        },
+        "relationships": [
+          {
+            "description": "Posts messages to",
+            "destinationId": "2",
+            "id": "17",
+            "linkedRelationshipId": "15",
+            "sourceId": "3",
+            "technology": "JSON/HTTPS"
+          }
+        ],
+        "tags": "Element,Software System"
+      }
+    ]
+  },
+  "name": "Reminders",
+  "properties": {
+    "structurizr.inspection.error": "8",
+    "structurizr.dsl": "d29ya3NwYWNlICJSZW1pbmRlcnMiICJUaGUgYXBwcm92ZWQgdGFyZ2V0IGZvciBDaGFpcnNpZGUncyByZW1pbmRlciB3b3JrZXIsIGN1dCBkb3duIHRvIG9uZSByZXF1aXJlbWVudC4iIHsKICBtb2RlbCB7CiAgICBwYXRpZW50ID0gcGVyc29uICJQYXRpZW50IiAiU29tZW9uZSB3aXRoIGFuIGFwcG9pbnRtZW50IGF0IGEgQ2hhaXJzaWRlIGNsaW5pYyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMyIKICAgICAgfQogICAgfQoKICAgIHR3aWxpbyA9IHNvZnR3YXJlU3lzdGVtICJUd2lsaW8iICJTZW5kcyBTTVMgbWVzc2FnZXMiIHsKICAgICAgdGFncyAiRXh0ZXJuYWwiCiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICB9CiAgICB9CgogICAgY2hhaXJzaWRlID0gc29mdHdhcmVTeXN0ZW0gIkNoYWlyc2lkZSIgIkJvb2tzIGRlbnRhbCBhcHBvaW50bWVudHMgYW5kIHJlbWluZHMgcGF0aWVudHMgb2YgdGhlbSIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMyIKICAgICAgfQoKICAgICAgYXBwb2ludG1lbnRFdmVudHMgPSBjb250YWluZXIgIkFwcG9pbnRtZW50IGV2ZW50cyIgIkNhcnJpZXMgZWFjaCBhcHBvaW50bWVudCdzIGNoYW5nZXMgdG8gdGhlIHJlbWluZGVyIHdvcmtlciIgIkFtYXpvbiBTUVMiIHsKICAgICAgICB0YWdzICJRdWV1ZSIKICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICAgIH0KICAgICAgfQoKICAgICAgcmVtaW5kZXJXb3JrZXIgPSBjb250YWluZXIgIlJlbWluZGVyIHdvcmtlciIgIlRleHRzIGVhY2ggcGF0aWVudCBhIHJlbWluZGVyIHRoZSBkYXkgYmVmb3JlIHRoZWlyIGFwcG9pbnRtZW50IiAiR28iIHsKICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICAgIH0KCiAgICAgICAgZXZlbnRDb25zdW1lciA9IGNvbXBvbmVudCAiRXZlbnQgY29uc3VtZXIiIHsKICAgICAgICAgIGRlc2NyaXB0aW9uICJSZWFkcyBhcHBvaW50bWVudCBldmVudHMgb2ZmIHRoZSBxdWV1ZSIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAiaW50ZXJuYWwvY29uc3VtZXIiCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBzY2hlZHVsZXIgPSBjb21wb25lbnQgIlNjaGVkdWxlciIgewogICAgICAgICAgZGVzY3JpcHRpb24gIkhvbGRzIGVhY2ggcmVtaW5kZXIgdW50aWwgMjQgaG91cnMgYmVmb3JlIGl0cyBhcHBvaW50bWVudCIKICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAiYmVhcmluZy5wYXRoIiAiaW50ZXJuYWwvc2NoZWR1bGUiCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBzbXNTZW5kZXIgPSBjb21wb25lbnQgIlNNUyBzZW5kZXIiIHsKICAgICAgICAgIGRlc2NyaXB0aW9uICJUaGUgb25seSBjb2RlIHRoYXQgaG9sZHMgcGF0aWVudCBudW1iZXJzIGluIHRyYW5zaXQgdG8gVHdpbGlvIgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJpbnRlcm5hbC9zbXMiCiAgICAgICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICAgICAgfQogICAgICAgIH0KICAgICAgICByZW1pbmRlclN0b3JlID0gY29tcG9uZW50ICJSZW1pbmRlciBzdG9yZSIgewogICAgICAgICAgZGVzY3JpcHRpb24gIlJlY29yZHMgd2hpY2ggcmVtaW5kZXJzIGhhdmUgYmVlbiBzZW50IgogICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICJiZWFyaW5nLnBhdGgiICJpbnRlcm5hbC9zdG9yZSIKICAgICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzMiCiAgICAgICAgICB9CiAgICAgICAgfQogICAgICB9CiAgICB9CgogICAgYXBwb2ludG1lbnRFdmVudHMgLT4gZXZlbnRDb25zdW1lciAiRGVsaXZlcnMgYXBwb2ludG1lbnQgZXZlbnRzIHRvIiAiU1FTIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICB9CiAgICB9CiAgICBldmVudENvbnN1bWVyIC0+IHNjaGVkdWxlciAiU2NoZWR1bGVzIHJlbWluZGVycyB1c2luZyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMyIKICAgICAgfQogICAgfQogICAgc2NoZWR1bGVyIC0+IHJlbWluZGVyU3RvcmUgIkNoZWNrcyBhbmQgcmVjb3JkcyBzZW50IHJlbWluZGVycyBpbiIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMyIKICAgICAgfQogICAgfQogICAgc2NoZWR1bGVyIC0+IHNtc1NlbmRlciAiU2VuZHMgcmVtaW5kZXJzIHVzaW5nIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMzIgogICAgICB9CiAgICB9CiAgICBzbXNTZW5kZXIgLT4gdHdpbGlvICJQb3N0cyBtZXNzYWdlcyB0byIgIkpTT04vSFRUUFMiIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzMiCiAgICAgIH0KICAgIH0KICAgIHR3aWxpbyAtPiBwYXRpZW50ICJUZXh0cyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMyIKICAgICAgfQogICAgfQogIH0KCiAgdmlld3MgewogICAgc3lzdGVtQ29udGV4dCBjaGFpcnNpZGUgImNvbnRleHQiIHsKICAgICAgaW5jbHVkZSAqCiAgICAgIGF1dG9MYXlvdXQKICAgIH0KICAgIGNvbnRhaW5lciBjaGFpcnNpZGUgImNvbnRhaW5lcnMiIHsKICAgICAgaW5jbHVkZSAqCiAgICAgIGF1dG9MYXlvdXQKICAgIH0KICAgIGNvbXBvbmVudCByZW1pbmRlcldvcmtlciAiY29tcG9uZW50cyIgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b0xheW91dAogICAgfQoKICAgIGR5bmFtaWMgcmVtaW5kZXJXb3JrZXIgInJlcS0zIiAiIzMgUmVtaW5kIHBhdGllbnRzIGJlZm9yZSB0aGVpciBhcHBvaW50bWVudCIgewogICAgICBhcHBvaW50bWVudEV2ZW50cyAtPiBldmVudENvbnN1bWVyICJhcHBvaW50bWVudC5jb25maXJtZWQiCiAgICAgIGV2ZW50Q29uc3VtZXIgLT4gc2NoZWR1bGVyICJTY2hlZHVsZSgpIgogICAgICBzY2hlZHVsZXIgLT4gcmVtaW5kZXJTdG9yZSAiV2FzU2VudCgpIgogICAgICBzY2hlZHVsZXIgLT4gc21zU2VuZGVyICJTZW5kKCkiCiAgICAgIHNtc1NlbmRlciAtPiB0d2lsaW8gIlBPU1QgL01lc3NhZ2VzIgogICAgICBzY2hlZHVsZXIgLT4gcmVtaW5kZXJTdG9yZSAiTWFya1NlbnQoKSIKICAgICAgYXV0b0xheW91dAogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5jcml0ZXJpYSIgIkFDMTpjMGYzNzE1OSxBQzI6M2M4N2NmMGQsQUMzOjc5YTY4OTVkIgogICAgICB9CiAgICB9CgogICAgc3R5bGVzIHsKICAgICAgZWxlbWVudCAiRXh0ZXJuYWwiIHsKICAgICAgICBiYWNrZ3JvdW5kICM5OTk5OTkKICAgICAgfQogICAgICBlbGVtZW50ICJRdWV1ZSIgewogICAgICAgIHNoYXBlIFBpcGUKICAgICAgfQogICAgfQogIH0KfQ==",
+    "structurizr.inspection.info": "0",
+    "structurizr.inspection.ignore": "0",
+    "structurizr.inspection.warning": "0"
+  },
+  "views": {
+    "componentViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "containerId": "5",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalContainerBoundariesVisible": false,
+        "key": "components",
+        "name": "Component View: Chairside - Reminder worker",
+        "order": 3,
+        "relationships": [
+          {
+            "id": "10"
+          },
+          {
+            "id": "12"
+          },
+          {
+            "id": "13"
+          },
+          {
+            "id": "14"
+          },
+          {
+            "id": "15"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "styles": {
+        "elements": [
+          {
+            "background": "#999999",
+            "tag": "External"
+          },
+          {
+            "shape": "Pipe",
+            "tag": "Queue"
+          }
+        ]
+      },
+      "terminology": {}
+    },
+    "containerViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalSoftwareSystemBoundariesVisible": false,
+        "key": "containers",
+        "name": "Container View: Chairside",
+        "order": 2,
+        "relationships": [
+          {
+            "id": "11"
+          },
+          {
+            "id": "16"
+          }
+        ],
+        "softwareSystemId": "3"
+      }
+    ],
+    "dynamicViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "description": "#3 Remind patients before their appointment",
+        "elementId": "5",
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "6",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "7",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "8",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "9",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalBoundariesVisible": false,
+        "key": "req-3",
+        "name": "Dynamic View: Chairside - Reminder worker",
+        "order": 4,
+        "properties": {
+          "bearing.criteria": "AC1:c0f37159,AC2:3c87cf0d,AC3:79a6895d"
+        },
+        "relationships": [
+          {
+            "description": "appointment.confirmed",
+            "id": "10",
+            "order": "1",
+            "response": false
+          },
+          {
+            "description": "Schedule()",
+            "id": "12",
+            "order": "2",
+            "response": false
+          },
+          {
+            "description": "WasSent()",
+            "id": "13",
+            "order": "3",
+            "response": false
+          },
+          {
+            "description": "Send()",
+            "id": "14",
+            "order": "4",
+            "response": false
+          },
+          {
+            "description": "POST /Messages",
+            "id": "15",
+            "order": "5",
+            "response": false
+          },
+          {
+            "description": "MarkSent()",
+            "id": "13",
+            "order": "6",
+            "response": false
+          }
+        ]
+      }
+    ],
+    "systemContextViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "2",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "enterpriseBoundaryVisible": true,
+        "key": "context",
+        "name": "System Context View: Chairside",
+        "order": 1,
+        "relationships": [
+          {
+            "id": "17"
+          }
+        ],
+        "softwareSystemId": "3"
+      }
+    ]
+  }
+}

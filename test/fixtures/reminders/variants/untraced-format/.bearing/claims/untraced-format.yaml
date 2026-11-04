@@ -1,0 +1,9 @@
+branch: untraced-format
+issues: ["#3"]
+model:
+  added: []
+  removed: []
+files:
+  - path: internal/sms/templates.go
+    component: smsSender
+note: "Adds a Welsh reminder template for #3."

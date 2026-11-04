@@ -4,7 +4,7 @@ Date: 2026-11-03
 
 ## Status
 
-Proposed. Change to Accepted when the PR merges.
+Accepted. Building the adapter in [#30](https://github.com/My5t3ryMach1n3/bearing/issues/30) changed how goroutine IDs get into the runtime and corrected the `-cover` row below; see [What building the adapter found](#what-building-the-adapter-found).
 
 ## Context
 
@@ -45,7 +45,7 @@ These are medians of 3 runs of `go test -count=1 ./...` on the reminder worker, 
 | Case | A. Overlay | B. Toolexec |
 | --- | --- | --- |
 | `-race` | Works | Fails to link: the separately built runtime doesn't match the race-built standard library (`fingerprint mismatch`). B would have to copy every flag that changes compiled code into its own build. |
-| `-cover` | Works | Works |
+| `-cover` | Builds, but the packages it covers go untraced (see below) | Works |
 | Cached test results | Works once the runtime reads `BEARING_GO_TRACE_RUN` while a test runs | Also needed its hash added to `link -V=full`. Without it, a changed runtime left a stale test binary in the cache. |
 | `go.work` workspace | Works | Works |
 | `-mod=vendor` | Fails: `vendor/modules.txt` doesn't list the runtime, and the overlay doesn't reach that file | Works |
@@ -72,3 +72,13 @@ This settles the build plan's open question on tracing Go without hand instrumen
 - The hook only reaches processes the go command builds with these `GOFLAGS`. A worker started from a prebuilt binary or a separate container isn't traced, the same as the TypeScript hook.
 - Spans from code that runs after a binary's last test ends are lost: test binaries exit without running exit hooks. They belong to no test, so no check reads them.
 - Worth revisiting if the go command gains a supported way to add instrumentation, or if `-overlay` stops applying to the standard library.
+
+## What building the adapter found
+
+The spike only ran Go 1.26 from a normal install. Running the adapter on Go 1.21 to 1.26, and on toolchains the go command downloads itself, showed three things the spike missed. The approach still stands.
+
+- **Before Go 1.24, `go vet` reads the standard library from disk.** `go test` runs vet over every dependency, and vet couldn't open the file the overlay *added* to `runtime`, so every run failed. The overlay now replaces `runtime/stubs.go` with a copy that has `bearingGoids` appended. `stubs.go` exists without build constraints, and imports `unsafe`, in every release from 1.21 to 1.26. Vet reads the original and the compiler reads the copy.
+- **Go 1.25 and later refuse an overlay of any file under `GOMODCACHE`.** That's where the go command keeps a toolchain it downloads for `GOTOOLCHAIN` or a `toolchain` line in `go.mod`. For those toolchains, the runtime reads goroutine IDs from `runtime.Stack` instead, the alternative rejected above for its cost. `bearingtrace/goids.go` on disk is that version. Where every module's toolchain allows it, the overlay swaps in the version that reads `g.goid` directly.
+- **`-cover` and `-coverpkg` drop the overlay.** The go command hands the cover tool each covered package's files by their path on disk ([`cmd/go/internal/work/exec.go`](https://github.com/golang/go/blob/master/src/cmd/go/internal/work/exec.go), `sourceFile := filepath.Join(p.Dir, file)`). So a covered package is built without its spans. Packages that aren't covered are still traced. The runtime notes when a test binary collects coverage, and `bearing test` warns that the traces are incomplete. Fixing it would take a `-toolexec` wrapper for the cover tool alone, which brings back the toolexec problems above.
+
+CI runs the adapter's tests on Go 1.21, on the latest Go, and on a downloaded Go 1.25 toolchain for the stack trace fallback. Vendored modules are still unsupported: `bearing test` stops with a message asking for `GOFLAGS=-mod=mod`.

@@ -37,10 +37,6 @@ cat $W/traces/tests-*.jsonl
 
 For prototype B, build `./cmd/toolexec`. Then run the tests with `GOFLAGS=-toolexec=$W/toolexec`, `BEARING_GO_TRACE_SETTINGS=$W/settings.json` and `BEARING_GO_TRACE_RUNTIME_SRC=$PWD/tools/bearingtrace`.
 
-## Left for #30
+## What became of it
 
-- The runtime reads `BEARING_GO_TRACE_DIR` and `BEARING_GO_TRACE_TAG`. The adapter should read them from `BEARING_TRACE` instead, the way the TypeScript hook does.
-- Templates for the criterion tag are limited to text with `<issue>` and `<n>` holes in it. The default template, `#<issue>/AC<n>`, is one of these.
-- Spans don't record errors yet. TypeScript sets status code 2 when a call throws.
-- There's no `-mod=vendor` support (see the ADR).
-- `tracedFunctions` is `rewrite.TracedFunctions`. The adapter calls it, or ports it to TypeScript.
+The Go adapter ([#30](https://github.com/My5t3ryMach1n3/bearing/issues/30)) took prototype A into [`go/`](../../go) and [`src/lang/go.ts`](../../src/lang/go.ts). On the way it fixed what this spike left open: the runtime reads `BEARING_TRACE`, tag templates can take any shape the config allows, and vendored modules get a clear error. It also changed how goroutine IDs reach the runtime so Go 1.21 to 1.23 and downloaded toolchains work; see [What building the adapter found](../../docs/adrs/0001-trace-go-with-an-overlay.md#what-building-the-adapter-found). Spans still don't record errors: a Go function returns its error rather than throwing it, and recovering a panic to mark the span would change the panic's stack trace.

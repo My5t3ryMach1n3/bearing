@@ -1,0 +1,11 @@
+branch: consumer-sends-sms
+issues: ["#3"]
+model:
+  added: []
+  removed: []
+files:
+  - path: internal/consumer/consumer.go
+    component: eventConsumer
+  - path: internal/sms/sender.go
+    component: smsSender
+note: "Skips appointments whose number can't be texted, for #3."

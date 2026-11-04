@@ -20,6 +20,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      # For the Go adapter's tests.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
@@ -35,6 +40,40 @@ jobs:
           bearing --help
           mkdir shop && cd shop && git init -q
           bearing init --owner @acme
+
+  # The Go adapter's own code, and its tests on the oldest Go it supports, the latest, and a toolchain the go command
+  # downloads into the module cache, where Go 1.25 and later keep the overlay out of the standard library and the
+  # runtime falls back to reading goroutine IDs from stack traces. See docs/adrs/0001-trace-go-with-an-overlay.md.
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - go-version: "1.21"
+          - go-version: stable
+          - go-version: stable
+            toolchain: go1.25.3
+    env:
+      GOTOOLCHAIN: ${{ matrix.toolchain || 'local' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+      - run: go version
+      - name: Check formatting
+        run: test -z "$(gofmt -l go test/fixtures/reminders)" || { gofmt -l go test/fixtures/reminders; exit 1; }
+      - run: go vet ./... && go test ./...
+        working-directory: go
+      - run: go vet ./... && go test ./...
+        working-directory: go/bearingtrace
+      - run: npm ci
+      - run: npx vitest run test/go.test.ts --reporter=verbose
 
   # Converts the fixture DSLs with the real Structurizr, once per runner, and logs how long one conversion takes.
   structurizr:

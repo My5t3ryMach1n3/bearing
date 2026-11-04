@@ -27,6 +27,8 @@ export interface TestResult {
   spans: number;
   // Criterion tags seen on spans, sorted.
   criteria: string[];
+  // What the trace hooks say is missing from the traces.
+  warnings: string[];
 }
 
 export class TestError extends Error {
@@ -51,10 +53,17 @@ export async function runTraced(
 
   const settings: TraceSettings = { root, dir, tag: config.tests.tag, components };
   const hookOptions = options.hook === undefined ? {} : { hook: options.hook };
-  const env = configuredAdapters(config).reduce((env, adapter) => adapter.traceHook.env(env, settings, hookOptions), {
-    ...process.env,
-    ...options.env,
-  });
+  const adapters = configuredAdapters(config);
+  const env = adapters.reduce(
+    (env, adapter) =>
+      adapter.traceHook.env(
+        env,
+        settings,
+        hookOptions,
+        config.languages.filter((language) => language.name === adapter.name),
+      ),
+    { ...process.env, ...options.env },
+  );
   // One string runs through the shell, as `tests.integration` is written; several run as an argument list.
   const [file, ...args] = command.length === 1 ? [command[0]!] : command;
   const child = spawn(file!, args, {
@@ -67,7 +76,8 @@ export async function runTraced(
     child.on("error", (error) => fail(new TestError(`couldn't run ${command.join(" ")}: ${error.message}`)));
     child.on("exit", (code) => done(code ?? 1));
   });
-  return { exitCode, ...readSpans(dir) };
+  const warnings = adapters.flatMap((adapter) => adapter.traceHook.warnings?.(settings) ?? []);
+  return { exitCode, ...readSpans(dir), warnings };
 }
 
 // Counts the spans in a traces directory and the criteria they carry.
@@ -160,6 +170,7 @@ export function testCommand(): Command {
         }
         const target = await loadModel(join(config.root, config.model), () => config);
         const result = await runTraced(config, componentPaths(target), typeof toRun === "string" ? [toRun] : toRun);
+        for (const warning of result.warnings) process.stderr.write(`bearing: warning: ${warning}\n`);
         process.stderr.write(`${summary(result)}\n`);
         process.exitCode = result.exitCode;
       } catch (error) {
@@ -176,7 +187,7 @@ export function testCommand(): Command {
     });
 }
 
-function summary({ spans, criteria }: TestResult): string {
+function summary({ spans, criteria }: Pick<TestResult, "spans" | "criteria">): string {
   const tagged = criteria.length === 0 ? "none tagged with a criterion" : `covering ${criteria.join(", ")}`;
   return `bearing: wrote ${spans} ${spans === 1 ? "span" : "spans"} to ${tracesDir}/, ${tagged}`;
 }

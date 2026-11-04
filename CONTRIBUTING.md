@@ -4,7 +4,7 @@ Thanks for helping. Bearing is early, so the [issues](https://github.com/My5t3ry
 
 ## Setup
 
-You need Node.js 22 or later.
+You need Node.js 22 or later. The Go adapter's tests also need Go 1.21 or later, and are skipped without it; CI always runs them.
 
 ```sh
 npm install
@@ -31,7 +31,7 @@ CI runs these on every pull request, and they should pass locally first:
 - `src/cli.ts` is the `bearing` bin. It only parses the command line.
 - `src/program.ts` builds the command tree. A new subcommand goes in its own module under `src/` and is registered in the `commands` list there.
 - `src/config.ts` finds, validates and loads `.bearing/config.yaml`. Commands get their settings from `loadConfig()` rather than reading the file themselves.
-- `src/lang/` holds the language adapters, one per language, behind the interface in `adapter.ts`. Everything that reads code (imports, traced functions, which files are source) goes through them, so the checks don't depend on the language. `typescript.ts` is the only one so far. To add a language, see [Writing a language adapter](docs/language-adapters.md).
+- `src/lang/` holds the language adapters, one per language, behind the interface in `adapter.ts`. Everything that reads code (imports, traced functions, which files are source) goes through them, so the checks don't depend on the language. `typescript.ts` and `go.ts` so far. To add a language, see [Writing a language adapter](docs/language-adapters.md).
 - `src/structurizr.ts` turns the model's DSL into workspace JSON with the pinned Structurizr release, via Docker or Java as `structurizr.runner` says, and caches the result by a hash of the model directory. It is the only code that runs Structurizr.
 - `src/model.ts` reads workspace JSON into the internal model that the target, the as-built model and claims share. Elements, relationships, dynamic views and deployment elements are keyed by stable IDs (DSL identifiers, not Structurizr's numeric IDs), so editing a description reads as drift rather than a removal.
 - `src/diff.ts` diffs two models into added, removed and drifted items, and is the `bearing diff <before> <after>` command, which prints that diff as JSON.
@@ -44,8 +44,9 @@ CI runs these on every pull request, and they should pass locally first:
 - `src/coverage.ts` is the Criteria coverage check, run as `bearing check <issues...>` until `bearing check` gathers every check: it reads the test outcomes `bearing test` recorded and lists each criterion of the given issues as covered, missing or failing.
 - `src/guard.ts` is `bearing guard`, the guard job: it reads the PR through the GitHub API only. `src/post.ts` is `bearing post`, the report job: it posts what the conformance job uploaded, which it treats as untrusted.
 - `actions/` holds the GitHub Action, one composite action per job: `guard`, `conformance` and `report`. Each installs the `bearing-cli` version in the repo's `package.json` at the ref it's used at, so a release tag versions the Action too. The workflow templates `bearing init` writes use them at init's version.
-- `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both. It also checks that `test/fixtures/diff/{before,after}.json` and `test/fixtures/basket/workspace.json` are still what Structurizr exports from their DSL; after editing that DSL, re-export the JSON with the pinned Docker image.
-- `test/fixtures/basket/` is the basket service from the spec's walkthrough: a clean repo, its requirement issues, and seeded broken branches as overlays. M1 features are tested against it; its [README](test/fixtures/basket/README.md) says what each variant should trip. The root Vitest run skips its own tests; `test/basket.test.ts` runs them in a copy.
+- `go/` is the Go adapter's own Go code, shipped in the package: `rewrite/` instruments source for the trace hook, `bearingtrace/` is the runtime instrumented code calls (a module of its own, so the overlay can add it to the code under test), and `cmd/bearing-go/` is the command `src/lang/go.ts` runs for imports, traced functions and the overlay. Bearing builds it into its cache on first use, named by a hash of the source. Test it with `go vet ./... && go test ./...` in `go/` and in `go/bearingtrace/`.
+- `test/` holds the unit tests. `test/structurizr.integration.test.ts` runs the real Structurizr and is skipped unless `BEARING_STRUCTURIZR_RUNNER` is `docker` or `java`; CI runs it with both. It also checks that `test/fixtures/diff/{before,after}.json` , `test/fixtures/basket/workspace.json` and `test/fixtures/reminders/workspace.json` are still what Structurizr exports from their DSL; after editing that DSL, re-export the JSON with the pinned Docker image.
+- `test/fixtures/basket/` is the basket service from the spec's walkthrough: a clean repo, its requirement issues, and seeded broken branches as overlays. M1 features are tested against it; its [README](test/fixtures/basket/README.md) says what each variant should trip. `test/fixtures/reminders/` is the same idea for Go: Chairside's reminder worker, which `test/go.test.ts` runs the real checks on. The root Vitest run skips its own tests; `test/basket.test.ts` runs them in a copy.
 
 ## Pull requests
 

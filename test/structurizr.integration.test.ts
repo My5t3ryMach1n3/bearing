@@ -8,6 +8,7 @@ import { init } from "../src/init.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { exportStaticSite, loadWorkspace } from "../src/structurizr.js";
 import { copyBasket } from "./basket.js";
+import { copyReminders, remindersDir } from "./reminders.js";
 
 // Runs the real Structurizr. Opt in with BEARING_STRUCTURIZR_RUNNER=docker or java; CI runs both.
 const runner = process.env.BEARING_STRUCTURIZR_RUNNER;
@@ -92,6 +93,19 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
       }
     },
   );
+
+  it("converts the reminders fixture's target as its exported JSON has it", { timeout: 600_000 }, async () => {
+    const root = copyReminders();
+    const config = parseConfig(
+      readFileSync(join(remindersDir, "repo", ".bearing", "config.yaml"), "utf8").replace(
+        "runner: docker",
+        `runner: ${runner}`,
+      ),
+      root,
+    );
+    const model = await loadModel(join(root, "architecture", "workspace.dsl"), () => config);
+    expect(model).toEqual(modelFromWorkspace(JSON.parse(readFileSync(join(remindersDir, "workspace.json"), "utf8"))));
+  });
 
   it("exports the basket fixture's target as a static site", { timeout: 600_000 }, async () => {
     const root = copyBasket();

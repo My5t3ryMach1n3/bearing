@@ -1,0 +1,17 @@
+version: 1
+model: architecture/workspace.dsl
+structurizr:
+  runner: docker
+languages:
+  - name: go
+requirements:
+  source: github-issues
+  label: requirement
+tests:
+  integration: go test ./...
+  tag: "#<issue>/AC<n>"
+agent:
+  selfHealAttempts: 3
+checks:
+  surplus: advisory
+  responsibilities: advisory

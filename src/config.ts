@@ -6,12 +6,12 @@ import { normalizePath } from "./paths.js";
 
 export const configPath = join(".bearing", "config.yaml");
 
-export const languageNames = ["typescript"] as const;
+export const languageNames = ["typescript", "go"] as const;
 export type Language = (typeof languageNames)[number];
 export type CheckMode = "advisory" | "off";
 
 // The project file each language reads when `project` isn't given, relative to the language's root.
-const defaultProject: Record<Language, string> = { typescript: "tsconfig.json" };
+const defaultProject: Record<Language, string> = { typescript: "tsconfig.json", go: "go.mod" };
 
 // One entry of `languages:`, or the single language `language:` names.
 export interface LanguageConfig {

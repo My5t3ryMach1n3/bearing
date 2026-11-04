@@ -9,6 +9,8 @@
   },
   "files": [
     "dist",
+    "go",
+    "!go/**/*_test.go",
     "templates"
   ],
   "engines": {
