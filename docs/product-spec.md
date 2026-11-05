@@ -380,7 +380,7 @@ Reading Python code needs Python 3.11 or later as `python3` on `PATH`, or the in
 | `bearing validate` | Agent, CI | Structurizr validation plus Bearing's rules: open issue IDs on every element, a path on every component, a dynamic view per issue pinning its current criteria |
 | `bearing claim` | Agent | Writes the branch's claims file |
 | `bearing test -- <cmd>` | Agent, CI | Runs the integration tests with tracing on |
-| `bearing derive` | CI, anyone | Builds the as-built model from TypeScript imports, Terraform and traces |
+| `bearing derive` | CI, anyone | Builds the as-built model from each language's imports and from Terraform: deployment nodes, and relationships through queues |
 | `bearing check` | Agent, CI | Runs every check; exits non-zero on a blocking failure |
 | `bearing report` | CI | Writes the PR comment with Mermaid overlays |
 | `bearing guard` | CI | Flags a target change from the base branch: label, the changed files' diffs atop the comment, and `bearing/target` |
@@ -481,6 +481,16 @@ Nodes are compared with the target's deployment view, which must have exactly on
 
 `count` and `for_each` read as one node, and a node stops at the resource: an RDS instance is one node however many databases it holds, which is a known gap in v0.1.
 
+### How queues map to relationships
+
+Code that sends to a queue and code that receives from it never import each other, so imports can't show a relationship through a queue. The Terraform can: a deployment node's code may only use a queue that the role it runs as is allowed to. When `iac.terraform` is set, `bearing derive` builds these relationships from each `aws_sqs_queue` and the IAM policies around it, and prints them under `queues`, each with the file and line of every IAM statement that allows it.
+
+- **The role**: an `aws_ecs_service` runs as its task definition's `task_role_arn`, and an `aws_lambda_function` as its `role`. An ECS task's execution role pulls images and writes logs, so it doesn't count.
+- **The policies**: the role's `inline_policy` blocks and `managed_policy_arns`, and every `aws_iam_role_policy`, `aws_iam_role_policy_attachment` and `aws_iam_policy_attachment` naming it. A policy can be `jsonencode(...)`, JSON in a string or heredoc, or an `aws_iam_policy_document` data source with the documents it builds on.
+- **The statements**: an Allow statement whose actions match `sqs:SendMessage` or `sqs:SendMessageBatch` lets the node send to the queues its resources name, and one that matches `sqs:ReceiveMessage` lets it receive. Actions match as IAM matches them, ignoring case and with wildcards, so `sqs:*` allows both. A resource names a queue by reference, such as `aws_sqs_queue.appointment_events.arn`, by an SQS ARN matching the queue's literal `name`, or as `"*"` for every queue. Deny statements and statements with `NotAction` or `NotResource` are left out, and conditions aren't read.
+
+A queue is the target element whose `bearing.terraform` property names its address, e.g. `"bearing.terraform" "aws_sqs_queue.appointment_events"`, or failing that the one element of an SQS technology left when there's one queue left. A queue that matches nothing keeps its address. The node is the container its matched deployment node deploys. A grant reads as `<container>-><queue>` for sending and `<queue>-><container>` for receiving, and is narrowed to the container's components the target declares the relationship with the queue for. In the Chairside example the booking API's role may send to the queue and the reminder worker's may receive from it, and the target declares the event publisher and event consumer as the ends, so the Terraform gives `eventPublisher->appointmentEvents` and `appointmentEvents->eventConsumer`. A container whose components declare nothing with the queue keeps the grant itself, so a new grant reads as a relationship the target doesn't have.
+
 ### How traces map to components
 
 `bearing test` loads a Node module hook that wraps the exported functions of every file under a component path and emits a span tagged with that component. Because Bearing already knows the paths from the model, nobody adds instrumentation by hand. Spans are written to `.bearing/traces/` locally and regenerated from scratch in CI.
@@ -509,6 +519,16 @@ Python modules can be wrapped as they're imported, as Node modules are. `bearing
 - **Decorators**: the trace decorator is the innermost, so other decorators get the wrapper: a FastAPI route registers it, and `staticmethod` or `property` wrap it. It keeps the function's kind, plain, coroutine, generator or async generator, and its signature, so frameworks that inspect it see what they'd see without it.
 - **Nesting**: calls nest under the call that made them through a context variable, across `await`s and into the worker threads FastAPI and Starlette run sync code in, which copy the context. Bytecode for instrumented modules is never read or written, so nothing in `__pycache__` changes, and tracebacks point at the original lines.
 - **Criteria**: each test records how it ended under its pytest node ID, `tests/test_booking.py::test_refuses_a_slot_already_booked`, with the tag from its closest `req` marker. A test passes only if its setup, call and teardown all pass. Tests that run outside pytest, such as in a subprocess the tests start, aren't traced.
+
+#### Traces across a queue
+
+A message sent to a queue and received from it would split one test's trace in two: the code that sends and the code that receives run apart, often in different processes and languages. So the Python and Go hooks carry the trace through SQS messages by default, as W3C Trace Context and W3C Baggage carry it through HTTP headers:
+
+- **Sending**: each `SendMessage` and `SendMessageBatch` records a producer span, named for the queue in `messaging.destination.name`, under the call that sent it. Each message gets two more attributes: `traceparent`, naming that span, and `baggage`, holding `bearing.test` and `bearing.criterion`. An attribute the code set itself is left as it is, and one that would take a message past SQS's limit of 10 is left out. The caller's input is never changed; the hook sends a copy.
+- **Receiving**: each `ReceiveMessage` asks for those two attributes as well as the ones the code asked for, and takes them back out of what it returns if the code didn't ask for them. If a message carries a `traceparent`, the hook records a consumer span under the producer span. The traced call that received the message then carries on in the sender's trace and test: the calls it makes next nest under it there, whatever test, if any, the receiving process is running. That way the `#3/AC1` test in the booking API yields one trace through the reminder worker. Received outside a traced call, the next calls the code makes join the trace instead. When a batch's messages came from different traces, the first message's trace wins.
+- **Python** patches botocore's client, so boto3 calls are covered, once `botocore.client` loads.
+- **Go**: the AWS SDK for Go v2 lives in the module cache, which Go 1.25 and later won't let an overlay change, so the rewrite changes the calls instead. In any file that imports `github.com/aws/aws-sdk-go-v2/service/sqs`, a call such as `client.SendMessage(ctx, input)` becomes `__bt.SQSSendMessage(client.SendMessage, ctx, input)` on the same line, and the same goes for `SendMessageBatch` and `ReceiveMessage`. That covers files outside every component too, such as an adapter package the consumer calls, but not a call through an interface in a file that doesn't import the SQS package.
+- The TypeScript hook doesn't carry trace context through queues yet.
 
 ### How criteria coverage is checked
 
@@ -541,14 +561,16 @@ The target they compare against depends on the branch. A branch that changes the
 - **Target change** passes a branch that changes the model's folder when main's model folder hasn't changed since the branch forked, and fails it, listing main's changed files, when it has: the first target change to merge wins, and a later one must rebase onto it and rework its change on top. Two proposals can edit different parts of the model without a Git conflict, so this check, not Git, is what makes the later one rework its change. A branch that doesn't change the target skips it.
 - **Claim** reads the branch's claims file on top of the target as it stood where the branch forked from main, and fails on each mismatch with the as-built model:
   - a relationship the code makes that the target didn't have at the fork point and the claim doesn't add;
-  - something the claim removes that the code still has: a relationship it still imports, or files left under a removed component's path;
+  - something the claim removes that the code still has: a relationship it still imports or the Terraform still allows, or files left under a removed component's path;
   - a changed source file the claim doesn't list, a listed file the branch doesn't change, or a file claimed for a component other than the one whose path holds it.
 
   An addition the code doesn't make yet isn't a mismatch, since the target may lead the code. A branch with no claims file, such as a human's Terraform PR, skips this check.
-- **Boundaries** fails each relationship between two components that the code makes and the target doesn't declare, listing the imports that make it. Anything inside one component passes.
+- **Boundaries** fails each relationship between two components that the code makes and the target doesn't declare, listing the imports that make it, and each relationship through a queue that the Terraform allows and the target doesn't declare, listing the IAM statements that allow it. Anything inside one component passes.
 - **Deployment** compares the nodes `bearing derive` reads from the Terraform with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when `iac.terraform` isn't set.
 - **Criteria coverage** is the check above.
 - **Trace paths** compares the traces of an issue's passing tagged tests with its dynamic view. A story has one view but its criteria can take different parts of it, so each test must follow an unbroken run of the view's steps, in order, with no call into a component the view doesn't declare between them, and together the story's tests must take every step. A step no test takes fails the view. A run that stops short of the view's end is checked for those undeclared calls to the end of its trace. Any call in the trace between two components the target declares no relationship for also fails it, even if a later read-back takes the view's steps. That catches a shortcut imports can't show, such as through a port the caller is handed. A call the target declares but the view doesn't draw passes, since setup and read-back run them.
+
+  A view's steps into and out of a queue are part of its path, since the hooks' messaging spans [carry the trace across it](#traces-across-a-queue). A messaging span stands for the queue whose literal `name` in the Terraform is the span's queue name, or, when the Terraform names no queue, the target's only element of an SQS technology. A queue neither gives reads as one the target doesn't have, so sending to it fails the test. The test can stand in for a queue as it does for the step into the system: a step from a queue into a component matches a call into that component from the test, as when the test hands the consumer its messages. A step from a component into a queue needs the messaging span, so a test that replaces the queue client with a fake doesn't take it.
 
 ### How `bearing report` works
 

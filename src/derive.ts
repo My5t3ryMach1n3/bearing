@@ -7,7 +7,8 @@ import { adapters, languageOf } from "./lang/index.js";
 import type { Model, Relationship } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
 import { StructurizrError } from "./structurizr.js";
-import { deriveTerraform, TerraformError, type TerraformGraph } from "./terraform.js";
+import { deriveQueues, type QueueRelationship } from "./queues.js";
+import { deriveTerraform, readTerraform, TerraformError, type TerraformGraph } from "./terraform.js";
 
 // What the language adapters find in the code. This is the JSON `bearing derive` prints.
 export interface ImportGraph {
@@ -19,9 +20,11 @@ export interface ImportGraph {
   unmapped: string[];
 }
 
-// Everything `bearing derive` prints: the import graph, and the deployment from Terraform when `iac.terraform` is set.
+// Everything `bearing derive` prints: the import graph, and when `iac.terraform` is set, the deployment and the
+// relationships through queues that the Terraform gives.
 export interface AsBuilt extends ImportGraph {
   deployment?: TerraformGraph;
+  queues?: QueueRelationship[];
 }
 
 export interface ImportRelationship {
@@ -120,14 +123,18 @@ export function importModel(target: Model, graph: ImportGraph): Model {
 export function deriveCommand(): Command {
   return new Command("derive")
     .description(
-      "print, as JSON, the as-built model derived from the code: which component owns each file, the relationships its imports make, the files no component owns, and the deployment nodes in the Terraform",
+      "print, as JSON, the as-built model derived from the code: which component owns each file, the relationships its imports make, the files no component owns, and the deployment nodes and relationships through queues in the Terraform",
     )
     .action(async function (this: Command) {
       try {
         const config = loadConfig();
         const target = await loadModel(join(config.root, config.model), () => config);
         const asBuilt: AsBuilt = deriveImports(config, target);
-        if (config.iac.terraform !== undefined) asBuilt.deployment = deriveTerraform(config, target);
+        if (config.iac.terraform !== undefined) {
+          const blocks = readTerraform(config);
+          asBuilt.deployment = deriveTerraform(config, target, blocks);
+          asBuilt.queues = deriveQueues(config, target, blocks, asBuilt.deployment);
+        }
         process.stdout.write(`${JSON.stringify(asBuilt, null, 2)}\n`);
       } catch (error) {
         if (

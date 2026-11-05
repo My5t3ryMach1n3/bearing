@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import { dynamicViewKey, type Model } from "./model.js";
 import { componentPaths } from "./paths.js";
+import { queueTargets } from "./queues.js";
 import type { Requirement } from "./requirements.js";
 import type { SpanRecord } from "./test.js";
 import { criterionTag, type TestRecord } from "./trace/runtime.js";
@@ -23,6 +24,11 @@ import { criterionTag, type TestRecord } from "./trace/runtime.js";
 // because a test's setup and its read-back often run another issue's path: #2's tests read the basket back along #1's
 // path, which has the same steps between components as #2's. Letting the match start at a later call would let that
 // read-back stand in for the add.
+//
+// A queue is traced too, through the messaging spans the Python and Go hooks record when code sends to it and receives
+// from it, which carry the trace across the queue. So a view's steps into and out of a queue are expected. A test can
+// stand in for a queue as it does for the step into the system: a step from a queue into a component matches a call
+// into it from the test, as when the test hands the consumer its messages.
 //
 // A test also fails on a call anywhere in its trace between two components the target declares no relationship
 // between. A read-back can't hide such a shortcut, and tracing sees one that imports can't, such as through a port
@@ -80,10 +86,21 @@ export interface ViewPaths {
 // Checks the passing tagged tests of each issue against its dynamic view, in issue order.
 export function checkTracePaths(
   config: Config,
-  inputs: { target: Model; requirements: Requirement[]; issues: number[]; tests: TestRecord[]; spans: SpanRecord[] },
+  inputs: {
+    target: Model;
+    requirements: Requirement[];
+    issues: number[];
+    tests: TestRecord[];
+    spans: SpanRecord[];
+    // The element each queue's name stands for, from the Terraform.
+    queueNames?: Map<string, string>;
+  },
 ): ViewPaths[] {
-  const { target, requirements, issues, tests, spans } = inputs;
-  const traced = new Set(componentPaths(target).map((component) => component.id));
+  const { target, requirements, issues, tests } = inputs;
+  const queues = queueTargets(target);
+  for (const id of inputs.queueNames?.values() ?? []) queues.add(id);
+  const spans = withQueues(inputs.spans, queues, inputs.queueNames ?? new Map());
+  const traced = new Set([...componentPaths(target).map((component) => component.id), ...queues]);
   const declaredCalls = new Set([...target.relationships.values()].map(callKey));
   const byNumber = new Map(requirements.map((requirement) => [requirement.number, requirement]));
   // Each test's traces by ID. A test has one trace per process that ran it, so usually one.
@@ -145,7 +162,7 @@ export function checkTracePaths(
         const found = [...(traces.get(test.name)?.values() ?? [])];
         return (found.length === 0 ? [[]] : found).map((trace) => {
           const observed = observedPath(trace);
-          const match = matchPath(expected, observed, declared);
+          const match = matchPath(expected, observed, declared, queues);
           const offTarget = offTargetCalls(observed, declaredCalls);
           const path: TestPath = {
             name: test.name,
@@ -199,11 +216,12 @@ export function matchPath(
   expected: PathStep[],
   observed: ObservedCall[],
   declared: Set<string>,
+  queues: Set<string> = new Set(),
 ): Pick<TestPath, "steps" | "undeclared"> {
   const taken = (run: Array<number | null>) => run.filter((index) => index !== null).length;
   let steps: Array<number | null> = expected.map(() => null);
   for (let start = 0; start < expected.length; start++) {
-    const run = matchRun(expected, observed, start);
+    const run = matchRun(expected, observed, start, queues);
     if (taken(run) > taken(steps)) steps = run;
   }
   const matched = steps.filter((index) => index !== null);
@@ -221,8 +239,13 @@ export function matchPath(
 }
 
 // Matches each step from `start` to its earliest occurrence after the step before, stopping at the first that isn't
-// found. Steps outside the run are null.
-function matchRun(expected: PathStep[], observed: ObservedCall[], start: number): Array<number | null> {
+// found. Steps outside the run are null. A step out of a queue also matches a call from the test, standing in for it.
+function matchRun(
+  expected: PathStep[],
+  observed: ObservedCall[],
+  start: number,
+  queues: Set<string>,
+): Array<number | null> {
   const steps: Array<number | null> = [];
   let from = 0;
   for (const [position, step] of expected.entries()) {
@@ -231,7 +254,10 @@ function matchRun(expected: PathStep[], observed: ObservedCall[], start: number)
       continue;
     }
     const index = observed.findIndex(
-      (call, at) => at >= from && call.source === step.source && call.destination === step.destination,
+      (call, at) =>
+        at >= from &&
+        call.destination === step.destination &&
+        (call.source === step.source || (call.source === undefined && queues.has(step.source))),
     );
     // Once a step is missing, the run is broken, so the rest are outside it too.
     steps.push(index === -1 ? null : index);
@@ -241,6 +267,16 @@ function matchRun(expected: PathStep[], observed: ObservedCall[], start: number)
 }
 
 const callKey = (call: { source?: string; destination: string }) => `${call.source}->${call.destination}`;
+
+// Messaging spans with their queue's element as their component: the one the Terraform gives the queue's name, or,
+// when the Terraform names no queue, the target's only queue if it has one. A queue neither names reads as its name,
+// an element the target doesn't have.
+function withQueues(spans: SpanRecord[], queues: Set<string>, names: Map<string, string>): SpanRecord[] {
+  const only = names.size === 0 && queues.size === 1 ? [...queues][0] : undefined;
+  return spans.map((span) =>
+    span.queue === undefined ? span : { ...span, component: names.get(span.queue) ?? only ?? span.queue },
+  );
+}
 
 // The indexes of calls between two components that the target has no relationship for. A call from the test has no
 // source, so it's never one.

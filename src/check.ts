@@ -27,6 +27,7 @@ import { deriveImports, DeriveError, type ImportGraph, type ImportRelationship, 
 import { diffModels, loadModel, type Drift } from "./diff.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
+import { deriveQueues, queueNames, type QueueGrant, type QueueRelationship } from "./queues.js";
 import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
 import { checkSurplus, closedComponents, formatSurplus, type SurplusResult } from "./surplus.js";
@@ -35,6 +36,7 @@ import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths
 import { validateModel, type Problem } from "./validate.js";
 import {
   deriveTerraform,
+  readTerraform,
   TerraformError,
   terraformModel,
   type TerraformGraph,
@@ -106,11 +108,12 @@ export interface ClaimCheck extends CheckBase {
 
 // Where the claims file and the as-built model disagree.
 export type ClaimMismatch =
-  // The code makes a relationship the target didn't have at the fork point, and the claim doesn't add it.
-  | { kind: "unclaimed"; id: string; imports: ImportSite[] }
-  // The claim removes an element or relationship the code still has: the relationship's imports, or the files
-  // under the component's path.
-  | { kind: "not-removed"; id: string; imports?: ImportSite[]; files?: string[] }
+  // The code makes a relationship the target didn't have at the fork point, and the claim doesn't add it: the imports
+  // that make it, or for a relationship through a queue, the IAM statements that allow it.
+  | { kind: "unclaimed"; id: string; imports: ImportSite[]; grants?: QueueGrant[] }
+  // The claim removes an element or relationship the code still has: the relationship's imports or IAM statements,
+  // or the files under the component's path.
+  | { kind: "not-removed"; id: string; imports?: ImportSite[]; grants?: QueueGrant[]; files?: string[] }
   // A source file the branch changes that the claim doesn't list.
   | { kind: "unlisted-file"; path: string; component?: string }
   // A file the claim lists that the branch doesn't change.
@@ -122,6 +125,9 @@ export interface BoundariesCheck extends CheckBase {
   check: "boundaries";
   // Relationships between components that the target doesn't declare, with the imports that make them.
   undeclared: ImportRelationship[];
+  // Relationships through queues that the Terraform allows and the target doesn't declare, with the IAM statements
+  // that allow them.
+  queues: QueueRelationship[];
 }
 
 export interface DeploymentCheck extends CheckBase {
@@ -169,9 +175,9 @@ const withoutDescription = (id: string) => id.replace(/\[.*\]$/, "");
 // A claimed addition the code doesn't make yet isn't a mismatch: the target may lead the code.
 export function checkClaim(
   claim: Claim,
-  inputs: { forked: Model; target: Model; graph: ImportGraph; changed: string[] },
+  inputs: { forked: Model; target: Model; graph: ImportGraph; changed: string[]; queues?: QueueRelationship[] },
 ): ClaimMismatch[] {
-  const { forked, target, graph, changed } = inputs;
+  const { forked, target, graph, changed, queues = [] } = inputs;
   const declared = new Set([...forked.relationships.values()].map(pairOf));
   const added = new Set(claim.model.added.map(withoutDescription));
   const removed = new Set(claim.model.removed.map(withoutDescription));
@@ -182,6 +188,13 @@ export function checkClaim(
       mismatches.push({ kind: "not-removed", id: relationship.id, imports: relationship.imports });
     } else if (!declared.has(relationship.id) && !added.has(relationship.id)) {
       mismatches.push({ kind: "unclaimed", id: relationship.id, imports: relationship.imports });
+    }
+  }
+  for (const relationship of queues) {
+    if (removed.has(relationship.id)) {
+      mismatches.push({ kind: "not-removed", id: relationship.id, grants: relationship.grants });
+    } else if (!declared.has(relationship.id) && !added.has(relationship.id)) {
+      mismatches.push({ kind: "unclaimed", id: relationship.id, imports: [], grants: relationship.grants });
     }
   }
   // A removed component still has code if files remain under the path it had, whoever owns them now.
@@ -221,6 +234,14 @@ export function checkClaim(
 export function checkBoundaries(target: Model, graph: ImportGraph): ImportRelationship[] {
   const declared = new Set([...target.relationships.values()].map(pairOf));
   return graph.relationships.filter((relationship) => !declared.has(relationship.id));
+}
+
+// Relationships through queues that the Terraform allows and the target doesn't declare. A grant to a container
+// whose components declare nothing with the queue reads as the container's, so it passes only if the target declares
+// it on the container.
+export function checkQueueBoundaries(target: Model, queues: QueueRelationship[]): QueueRelationship[] {
+  const declared = new Set([...target.relationships.values()].map(pairOf));
+  return queues.filter((relationship) => !declared.has(relationship.id));
 }
 
 // The Terraform's deployment nodes against the target's deployment view: nodes it adds, target nodes it has no
@@ -285,6 +306,9 @@ export interface CheckOptions {
 export async function runChecks(config: Config, options: CheckOptions = {}): Promise<CheckReport> {
   const { target, forked, fork, base, proposed, moved } = await checkedTarget(config, options.base);
   const graph = deriveImports(config, target);
+  const blocks = config.iac.terraform === undefined ? undefined : readTerraform(config);
+  const terraform = blocks === undefined ? undefined : deriveTerraform(config, target, blocks);
+  const queues = blocks === undefined ? [] : deriveQueues(config, target, blocks, terraform);
   const branch = options.branch ?? (await currentBranch(config.root));
   const claim = await readClaim(config, branch);
 
@@ -332,7 +356,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     };
   } else {
     const changed = await changedSourceFiles(config, fork);
-    const mismatches = checkClaim(claim, { forked, target, graph, changed });
+    const mismatches = checkClaim(claim, { forked, target, graph, changed, queues });
     claimCheck = {
       check: "claim",
       status: mismatches.length === 0 ? "passed" : "failed",
@@ -343,15 +367,17 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   }
 
   const undeclared = checkBoundaries(target, graph);
+  const undeclaredQueues = checkQueueBoundaries(target, queues);
   const boundaries: BoundariesCheck = {
     check: "boundaries",
-    status: undeclared.length === 0 ? "passed" : "failed",
+    status: undeclared.length + undeclaredQueues.length === 0 ? "passed" : "failed",
     blocking: true,
     undeclared,
+    queues: undeclaredQueues,
   };
 
   let deployment: DeploymentCheck;
-  if (config.iac.terraform === undefined) {
+  if (terraform === undefined) {
     deployment = {
       check: "deployment",
       status: "skipped",
@@ -363,7 +389,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       unknown: [],
     };
   } else {
-    const result = checkDeployment(target, deriveTerraform(config, target));
+    const result = checkDeployment(target, terraform);
     const failed = result.added.length + result.removed.length + result.drifted.length > 0;
     deployment = { check: "deployment", status: failed ? "failed" : "passed", blocking: true, ...result };
   }
@@ -406,6 +432,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       issues: numbers,
       tests,
       spans,
+      ...(blocks === undefined ? {} : { queueNames: queueNames(target, blocks) }),
     });
     paths = views.some((view) => view.status === "failed")
       ? { check: "paths", status: "failed", blocking: true, issues, views }
@@ -538,12 +565,14 @@ function formatClaimCheck(check: ClaimCheck): string {
         lines.push(
           `  ${mismatch.id}: the code makes it, but the target didn't have it and the claim doesn't add it`,
           ...mismatch.imports.map(formatImport),
+          ...(mismatch.grants ?? []).map(formatGrant),
         );
         break;
       case "not-removed":
         lines.push(
           `  ${mismatch.id}: the claim removes it, but the code still has it`,
           ...(mismatch.imports ?? []).map(formatImport),
+          ...(mismatch.grants ?? []).map(formatGrant),
           ...(mismatch.files ?? []).map((file) => `    ${file}`),
         );
         break;
@@ -568,6 +597,9 @@ function formatBoundaries(check: BoundariesCheck): string {
   const lines = ["Boundaries: failed, the code makes relationships the target doesn't declare"];
   for (const relationship of check.undeclared) {
     lines.push(`  ${relationship.id}`, ...relationship.imports.map(formatImport));
+  }
+  for (const relationship of check.queues) {
+    lines.push(`  ${relationship.id}`, ...relationship.grants.map(formatGrant));
   }
   lines.push("  Fix the code within the target, or propose the relationship as a target change in the model.");
   return `${lines.join("\n")}\n`;
@@ -602,6 +634,10 @@ function formatDeployment(check: DeploymentCheck): string {
 
 function formatImport(site: ImportSite): string {
   return `    ${site.file}:${site.line} imports "${site.module}"`;
+}
+
+function formatGrant(grant: QueueGrant): string {
+  return `    ${grant.policy.file}:${grant.policy.line} allows ${grant.actions.join(", ")} to ${grant.node} as ${grant.role}`;
 }
 
 function toPosix(path: string): string {

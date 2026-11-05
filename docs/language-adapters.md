@@ -38,7 +38,11 @@ For each call into a function under a component path, the hook writes one span a
 - `bearing.test`, the running test's full name
 - `bearing.criterion`, the test's criterion tag, when it has one
 
-Calls nested inside a span are its children. When each test ends, the hook writes one record to a `tests-<pid>-<thread>.jsonl` file, in the `TestRecord` shape: name, file, status (`passed`, `failed` or `skipped`) and criterion. Use `criterionPattern(tag)` to find the tag wherever `tagCarrier` says tests carry it.
+Calls nested inside a span are its children.
+
+Where the language's SQS client can be reached, the hook should also carry the trace through queues, as the Python and Go hooks do (see [Traces across a queue](product-spec.md#traces-across-a-queue)). A message sent to a queue gets a producer span with `messaging.operation.type` set to `send` and `messaging.destination.name` to the queue's name, the last part of its URL, and the `traceparent` and `baggage` attributes (`bearing.test` and `bearing.criterion`, percent-encoded). A message received with a `traceparent` gets a consumer span under the producer span, with `messaging.operation.type` set to `receive`, and the call that received it carries on in that trace and test. Messaging spans have no `bearing.component` or `code.*` attributes: the trace path check finds the queue's element by name.
+
+When each test ends, the hook writes one record to a `tests-<pid>-<thread>.jsonl` file, in the `TestRecord` shape: name, file, status (`passed`, `failed` or `skipped`) and criterion. Use `criterionPattern(tag)` to find the tag wherever `tagCarrier` says tests carry it.
 
 `env` gets the environment as other adapters have left it, and must add to it rather than replace it. It also gets the `languages:` entries the adapter reads, so it can find each one's project. If tracing can't work, for example because the runtime is too old, throw `TraceHookError`.
 

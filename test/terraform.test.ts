@@ -79,10 +79,22 @@ describe("parseBlocks", () => {
       ].join("\n"),
       "infra/main.tf",
     );
-    expect(blocks).toEqual([
+    expect(
+      blocks.map(({ kind, address, type, name, file, line, attributes }) => ({
+        kind,
+        address,
+        type,
+        name,
+        file,
+        line,
+        attributes,
+      })),
+    ).toEqual([
       {
+        kind: "resource",
         address: "aws_ecs_service.api",
         type: "aws_ecs_service",
+        name: "api",
         file: "infra/main.tf",
         line: 2,
         attributes: new Map([
@@ -91,8 +103,88 @@ describe("parseBlocks", () => {
           ["cluster", "aws_ecs_cluster.main.id"],
         ]),
       },
-      { address: "module.network", file: "infra/main.tf", line: 11, attributes: new Map() },
+      {
+        kind: "module",
+        address: "module.network",
+        type: undefined,
+        name: "network",
+        file: "infra/main.tf",
+        line: 11,
+        attributes: new Map(),
+      },
     ]);
+    expect(blocks[0]!.body.blocks.map(({ type, line }) => [type, line])).toEqual([["network_configuration", 6]]);
+  });
+
+  it("reads data sources, and expressions as far as references, collections and calls", () => {
+    const [policy, document] = parseBlocks(
+      [
+        'resource "aws_iam_role_policy" "p" {',
+        "  role = aws_iam_role.api[0].id",
+        "  policy = jsonencode({",
+        '    Statement = [{ Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.q.arn }]',
+        "  })",
+        '  name = var.prod ? "a" : "b"',
+        "  tags = { for k, v in var.tags : k => v }",
+        '  arn  = "${aws_sqs_queue.q.arn}/x"',
+        "}",
+        'data "aws_iam_policy_document" "d" {',
+        "  statement {",
+        '    actions = ["sqs:ReceiveMessage"]',
+        "  }",
+        "}",
+      ].join("\n"),
+      "infra/iam.tf",
+    );
+    const attributes = policy!.body.attributes;
+    expect(attributes.get("role")).toEqual({ kind: "word", value: "aws_iam_role.api" });
+    expect(attributes.get("policy")).toEqual({
+      kind: "call",
+      name: "jsonencode",
+      args: [
+        {
+          kind: "object",
+          line: 3,
+          entries: [
+            {
+              key: "Statement",
+              value: {
+                kind: "tuple",
+                items: [
+                  {
+                    kind: "object",
+                    line: 4,
+                    entries: [
+                      { key: "Effect", value: { kind: "string", value: "Allow" } },
+                      {
+                        key: "Action",
+                        value: { kind: "tuple", items: [{ kind: "string", value: "sqs:SendMessage" }] },
+                      },
+                      { key: "Resource", value: { kind: "word", value: "aws_sqs_queue.q.arn" } },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(attributes.get("name")).toEqual({
+      kind: "expression",
+      parts: [
+        { kind: "word", value: "var.prod" },
+        { kind: "string", value: "a" },
+        { kind: "string", value: "b" },
+      ],
+    });
+    expect(attributes.get("tags")?.kind).toBe("expression");
+    expect(attributes.get("arn")).toEqual({ kind: "template", text: "${aws_sqs_queue.q.arn}/x", line: 8 });
+    expect([document!.kind, document!.address, document!.line]).toEqual(["data", "data.aws_iam_policy_document.d", 10]);
+    expect(document!.body.blocks[0]!.body.attributes.get("actions")).toEqual({
+      kind: "tuple",
+      items: [{ kind: "string", value: "sqs:ReceiveMessage" }],
+    });
   });
 
   it("isn't thrown by braces in strings, interpolations, heredocs and comments", () => {

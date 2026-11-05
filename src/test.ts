@@ -9,7 +9,7 @@ import { TraceHookError } from "./lang/adapter.js";
 import { configuredAdapters } from "./lang/index.js";
 import { StructurizrError } from "./structurizr.js";
 import type { TraceSettings } from "./trace/env.js";
-import { attributes, spansFile } from "./trace/runtime.js";
+import { attributes, messagingAttributes, spansFile } from "./trace/runtime.js";
 
 export const tracesDir = join(".bearing", "traces");
 
@@ -87,7 +87,8 @@ export function readSpans(dir: string): { spans: number; criteria: string[] } {
   return { spans: spans.length, criteria: [...criteria].sort() };
 }
 
-// A span as Bearing reads it back: one call into a component's exports.
+// A span as Bearing reads it back: one call into a component's exports, or a message sent to or received from a
+// queue.
 export interface SpanRecord {
   traceId: string;
   spanId: string;
@@ -102,6 +103,10 @@ export interface SpanRecord {
   // The full name of the test that made the call, and its criterion tag.
   test?: string;
   criterion?: string;
+  // For a messaging span: the queue's name, e.g. "appointment-events", and whether the call sent to it or received
+  // from it. Its component is empty until the trace path check finds the queue's element.
+  queue?: string;
+  operation?: "send" | "receive";
 }
 
 // Reads every span in a traces directory.
@@ -130,6 +135,12 @@ export function readSpanRecords(dir: string): SpanRecord[] {
             if (test !== undefined) record.test = test;
             const criterion = value(attributes.criterion);
             if (criterion !== undefined) record.criterion = criterion;
+            const queue = value(messagingAttributes.destination);
+            const operation = value(messagingAttributes.operation);
+            if (queue !== undefined && (operation === "send" || operation === "receive")) {
+              record.queue = queue;
+              record.operation = operation;
+            }
             records.push(record);
           }
         }

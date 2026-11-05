@@ -90,3 +90,53 @@ func Assembly()
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func TestFileRoutesSQSCallsThroughTheHook(t *testing.T) {
+	src := `package awsqueue
+
+import (
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+)
+
+type Queue struct{ client *sqs.Client }
+
+func (q Queue) send(ctx context.Context, in *sqs.SendMessageInput) error {
+	_, err := q.client.SendMessage(ctx, in, func(*sqs.Options) {})
+	return err
+}
+
+func (q Queue) receive(ctx context.Context, opts []func(*sqs.Options)) {
+	q.client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{}, opts...)
+	q.client.SendMessageBatch(ctx)
+}
+`
+	// In no component, so only the SQS calls change.
+	out, err := File("/repo/internal/awsqueue/queue.go", []byte(src), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	for _, want := range []string{
+		`package awsqueue; import __bt "example.com/bearingtrace"`,
+		`_, err := __bt.SQSSendMessage(/*line /repo/internal/awsqueue/queue.go:12:12*/q.client.SendMessage, ` +
+			`/*line /repo/internal/awsqueue/queue.go:12:33*/ctx, in, func(*sqs.Options) {})`,
+		`__bt.SQSReceiveMessage(/*line /repo/internal/awsqueue/queue.go:17:2*/q.client.ReceiveMessage, ` +
+			`/*line /repo/internal/awsqueue/queue.go:17:26*/ctx, &sqs.ReceiveMessageInput{}, opts...)`,
+		// One argument isn't the SDK's method.
+		"q.client.SendMessageBatch(ctx)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if lines := strings.Count(got, "\n"); lines != strings.Count(src, "\n")+1 {
+		t.Errorf("got %d lines, want %d", lines, strings.Count(src, "\n")+1)
+	}
+	// Without the SDK's import, a method of the same name is someone else's.
+	plain := strings.Replace(src, `"github.com/aws/aws-sdk-go-v2/service/sqs"`, `sqs "example.com/fake"`, 1)
+	if out, _ := File("/repo/internal/awsqueue/queue.go", []byte(plain), settings); out != nil {
+		t.Errorf("rewrote a file that doesn't import the SDK:\n%s", out)
+	}
+}

@@ -323,6 +323,123 @@ describe.skipIf(!hasPython)("the Python adapter", () => {
       ]);
     });
 
+    it("carries the trace through SQS messages sent and received with botocore", slow, async () => {
+      // A stand-in for botocore's client: an in-memory queue that, like SQS, returns only the attributes asked for.
+      const botocore = `
+QUEUE = []
+
+
+class _ServiceModel:
+    service_name = "sqs"
+
+
+class _Meta:
+    service_model = _ServiceModel()
+
+
+class BaseClient:
+    meta = _Meta()
+
+    def _make_api_call(self, operation_name, api_params):
+        if operation_name == "SendMessage":
+            QUEUE.append(api_params)
+            return {"MessageId": str(len(QUEUE))}
+        names = api_params.get("MessageAttributeNames", [])
+        messages = []
+        while QUEUE:
+            sent = QUEUE.pop(0)
+            attributes = {k: v for k, v in sent.get("MessageAttributes", {}).items() if k in names}
+            message = {"Body": sent["MessageBody"]}
+            if attributes:
+                message.update(MessageAttributes=attributes, MD5OfMessageAttributes="md5")
+            messages.append(message)
+        return {"Messages": messages}
+
+    def send_message(self, **params):
+        return self._make_api_call("SendMessage", params)
+
+    def receive_message(self, **params):
+        return self._make_api_call("ReceiveMessage", params)
+`;
+      const url = "http://localhost:4566/000000000000/appointment-events";
+      const root = pythonRepo({
+        "pyproject.toml": '[tool.pytest.ini_options]\npythonpath = [".", "stubs"]\ntestpaths = ["tests"]\n',
+        "stubs/botocore/__init__.py": "",
+        "stubs/botocore/client.py": botocore,
+        "app/__init__.py": "",
+        "app/events/__init__.py": [
+          "from botocore.client import BaseClient",
+          "",
+          "",
+          "def publish(kind):",
+          `    attributes = {"type": {"DataType": "String", "StringValue": kind}}`,
+          `    return BaseClient().send_message(QueueUrl="${url}", MessageBody="{}", MessageAttributes=attributes)`,
+          "",
+        ].join("\n"),
+        "app/consumer/__init__.py": [
+          "from botocore.client import BaseClient",
+          "",
+          "from app.schedule import schedule",
+          "",
+          "",
+          "def poll():",
+          `    received = BaseClient().receive_message(QueueUrl="${url}")`,
+          '    for message in received["Messages"]:',
+          '        schedule(message["Body"])',
+          "    return received",
+          "",
+        ].join("\n"),
+        "app/schedule/__init__.py": "def schedule(body):\n    return body\n",
+        "tests/test_queue.py": [
+          "import pytest",
+          "",
+          "from app.consumer import poll",
+          "from app.events import publish",
+          "",
+          "",
+          '@pytest.mark.req("#3/AC1")',
+          "def test_books():",
+          '    publish("appointment.confirmed")',
+          "",
+          "",
+          "def test_worker_picks_it_up():",
+          "    received = poll()",
+          '    assert received["Messages"] == [{"Body": "{}"}]',
+          "",
+        ].join("\n"),
+      });
+      const config = loadConfig(root);
+      const queueComponents = [
+        { id: "eventPublisher", path: "app/events" },
+        { id: "eventConsumer", path: "app/consumer" },
+        { id: "scheduler", path: "app/schedule" },
+      ];
+      const result = await runTraced(config, queueComponents, [pytestCommand], quiet);
+      expect(result.exitCode).toBe(0);
+      const spans = readSpanRecords(join(root, tracesDir));
+      // The worker's calls are another test's, but they carry on the trace of the test that sent the message.
+      const sender = spans.filter((span) => span.test === "tests/test_queue.py::test_books");
+      expect(new Set(sender.map((span) => span.traceId)).size).toBe(1);
+      expect(sender.every((span) => span.criterion === "#3/AC1")).toBe(true);
+      expect(callTree(sender).map((line) => line.replace(/\.$/, ""))).toEqual([
+        "eventPublisher.publish",
+        "  .send appointment-events",
+        "    .receive appointment-events",
+        "      eventConsumer.poll",
+        "        scheduler.schedule",
+      ]);
+      expect(
+        sender.filter((span) => span.queue !== undefined).map(({ queue, operation }) => [queue, operation]),
+      ).toEqual([
+        ["appointment-events", "send"],
+        ["appointment-events", "receive"],
+      ]);
+      // poll() itself started in the receiving test's trace, before the message came in.
+      expect(
+        spans.filter((span) => span.test === "tests/test_queue.py::test_worker_picks_it_up").map((span) => span.name),
+      ).toEqual(["poll"]);
+    });
+
     it("refuses a PYTEST_PLUGINS that already loads Bearing's plugin", () => {
       return expect(
         traced(copyBooking(), [pytestCommand], { PYTEST_PLUGINS: "xdist,bearing_python.pytest_plugin" }),

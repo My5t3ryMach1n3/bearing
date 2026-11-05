@@ -102,6 +102,11 @@ export function buildOverlay(inputs: Pick<ReportInputs, "check" | "target" | "fo
         edge(drifted);
         skipped.push(drifted);
       }
+      // Older reports have no queues.
+      for (const relationship of each.queues ?? []) {
+        const label = relationship.direction === "send" ? "sends, undeclared" : "receives, undeclared";
+        edge({ ...endpoints(relationship), label, mark: "drifted" });
+      }
     } else if (each.check === "deployment") {
       for (const added of each.added) {
         nodes.set(added.id, {
@@ -268,7 +273,7 @@ function summarise(check: CheckReport["checks"][number]): string {
     case "boundaries":
       return check.status === "passed"
         ? "every relationship between components is declared"
-        : `${count(check.undeclared.length, "relationship")} the target doesn't declare`;
+        : `${count(check.undeclared.length + (check.queues ?? []).length, "relationship")} the target doesn't declare`;
     case "deployment": {
       const differ = check.added.length + check.removed.length + check.drifted.length;
       return check.status === "passed"
