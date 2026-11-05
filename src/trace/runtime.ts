@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { subscribe } from "node:diagnostics_channel";
 import { appendFileSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { types } from "node:util";
@@ -52,6 +53,8 @@ interface Span {
   component: string;
   file: string;
   start: bigint;
+  // For an outgoing HTTP request: its method, host and port, when the URL gives one.
+  request?: { method: string; host: string; port?: number };
 }
 
 // Attribute keys on every span. `code.*` follow OpenTelemetry's semantic conventions; `bearing.*` are Bearing's own.
@@ -68,6 +71,14 @@ export const attributes = {
 export const messagingAttributes = {
   operation: "messaging.operation.type",
   destination: "messaging.destination.name",
+} as const;
+
+// What the hooks put on a span for an outgoing HTTP request, after OpenTelemetry's HTTP conventions. Like a messaging
+// span it has no component of its own: the trace path check finds the container the host reaches.
+export const httpAttributes = {
+  method: "http.request.method",
+  host: "server.address",
+  port: "server.port",
 } as const;
 
 // Span files are named `spans-<pid>-<thread>.jsonl` and test files `tests-<pid>-<thread>.jsonl`.
@@ -132,10 +143,12 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
     return info;
   };
 
+  const newSpanId = () => `${idPrefix}${(nextId++).toString(16).padStart(8, "0")}`;
+
   const start = (name: string, component: string, file: string, global: object): Span => {
     const test = currentTest(global);
     const parent = storage.getStore();
-    const spanId = `${idPrefix}${(nextId++).toString(16).padStart(8, "0")}`;
+    const spanId = newSpanId();
     const begin = epoch + process.hrtime.bigint();
     // A call that outlives its test, such as a timer, starts a new trace rather than joining the last one.
     if (parent !== undefined && parent.test === test) {
@@ -155,11 +168,21 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
   };
 
   const end = (span: Span, error?: unknown) => {
-    const spanAttributes = [
-      attribute(attributes.component, span.component),
-      attribute(attributes.function, span.name),
-      attribute(attributes.file, span.file),
-    ];
+    const { request } = span;
+    // OpenTelemetry's HTTP conventions for a request; the component is the container its host reaches, which Bearing
+    // finds from the Kubernetes Services.
+    const spanAttributes =
+      request === undefined
+        ? [
+            attribute(attributes.component, span.component),
+            attribute(attributes.function, span.name),
+            attribute(attributes.file, span.file),
+          ]
+        : [
+            attribute(httpAttributes.method, request.method),
+            attribute(httpAttributes.host, request.host),
+            ...(request.port === undefined ? [] : [attribute(httpAttributes.port, request.port)]),
+          ];
     if (span.test !== undefined) {
       spanAttributes.push(attribute(attributes.test, span.test));
       const tag = testInfo(span.test).criterion;
@@ -170,7 +193,7 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
       spanId: span.spanId,
       ...(span.parentSpanId === undefined ? {} : { parentSpanId: span.parentSpanId }),
       name: span.name,
-      kind: 1,
+      kind: request === undefined ? 1 : 3,
       startTimeUnixNano: span.start.toString(),
       endTimeUnixNano: (epoch + process.hrtime.bigint()).toString(),
       attributes: spanAttributes,
@@ -179,6 +202,47 @@ export function installRuntime(options: RuntimeOptions): TraceRuntime {
     pending.push(record);
     if (span.parentSpanId === undefined) flush();
   };
+
+  // A request to another service is recorded as a client span under the traced call that sent it, named for its
+  // method and host. Node publishes each request on a diagnostics channel, in the context of the code that sent it,
+  // so the request goes out as the code made it. A request sent outside every traced call, such as the test's own,
+  // comes from no component, so it isn't recorded. The span is written as the request starts; how long it took
+  // doesn't matter to the checks.
+  const request = (method: string | undefined, host: string | undefined, port: number | undefined) => {
+    const parent = storage.getStore();
+    if (parent === undefined || host === undefined || host === "") return;
+    const verb = (method ?? "GET").toUpperCase();
+    end({
+      traceId: parent.traceId,
+      spanId: newSpanId(),
+      parentSpanId: parent.spanId,
+      test: parent.test,
+      name: `${verb} ${host}`,
+      component: "",
+      file: "",
+      start: epoch + process.hrtime.bigint(),
+      request: { method: verb, host, ...(port === undefined ? {} : { port }) },
+    });
+  };
+  // `node:http` and `node:https`, and so the clients built on them, such as axios.
+  subscribe("http.client.request.start", (message) => {
+    const sent = (message as { request?: { method?: string; host?: string; getHeader?: (name: string) => unknown } })
+      .request;
+    const header = sent?.getHeader?.("host");
+    const port = typeof header === "string" ? /:(\d+)$/.exec(header)?.[1] : undefined;
+    request(sent?.method, sent?.host, port === undefined ? undefined : Number(port));
+  });
+  // `fetch`, which is undici's, and the undici package itself.
+  subscribe("undici:request:create", (message) => {
+    const sent = (message as { request?: { method?: string; origin?: unknown } }).request;
+    let url: URL;
+    try {
+      url = new URL(String(sent?.origin));
+    } catch {
+      return;
+    }
+    request(sent?.method, url.hostname, url.port === "" ? undefined : Number(url.port));
+  });
 
   const traced = new WeakMap<object, unknown>();
   const wrappers = new WeakSet<object>();

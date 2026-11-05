@@ -9,7 +9,7 @@ import { TraceHookError } from "./lang/adapter.js";
 import { configuredAdapters } from "./lang/index.js";
 import { StructurizrError } from "./structurizr.js";
 import type { TraceSettings } from "./trace/env.js";
-import { attributes, messagingAttributes, spansFile } from "./trace/runtime.js";
+import { attributes, httpAttributes, messagingAttributes, spansFile } from "./trace/runtime.js";
 
 export const tracesDir = join(".bearing", "traces");
 
@@ -87,8 +87,8 @@ export function readSpans(dir: string): { spans: number; criteria: string[] } {
   return { spans: spans.length, criteria: [...criteria].sort() };
 }
 
-// A span as Bearing reads it back: one call into a component's exports, or a message sent to or received from a
-// queue.
+// A span as Bearing reads it back: one call into a component's exports, a message sent to or received from a queue,
+// or an HTTP request.
 export interface SpanRecord {
   traceId: string;
   spanId: string;
@@ -107,6 +107,9 @@ export interface SpanRecord {
   // from it. Its component is empty until the trace path check finds the queue's element.
   queue?: string;
   operation?: "send" | "receive";
+  // For an outgoing HTTP request: its method and the host and port it went to, e.g. "GET", "booking-api", 8000. Its
+  // component is empty until the trace path check finds the container the host reaches.
+  http?: { method: string; host: string; port?: number };
 }
 
 // Reads every span in a traces directory.
@@ -141,6 +144,17 @@ export function readSpanRecords(dir: string): SpanRecord[] {
               record.queue = queue;
               record.operation = operation;
             }
+            const host = value(httpAttributes.host);
+            if (host !== undefined) {
+              const port = Number(
+                span.attributes.find((attribute) => attribute.key === httpAttributes.port)?.value.intValue,
+              );
+              record.http = {
+                method: value(httpAttributes.method) ?? "",
+                host,
+                ...(Number.isInteger(port) && port > 0 ? { port } : {}),
+              };
+            }
             records.push(record);
           }
         }
@@ -160,7 +174,7 @@ interface OtlpRequest {
         parentSpanId?: string;
         name: string;
         startTimeUnixNano: string;
-        attributes: Array<{ key: string; value: { stringValue?: string } }>;
+        attributes: Array<{ key: string; value: { stringValue?: string; intValue?: string } }>;
       }>;
     }>;
   }>;

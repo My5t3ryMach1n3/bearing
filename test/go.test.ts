@@ -201,6 +201,57 @@ describe.skipIf(!hasGo)("the Go adapter", () => {
       expect(git(root, "status", "--porcelain")).toBe("");
     });
 
+    it("records the HTTP requests a component's http.Client sends", slow, async () => {
+      const root = copyReminders();
+      writeFileSync(
+        join(root, "internal", "sms", "booking.go"),
+        [
+          "package sms",
+          "",
+          'import (\n\t"io"\n\t"net/http"\n\t"strings"\n)',
+          "",
+          "// answer stands in for the network.",
+          "type answer struct{}",
+          "",
+          "func (answer) RoundTrip(r *http.Request) (*http.Response, error) {",
+          '\treturn &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil',
+          "}",
+          "",
+          "var client = &http.Client{Transport: answer{}}",
+          "",
+          "func Confirm() error {",
+          '\tresp, err := client.Get("http://booking-api:8000/appointments/1")',
+          "\tif err == nil {\n\t\tresp.Body.Close()\n\t}",
+          "\treturn err",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(root, "internal", "sms", "booking_test.go"),
+        [
+          "package sms",
+          "",
+          'import "testing"',
+          "",
+          "func TestConfirm(t *testing.T) {",
+          '\tt.Run("#3/AC1 confirms the appointment", func(t *testing.T) {',
+          "\t\tif err := Confirm(); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}",
+          "\t})",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const { result, spans } = await traced(root, ["go test ./internal/sms"]);
+      expect(result.exitCode).toBe(0);
+      const confirm = spans.filter((span) => span.test === "TestConfirm/#3/AC1_confirms_the_appointment");
+      expect(callTree(confirm)).toEqual(["smsSender.Confirm", "  .GET booking-api"]);
+      expect(confirm.find((span) => span.http !== undefined)).toMatchObject({
+        criterion: "#3/AC1",
+        http: { method: "GET", host: "booking-api", port: 8000 },
+      });
+    });
+
     it("traces every run, rather than replaying the go command's cached results", slow, async () => {
       const root = copyReminders();
       await traced(root);

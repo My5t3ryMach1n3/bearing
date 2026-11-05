@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { modelFromWorkspace, type Model } from "../src/model.js";
-import { loadRequirements } from "../src/requirements.js";
+import { loadRequirements, type Requirement } from "../src/requirements.js";
 import type { SpanRecord } from "../src/test.js";
 import { checkTracePaths, formatTracePaths, matchPath, observedPath, type PathStep } from "../src/trace-paths.js";
 import type { TestRecord } from "../src/trace/runtime.js";
@@ -416,6 +416,136 @@ describe("checkTracePaths across a queue", async () => {
     expect(offTarget).toEqual(["smsSender->audit"]);
     expect(formatTracePaths([view])).toContain(
       "smsSender -> audit: send audit()  <- the target declares no relationship for this call",
+    );
+  });
+});
+
+describe("checkTracePaths across HTTP", async () => {
+  const { deriveKubernetes, readKubernetes } = await import("../src/kubernetes.js");
+  const { serviceRoutes } = await import("../src/services.js");
+  const clinicDir = join(import.meta.dirname, "fixtures", "clinic");
+  const clinic = {
+    config: loadConfig(join(clinicDir, "repo")),
+    target: modelFromWorkspace(JSON.parse(readFileSync(join(clinicDir, "workspace.json"), "utf8"))),
+  };
+  // The clinic's target with the web app's and the booking API's code in components, and a view of #1 that says how
+  // the containers work together.
+  const model: Model = structuredClone(clinic.target);
+  const component = (id: string, parent: string, path: string) =>
+    model.elements.set(id, {
+      id,
+      type: "component",
+      name: id,
+      description: "",
+      technology: "",
+      tags: [],
+      parent,
+      path,
+      requirements: ["#1"],
+      properties: {},
+    });
+  component("slotsPage", "webApp", "web/src/pages");
+  component("bookingClient", "webApp", "web/src/client");
+  component("slotsRouter", "bookingApi", "api/routes");
+  model.relationships.set("slotsPage->bookingClient", {
+    id: "slotsPage->bookingClient",
+    source: "slotsPage",
+    destination: "bookingClient",
+    description: "Fetches slots with",
+    technology: "",
+    tags: [],
+    requirements: ["#1"],
+    properties: {},
+  });
+  model.dynamicViews.set("req-1", {
+    id: "req-1",
+    scope: "chairside",
+    description: "#1 Book a slot",
+    steps: [
+      { order: "1", source: "receptionist", destination: "webApp", description: "Picks a slot" },
+      { order: "2", source: "webApp", destination: "bookingApi", description: "Books it" },
+      { order: "3", source: "bookingApi", destination: "database", description: "Saves the appointment" },
+    ],
+  });
+  const manifests = readKubernetes(clinic.config);
+  const routes = serviceRoutes(model, manifests, deriveKubernetes(clinic.config, model, manifests));
+  const requirement: Requirement = {
+    id: "#1",
+    number: 1,
+    title: "Book a slot",
+    state: "open",
+    stateReason: null,
+    story: "",
+    criteria: [{ id: "#1/AC1", number: 1, text: "Books an open slot" }],
+    parent: null,
+    epic: false,
+  };
+  const test = "web/tests/test_booking.py::test_books_a_slot";
+  const call = (component: string, name: string, spanId: string, parentSpanId?: string): SpanRecord => ({
+    traceId: test,
+    spanId,
+    ...(parentSpanId === undefined ? {} : { parentSpanId }),
+    name,
+    component,
+    file: `${component}.py`,
+    start: BigInt(spanId),
+    test,
+  });
+  // A client span, as the hooks write one for a request a traced call sends.
+  const request = (host: string, port: number | undefined, spanId: string, parentSpanId: string): SpanRecord => ({
+    ...call("", `GET ${host}`, spanId, parentSpanId),
+    file: "",
+    http: { method: "GET", host, ...(port === undefined ? {} : { port }) },
+  });
+  // The web app's test: the page asks the client for slots, and the client calls the booking API by its Service name.
+  const books = (host = "booking-api", port: number | undefined = 8000) => [
+    call("slotsPage", "show_slots", "1"),
+    call("bookingClient", "list_slots", "2", "1"),
+    request(host, port, "3", "2"),
+  ];
+  const check = (spans: SpanRecord[], withRoutes = routes) =>
+    checkTracePaths(clinic.config, {
+      target: model,
+      requirements: [requirement],
+      issues: [1],
+      tests: [passed(test, "#1/AC1")],
+      spans,
+      routes: withRoutes,
+    })[0]!;
+
+  it("expects the step between containers over HTTP, and takes it with a request to the Service's name", () => {
+    const view = check(books());
+    // The receptionist isn't traced, and the booking API reaches the database over SQL.
+    expect(pairs(view.expected)).toEqual(["webApp->bookingApi"]);
+    expect(pairs(view.tests[0]!.observed)).toEqual([
+      "(test)->slotsPage",
+      "slotsPage->bookingClient",
+      "bookingClient->bookingApi",
+    ]);
+    expect(view.tests[0]).toMatchObject({ status: "matched", steps: [2], undeclared: [], offTarget: [] });
+    expect(view.status).toBe("passed");
+  });
+
+  it("ignores a request to a host no Service has, so the step is missing", () => {
+    const view = check(books("localhost"));
+    expect(pairs(view.tests[0]!.observed)).toEqual(["(test)->slotsPage", "slotsPage->bookingClient"]);
+    expect(view.status).toBe("failed");
+    expect(formatTracePaths([view])).toContain("#1: no tagged test takes webApp -> bookingApi in req-1");
+  });
+
+  it("expects no step between containers without the manifests' Services", () => {
+    expect(check(books(), [])).toMatchObject({
+      status: "skipped",
+      reason: "none of its steps runs between two components",
+    });
+  });
+
+  it("fails a request into a container the target doesn't relate the caller to", () => {
+    const view = check([...books(), request("postgres", 5432, "4", "2")]);
+    expect(view.status).toBe("failed");
+    expect(view.tests[0]!.offTarget).toEqual([3]);
+    expect(formatTracePaths([view])).toContain(
+      "bookingClient -> database: GET postgres  <- the target declares no relationship for this call",
     );
   });
 });

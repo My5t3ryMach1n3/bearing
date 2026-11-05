@@ -140,3 +140,52 @@ func (q Queue) receive(ctx context.Context, opts []func(*sqs.Options)) {
 		t.Errorf("rewrote a file that doesn't import the SDK:\n%s", out)
 	}
 }
+
+func TestFileRoutesHTTPClientTransportsThroughTheHook(t *testing.T) {
+	src := `package booking
+
+import (
+	"net/http"
+	"time"
+)
+
+var plain = &http.Client{}
+var timed = http.Client{Timeout: time.Second}
+var multi = &http.Client{
+	Timeout: time.Second,
+}
+var given = &http.Client{Transport: http.DefaultTransport, Timeout: time.Second}
+
+type Client struct{ Transport http.RoundTripper }
+
+var other = Client{}
+`
+	out, err := File("/repo/internal/booking/client.go", []byte(src), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	for _, want := range []string{
+		`package booking; import __bt "example.com/bearingtrace"`,
+		`var plain = &http.Client{Transport: __bt.HTTPTransport(nil)/*line /repo/internal/booking/client.go:8:26*/}`,
+		`var timed = http.Client{Timeout: time.Second, Transport: __bt.HTTPTransport(nil)` +
+			`/*line /repo/internal/booking/client.go:9:45*/}`,
+		`Timeout: time.Second, Transport: __bt.HTTPTransport(nil)/*line /repo/internal/booking/client.go:11:22*/,`,
+		`var given = &http.Client{Transport: __bt.HTTPTransport(/*line /repo/internal/booking/client.go:13:37*/` +
+			`http.DefaultTransport)/*line /repo/internal/booking/client.go:13:58*/, Timeout: time.Second}`,
+		// Another package's Client is someone else's.
+		"var other = Client{}",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if lines := strings.Count(got, "\n"); lines != strings.Count(src, "\n")+1 {
+		t.Errorf("got %d lines, want %d", lines, strings.Count(src, "\n")+1)
+	}
+	// Without net/http, an http.Client is someone else's.
+	fake := strings.Replace(src, `"net/http"`, `http "example.com/fake"`, 1)
+	if out, _ := File("/repo/internal/booking/client.go", []byte(fake), settings); out != nil {
+		t.Errorf("rewrote a file that doesn't import net/http:\n%s", out)
+	}
+}

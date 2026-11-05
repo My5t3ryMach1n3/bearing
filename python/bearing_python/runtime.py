@@ -62,6 +62,7 @@ class _Span:
         "adopted",
         "queue",
         "operation",
+        "request",
         "followers",
     )
 
@@ -81,6 +82,8 @@ class _Span:
         # For a messaging span: the queue's name, and "send" or "receive".
         self.queue: Optional[str] = None
         self.operation: Optional[str] = None
+        # For an outgoing HTTP request: (method, host, port), the port None when the URL gives none.
+        self.request: Optional[tuple] = None
         # Spans continuing this one in a message's trace, which end when it does. See `Runtime.consume`.
         self.followers: list = []
 
@@ -190,7 +193,18 @@ class Runtime:
     def _end(self, span: _Span, error: Optional[BaseException] = None) -> None:
         for follower in span.followers:
             self._end(follower)
-        if span.queue is not None:
+        if span.request is not None:
+            # OpenTelemetry's HTTP conventions; the component is the container the host reaches, which Bearing finds
+            # from the Kubernetes Services.
+            kind = 3
+            method, host, port = span.request
+            attributes = [
+                _attribute("http.request.method", method),
+                _attribute("server.address", host),
+            ]
+            if port is not None:
+                attributes.append(_attribute("server.port", port))
+        elif span.queue is not None:
             # OpenTelemetry's messaging conventions; the component is the queue, which Bearing finds by name.
             kind = 4 if span.operation == "send" else 5
             attributes = [
@@ -280,6 +294,26 @@ class Runtime:
             # A marker, never written: what this context calls next goes under the consumer span.
             marker = _Span(trace_id, consumer.span_id, None, test, criterion, "", "", "", True)
             _current.set(marker)
+
+    # HTTP. A request to another service is recorded as a client span under the call that made it, named for its
+    # method and host. Only the caller is traced: the request goes out as the code made it, and the trace path check
+    # finds the container its host reaches. See http_client.py.
+
+    def request(self, method: str, url: str) -> Optional[_Span]:
+        """Starts a client span for an HTTP request to `url`, under the current span. A request made outside every
+        traced call, such as the test's own through a test client, comes from no component, so it isn't recorded."""
+        if _current.get() is None:
+            return None
+        parsed = urllib.parse.urlsplit(url)
+        host = parsed.hostname or ""
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        method = method.upper()
+        span = self._start(f"{method} {host}", "", "")
+        span.request = (method, host, port)
+        return span
 
     def flush(self) -> None:
         with self._lock:
@@ -500,9 +534,10 @@ def install(settings: dict) -> Runtime:
     if _runtime is None:
         _runtime = Runtime(settings)
         sys.meta_path.insert(0, _Finder(_runtime))
-        from . import sqs
+        from . import http_client, sqs
 
         sqs.install(_runtime)
+        http_client.install(_runtime)
         # Drop finders cached for path entries, so nothing found before the hook skips it.
         importlib.invalidate_caches()
     return _runtime

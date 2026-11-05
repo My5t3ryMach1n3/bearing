@@ -3,6 +3,7 @@ import { dynamicViewKey, type Model } from "./model.js";
 import { componentPaths } from "./paths.js";
 import { queueTargets } from "./queues.js";
 import type { Requirement } from "./requirements.js";
+import { routeFor, type ServiceRoute } from "./services.js";
 import type { SpanRecord } from "./test.js";
 import { criterionTag, type TestRecord } from "./trace/runtime.js";
 
@@ -30,6 +31,14 @@ import { criterionTag, type TestRecord } from "./trace/runtime.js";
 // stand in for a queue as it does for the step into the system: a step from a queue into a component matches a call
 // into it from the test, as when the test hands the consumer its messages.
 //
+// An HTTP request is traced too, through the client spans the hooks record for it. When its host is a Kubernetes
+// Service's name, it stands for a call from the calling component into the container the Service reaches; any other
+// host, such as localhost, is ignored. At that level a view says how containers work together, so a step between two
+// containers over HTTP is expected when the source has traced code and the destination a Service, and a call takes a
+// step when each of its ends is the step's element or one of that element's components. A view that names a
+// container declares its components with it. Each service's tests take their own part of the view, as a story's tests
+// already share its steps.
+//
 // A test also fails on a call anywhere in its trace between two components the target declares no relationship
 // between. A read-back can't hide such a shortcut, and tracing sees one that imports can't, such as through a port
 // the caller is handed. A call the target declares but the view doesn't draw is fine, as setup and read-back run them.
@@ -45,8 +54,10 @@ export interface PathStep {
 export interface ObservedCall {
   source?: string;
   destination: string;
-  // The functions called, in order, without repeats.
+  // The functions called, in order, without repeats; for an HTTP request, its method and host, e.g. "GET booking-api".
   functions: string[];
+  // Whether it's an HTTP request into a container through its Service.
+  http?: true;
 }
 
 export interface TestPath {
@@ -94,14 +105,36 @@ export function checkTracePaths(
     spans: SpanRecord[];
     // The element each queue's name stands for, from the Terraform.
     queueNames?: Map<string, string>;
+    // The containers Kubernetes Services' names reach, from the manifests.
+    routes?: ServiceRoute[];
   },
 ): ViewPaths[] {
   const { target, requirements, issues, tests } = inputs;
   const queues = queueTargets(target);
   for (const id of inputs.queueNames?.values() ?? []) queues.add(id);
-  const spans = withQueues(inputs.spans, queues, inputs.queueNames ?? new Map());
-  const traced = new Set([...componentPaths(target).map((component) => component.id), ...queues]);
+  const routes = inputs.routes ?? [];
+  const spans = withRequests(withQueues(inputs.spans, queues, inputs.queueNames ?? new Map()), routes);
+  const components = componentPaths(target).map((component) => component.id);
+  const traced = new Set([...components, ...queues]);
   const declaredCalls = new Set([...target.relationships.values()].map(callKey));
+  // Each component's container, for the steps a view takes between containers.
+  const parents = new Map(
+    [...target.elements.values()].flatMap((element) =>
+      element.type === "component" && element.parent !== undefined ? [[element.id, element.parent] as const] : [],
+    ),
+  );
+  const tracedContainers = new Set(components.flatMap((component) => parents.get(component) ?? []));
+  const reached = new Set(routes.map((route) => route.container));
+  const overHttp = (source: string, destination: string) =>
+    [...target.relationships.values()].some(
+      (relationship) =>
+        relationship.destination === destination &&
+        (relationship.source === source || relationship.source === parents.get(source)) &&
+        httpTechnology.test(relationship.technology),
+    );
+  const expectedStep = (source: string, destination: string) =>
+    (traced.has(source) && traced.has(destination)) ||
+    ((traced.has(source) || tracedContainers.has(source)) && reached.has(destination) && overHttp(source, destination));
   const byNumber = new Map(requirements.map((requirement) => [requirement.number, requirement]));
   // Each test's traces by ID. A test has one trace per process that ran it, so usually one.
   const traces = new Map<string, Map<string, SpanRecord[]>>();
@@ -121,12 +154,12 @@ export function checkTracePaths(
       if (requirement === undefined || requirement.epic) return [];
       const key = dynamicViewKey(issue);
       const view = target.dynamicViews.get(key);
-      const components = [...new Set(view?.steps.flatMap((step) => [step.source, step.destination]) ?? [])];
+      const named = [...new Set(view?.steps.flatMap((step) => [step.source, step.destination]) ?? [])];
       const base = {
         issue: `#${issue}`,
         view: key,
         description: view?.description ?? "",
-        components,
+        components: named,
         expected: [],
         tests: [],
         uncovered: [],
@@ -138,7 +171,7 @@ export function checkTracePaths(
       }
       const expected = mergeSteps(
         view.steps
-          .filter((step) => traced.has(step.source) && traced.has(step.destination))
+          .filter((step) => expectedStep(step.source, step.destination))
           .map(({ source, destination, description }) => ({ source, destination, description })),
       );
       if (expected.length === 0) {
@@ -156,14 +189,18 @@ export function checkTracePaths(
       if (passing.size === 0) {
         return [{ ...base, expected, status: "skipped", reason: "no passing test is tagged with its criteria" }];
       }
-      const declared = new Set(components);
+      // A container the view names declares its components with it.
+      const declared = new Set([
+        ...named,
+        ...[...parents].flatMap(([component, container]) => (named.includes(container) ? [component] : [])),
+      ]);
       const paths = [...passing.values()].flatMap((test) => {
         // A passing test with no spans took none of the path.
         const found = [...(traces.get(test.name)?.values() ?? [])];
         return (found.length === 0 ? [[]] : found).map((trace) => {
           const observed = observedPath(trace);
-          const match = matchPath(expected, observed, declared, queues);
-          const offTarget = offTargetCalls(observed, declaredCalls);
+          const match = matchPath(expected, observed, declared, queues, parents);
+          const offTarget = offTargetCalls(observed, declaredCalls, parents);
           const path: TestPath = {
             name: test.name,
             criterion: test.criterion!,
@@ -196,32 +233,42 @@ export function observedPath(spans: SpanRecord[]): ObservedCall[] {
   for (const span of sorted) {
     const source = span.parentSpanId === undefined ? undefined : byId.get(span.parentSpanId)?.component;
     if (source === span.component) continue;
+    const http = span.http !== undefined;
     const last = calls.at(-1);
-    if (last !== undefined && last.source === source && last.destination === span.component && source !== undefined) {
+    if (
+      last !== undefined &&
+      last.source === source &&
+      last.destination === span.component &&
+      source !== undefined &&
+      (last.http === true) === http
+    ) {
       if (!last.functions.includes(span.name)) last.functions.push(span.name);
     } else {
-      calls.push(
+      const call: ObservedCall =
         source === undefined
           ? { destination: span.component, functions: [span.name] }
-          : { source, destination: span.component, functions: [span.name] },
-      );
+          : { source, destination: span.component, functions: [span.name] };
+      if (http) call.http = true;
+      calls.push(call);
     }
   }
   return calls;
 }
 
 // Finds the longest unbroken run of expected steps in the observed path, earliest in the view on a tie, then the calls
-// between its first match and its last that involve a component the view doesn't declare.
+// between its first match and its last that involve a component the view doesn't declare. `parents` gives each
+// component's container, so a call between two containers' components takes a step between the containers.
 export function matchPath(
   expected: PathStep[],
   observed: ObservedCall[],
   declared: Set<string>,
   queues: Set<string> = new Set(),
+  parents: Map<string, string> = new Map(),
 ): Pick<TestPath, "steps" | "undeclared"> {
   const taken = (run: Array<number | null>) => run.filter((index) => index !== null).length;
   let steps: Array<number | null> = expected.map(() => null);
   for (let start = 0; start < expected.length; start++) {
-    const run = matchRun(expected, observed, start, queues);
+    const run = matchRun(expected, observed, start, queues, parents);
     if (taken(run) > taken(steps)) steps = run;
   }
   const matched = steps.filter((index) => index !== null);
@@ -239,13 +286,16 @@ export function matchPath(
 }
 
 // Matches each step from `start` to its earliest occurrence after the step before, stopping at the first that isn't
-// found. Steps outside the run are null. A step out of a queue also matches a call from the test, standing in for it.
+// found. Steps outside the run are null. Each end of a call matches the step's element or one of its components. A
+// step out of a queue also matches a call from the test, standing in for it.
 function matchRun(
   expected: PathStep[],
   observed: ObservedCall[],
   start: number,
   queues: Set<string>,
+  parents: Map<string, string>,
 ): Array<number | null> {
+  const within = (end: string | undefined, element: string) => end === element || parents.get(end ?? "") === element;
   const steps: Array<number | null> = [];
   let from = 0;
   for (const [position, step] of expected.entries()) {
@@ -256,8 +306,8 @@ function matchRun(
     const index = observed.findIndex(
       (call, at) =>
         at >= from &&
-        call.destination === step.destination &&
-        (call.source === step.source || (call.source === undefined && queues.has(step.source))),
+        within(call.destination, step.destination) &&
+        (within(call.source, step.source) || (call.source === undefined && queues.has(step.source))),
     );
     // Once a step is missing, the run is broken, so the rest are outside it too.
     steps.push(index === -1 ? null : index);
@@ -279,9 +329,32 @@ function withQueues(spans: SpanRecord[], queues: Set<string>, names: Map<string,
 }
 
 // The indexes of calls between two components that the target has no relationship for. A call from the test has no
-// source, so it's never one.
-export function offTargetCalls(observed: ObservedCall[], declared: Set<string>): number[] {
-  return observed.flatMap((call, index) => (call.source === undefined || declared.has(callKey(call)) ? [] : [index]));
+// source, so it's never one. An HTTP request into a container is on target when the target relates the caller, or the
+// caller's container, to it.
+export function offTargetCalls(
+  observed: ObservedCall[],
+  declared: Set<string>,
+  parents: Map<string, string> = new Map(),
+): number[] {
+  return observed.flatMap((call, index) => {
+    if (call.source === undefined || declared.has(callKey(call))) return [];
+    const container = parents.get(call.source);
+    if (call.http === true && container !== undefined && declared.has(`${container}->${call.destination}`)) return [];
+    return [index];
+  });
+}
+
+// A relationship over HTTP: its technology mentions HTTP, HTTPS or REST, e.g. "JSON over HTTP".
+const httpTechnology = /\b(https?|rest)\b/i;
+
+// HTTP spans with the container their host's Service reaches as their component. A request to any other host isn't a
+// call Bearing can name, so it's left out; nothing nests under a client span.
+function withRequests(spans: SpanRecord[], routes: ServiceRoute[]): SpanRecord[] {
+  return spans.flatMap((span) => {
+    if (span.http === undefined) return [span];
+    const route = routeFor(routes, span.http.host, span.http.port);
+    return route === undefined ? [] : [{ ...span, component: route.container }];
+  });
 }
 
 function mergeSteps(steps: PathStep[]): PathStep[] {
@@ -337,7 +410,8 @@ function sideBySide(view: ViewPaths, test: TestPath): string[] {
   const offTarget = new Set(test.offTarget);
   test.observed.forEach((call, index) => {
     const step = byCall.get(index);
-    let observed = `${call.source ?? "(test)"} -> ${call.destination}: ${call.functions.map((name) => `${name}()`).join(", ")}`;
+    const called = call.functions.map((name) => (call.http === true ? name : `${name}()`)).join(", ");
+    let observed = `${call.source ?? "(test)"} -> ${call.destination}: ${called}`;
     if (undeclared.has(index)) {
       const outside = [call.source, call.destination].filter(
         (component) => component !== undefined && !view.components.includes(component),

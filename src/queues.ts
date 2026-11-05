@@ -178,7 +178,7 @@ export function queueNames(target: Model, blocks: Block[]): Map<string, string> 
 }
 
 // The containers deployed in a target deployment node, at any depth.
-function containersOf(target: Model, node: string): string[] {
+export function containersOf(target: Model, node: string): string[] {
   const within = (id: string | undefined): boolean => {
     for (let at = id; at !== undefined; at = target.deployment.get(at)?.parent) if (at === node) return true;
     return false;

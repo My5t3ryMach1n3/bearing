@@ -32,6 +32,8 @@ export interface Manifest {
   // Repo-relative, with forward slashes.
   file: string;
   line: number;
+  // `metadata.labels`, keeping only string values.
+  labels: Record<string, string>;
   spec: Record<string, unknown>;
 }
 
@@ -221,6 +223,7 @@ function manifestOf(object: Record<string, unknown>, file: string, line: number)
   const namespace =
     typeof metadata.namespace === "string" && metadata.namespace !== "" ? metadata.namespace : undefined;
   const spec = (typeof object.spec === "object" && object.spec !== null ? object.spec : {}) as Record<string, unknown>;
+  const labels = stringMap(metadata.labels);
   return {
     group,
     kind,
@@ -229,6 +232,17 @@ function manifestOf(object: Record<string, unknown>, file: string, line: number)
     address: namespace === undefined ? `${kind}/${name}` : `${kind}/${namespace}/${name}`,
     file,
     line,
+    labels,
     spec,
   };
+}
+
+// The string values of an object, such as a label map or a selector. Anything else reads as empty.
+export function stringMap(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }

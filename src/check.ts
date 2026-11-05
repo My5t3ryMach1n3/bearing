@@ -37,6 +37,8 @@ import { validateModel, type Problem } from "./validate.js";
 import { IacError, sourceNames, type DeploymentGraph, type IacResource, type IacSource } from "./deployment.js";
 import { asBuiltDeployment, deriveDeployment } from "./iac.js";
 import { readTerraform } from "./terraform.js";
+import { readKubernetes } from "./kubernetes.js";
+import { serviceRoutes } from "./services.js";
 
 // The checks `bearing check` runs. The blocking ones, Target valid, Target change, Claim, Boundaries, Deployment,
 // Criteria coverage and Trace paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus,
@@ -308,7 +310,8 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   const { target, forked, fork, base, proposed, moved } = await checkedTarget(config, options.base);
   const graph = deriveImports(config, target);
   const blocks = config.iac.terraform === undefined ? undefined : readTerraform(config);
-  const deployed = deriveDeployment(config, target, blocks);
+  const manifests = blocks === undefined && config.iac.kubernetes !== undefined ? readKubernetes(config) : undefined;
+  const deployed = deriveDeployment(config, target, blocks, manifests);
   const queues = blocks === undefined ? [] : deriveQueues(config, target, blocks, deployed);
   const branch = options.branch ?? (await currentBranch(config.root));
   const claim = await readClaim(config, branch);
@@ -434,6 +437,9 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       tests,
       spans,
       ...(blocks === undefined ? {} : { queueNames: queueNames(target, blocks) }),
+      ...(manifests === undefined || deployed === undefined
+        ? {}
+        : { routes: serviceRoutes(target, manifests, deployed) }),
     });
     paths = views.some((view) => view.status === "failed")
       ? { check: "paths", status: "failed", blocking: true, issues, views }

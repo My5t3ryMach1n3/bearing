@@ -1,5 +1,6 @@
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import type { LookupFunction } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readTestRecords } from "../src/coverage.js";
@@ -16,7 +17,8 @@ interface Span {
   spanId: string;
   parentSpanId?: string;
   name: string;
-  attributes: Array<{ key: string; value: { stringValue?: string } }>;
+  kind: number;
+  attributes: Array<{ key: string; value: { stringValue?: string; intValue?: string } }>;
   status: { code: number; message?: string };
 }
 
@@ -156,5 +158,45 @@ describe("criterionPattern", () => {
     ["#<issue>/AC<n>", "#2 Add an item to the basket", undefined],
   ])("finds %s in %j", (tag, name, expected) => {
     expect(criterionPattern(tag).exec(name)?.[0]).toBe(expected);
+  });
+});
+
+describe("trace runtime's HTTP requests", () => {
+  it("records each request a traced call sends with node:http or fetch, and not the test's own", async () => {
+    const { createServer, request } = await import("node:http");
+    const server = createServer((_, response) => response.end("ok"));
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const { port } = server.address() as { port: number };
+    // Resolves every host to the server, as cluster DNS would resolve a Service's name.
+    const lookup: LookupFunction = (_host, options, done) =>
+      options.all === true ? done(null, [{ address: "127.0.0.1", family: 4 }]) : done(null, "127.0.0.1", 4);
+    const viaHttp = () =>
+      new Promise<void>((done, fail) => {
+        const sent = request({ host: "booking-api", port, path: "/slots", lookup }, (response) => {
+          response.resume();
+          response.on("end", done);
+        });
+        sent.on("error", fail);
+        sent.end();
+      });
+    const client = runtime.module("bookingClient", "src/booking-client/index.ts");
+    try {
+      await viaHttp();
+      await client.wrap(async () => {
+        await viaHttp();
+        await (await fetch(`http://localhost:${port}/bookings`, { method: "POST" })).text();
+      }, "book")();
+    } finally {
+      server.close();
+    }
+    const [book] = named("book");
+    const requests = spans().filter((span) => span.attributes.some((item) => item.key === "server.address"));
+    expect(requests.map((span) => span.name)).toEqual(["GET booking-api", "POST localhost"]);
+    for (const span of requests) {
+      expect(span).toMatchObject({ traceId: book!.traceId, parentSpanId: book!.spanId, kind: 3 });
+      expect(attribute(span, "bearing.component")).toBeUndefined();
+      expect(span.attributes).toContainEqual({ key: "server.port", value: { intValue: String(port) } });
+    }
+    expect(attribute(requests[1]!, "http.request.method")).toBe("POST");
   });
 });
