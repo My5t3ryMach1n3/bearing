@@ -1,49 +1,31 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix, resolve } from "node:path";
 import type { Config } from "./config.js";
-import type { DeploymentElement, DeploymentType, Model } from "./model.js";
+import {
+  IacError,
+  matchNodes,
+  type DeploymentGraph,
+  type DeploymentGraphNode,
+  type FoundNode,
+  type IacResource,
+  type NodeMapping,
+  type SourceRules,
+} from "./deployment.js";
+import type { Model } from "./model.js";
 
-// What the Terraform extractor finds under `iac.terraform`. This is the `deployment` section `bearing derive` prints.
-export interface TerraformGraph {
-  // The target's deployment environment the Terraform is compared with.
-  environment: string;
-  // One per resource that stands for a deployment node. Sorted by ID.
-  nodes: TerraformNode[];
-  // Resources of types Bearing doesn't map, and modules it doesn't follow. Sorted by address.
-  unknown: TerraformResource[];
-}
+// What the Terraform gives: the deployment graph with only Terraform in it.
+export type TerraformGraph = DeploymentGraph;
+export type TerraformNode = DeploymentGraphNode;
+export type TerraformResource = IacResource;
 
-export interface TerraformNode {
-  // The target deployment node's ID when the resource matches one, otherwise the resource's address.
-  id: string;
-  type: DeploymentType;
-  // The AWS service, e.g. "Amazon ElastiCache".
-  technology: string;
-  // From the resource's count attribute, e.g. `desired_count` on an ECS service, when it is a plain number.
-  instances?: string;
-  resource: TerraformResource;
-}
-
-export interface TerraformResource {
-  // As Terraform writes it, e.g. "aws_ecs_service.basket_api" or "module.network".
-  address: string;
-  // Repo-relative, with forward slashes.
-  file: string;
-  line: number;
-}
-
-export class TerraformError extends Error {
+export class TerraformError extends IacError {
   constructor(message: string) {
     super(message);
     this.name = "TerraformError";
   }
 }
 
-interface Mapping {
-  type: DeploymentType;
-  technology: string;
-  // What a target deployment node's technology must match to be this kind of node.
-  matches: RegExp;
+interface Mapping extends NodeMapping {
   // The attribute holding how many instances the node runs.
   instances?: string;
 }
@@ -141,17 +123,26 @@ const supporting = (type: string) =>
 // can't tell two nodes apart.
 export const terraformProperty = "bearing.terraform";
 
-// Reads the `.tf` files in `iac.terraform`, one root module as Terraform reads it, and turns each resource of a
-// mapped type into a deployment node.
-//
-// Nodes are matched with the target's deployment nodes in its one environment: first by `bearing.terraform`, then
-// by technology where a kind of node has exactly one resource and one target node left. A resource that matches
-// nothing keeps its address as its ID, so it reads as an added node.
-export function deriveTerraform(config: Config, target: Model, blocks = readTerraform(config)): TerraformGraph {
-  const environment = environmentOf(target);
+export const terraformRules: SourceRules = {
+  source: "terraform",
+  key: "iac.terraform",
+  property: terraformProperty,
+  mappings: Object.values(resourceMappings),
+  workloads: false,
+};
 
-  const unknown: TerraformResource[] = [];
-  const found: Array<{ node: TerraformNode; mapping: Mapping }> = [];
+// Reads the `.tf` files in `iac.terraform`, one root module as Terraform reads it, and turns each resource of a
+// mapped type into a deployment node, matched with the target's as `matchNodes` matches them.
+export function deriveTerraform(config: Config, target: Model, blocks = readTerraform(config)): TerraformGraph {
+  const { found, unknown } = terraformNodes(blocks);
+  return matchNodes(target, terraformRules, found, unknown);
+}
+
+// The deployment nodes in the Terraform, each with the target's ID still to find, and the resources Bearing
+// doesn't map.
+export function terraformNodes(blocks: Block[]): { found: FoundNode[]; unknown: IacResource[] } {
+  const unknown: IacResource[] = [];
+  const found: FoundNode[] = [];
   for (const block of blocks) {
     // A data source deploys nothing.
     if (block.kind === "data") continue;
@@ -161,109 +152,17 @@ export function deriveTerraform(config: Config, target: Model, blocks = readTerr
       if (block.type === undefined || !supporting(block.type)) unknown.push(resource);
       continue;
     }
-    const node: TerraformNode = { id: block.address, type: mapping.type, technology: mapping.technology, resource };
+    const node: TerraformNode = {
+      id: block.address,
+      type: mapping.type,
+      technology: mapping.technology,
+      resource,
+    };
     const instances = mapping.instances === undefined ? undefined : block.attributes.get(mapping.instances);
     if (instances !== undefined && /^\d+$/.test(instances)) node.instances = instances;
     found.push({ node, mapping });
   }
-
-  const candidates = [...target.deployment.values()].filter(
-    (element) =>
-      element.environment === environment &&
-      (element.type === "deploymentNode" || element.type === "infrastructureNode"),
-  );
-  const taken = new Set<string>();
-  for (const { node } of found) {
-    const pinned = candidates.find((candidate) => candidate.properties[terraformProperty] === node.resource.address);
-    if (pinned !== undefined && !taken.has(pinned.id)) {
-      node.id = pinned.id;
-      taken.add(pinned.id);
-    }
-  }
-  const unpinned = found.filter(({ node }) => node.id === node.resource.address);
-  for (const technology of new Set(unpinned.map(({ node }) => node.technology))) {
-    const resources = unpinned.filter(({ node }) => node.technology === technology);
-    const nodes = candidates.filter(
-      (candidate) =>
-        !taken.has(candidate.id) &&
-        candidate.properties[terraformProperty] === undefined &&
-        resources[0]!.mapping.matches.test(candidate.technology),
-    );
-    if (resources.length === 1 && nodes.length === 1) {
-      resources[0]!.node.id = nodes[0]!.id;
-      taken.add(nodes[0]!.id);
-    }
-  }
-
-  const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-  return {
-    environment,
-    nodes: found.map(({ node }) => node).sort(byId),
-    unknown: unknown.sort((a, b) => (a.address < b.address ? -1 : a.address > b.address ? 1 : 0)),
-  };
-}
-
-// The as-built model the Terraform gives, for diffing with the target. Nodes Terraform can't speak to are copied
-// from the target so they don't read as removed: other environments, nodes of no mapped technology (such as a
-// region grouping the rest) and the instances inside nodes that are still there. A target node of a mapped
-// technology with no resource is left out, so it reads as removed.
-export function terraformModel(target: Model, graph: TerraformGraph): Model {
-  const model: Model = {
-    elements: new Map(),
-    relationships: new Map(),
-    dynamicViews: new Map(),
-    deployment: new Map(),
-  };
-  const mappings = Object.values(resourceMappings);
-  const checked = (element: DeploymentElement) =>
-    element.environment === graph.environment &&
-    (element.type === "deploymentNode" || element.type === "infrastructureNode") &&
-    (element.properties[terraformProperty] !== undefined ||
-      mappings.some((mapping) => mapping.matches.test(element.technology)));
-  for (const element of target.deployment.values()) {
-    if (!checked(element) && element.type !== "containerInstance" && element.type !== "softwareSystemInstance") {
-      model.deployment.set(element.id, element);
-    }
-  }
-  for (const node of graph.nodes) {
-    const matched = target.deployment.get(node.id);
-    const element: DeploymentElement = matched
-      ? { ...matched }
-      : {
-          id: node.id,
-          type: node.type,
-          environment: graph.environment,
-          name: node.resource.address,
-          description: "",
-          technology: node.technology,
-          tags: [],
-          properties: {},
-        };
-    // Only a plain count is compared; a range such as "1..N" is the target's to state.
-    if (node.instances !== undefined && (matched?.instances === undefined || /^\d+$/.test(matched.instances))) {
-      element.instances = node.instances;
-    }
-    model.deployment.set(element.id, element);
-  }
-  for (const element of target.deployment.values()) {
-    const instance = element.type === "containerInstance" || element.type === "softwareSystemInstance";
-    if (instance && element.parent !== undefined && model.deployment.has(element.parent)) {
-      model.deployment.set(element.id, element);
-    }
-  }
-  return model;
-}
-
-// Terraform has no environments of its own, so the target must have just one to compare it with.
-function environmentOf(target: Model): string {
-  const environments = [...new Set([...target.deployment.values()].map((element) => element.environment))].sort();
-  if (environments.length === 1) return environments[0]!;
-  if (environments.length === 0) {
-    throw new TerraformError('the target has no deployment view to compare "iac.terraform" with');
-  }
-  throw new TerraformError(
-    `the target has ${environments.length} deployment environments (${environments.join(", ")}); comparing Terraform with more than one isn't supported yet`,
-  );
+  return { found, unknown };
 }
 
 // A top-level block of a `.tf` file that Bearing reads.

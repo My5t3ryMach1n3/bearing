@@ -38,7 +38,7 @@ interface ConfigFile {
   languages?: Array<{ name: Language; root: string; project?: string }>;
   requirements: { source: "github-issues"; label: string };
   tests: { integration?: string; tag: string };
-  iac: { terraform?: string };
+  iac: { terraform?: string; kubernetes?: string };
   agent: { selfHealAttempts: number };
   checks: { surplus: CheckMode; responsibilities: CheckMode };
 }
@@ -112,7 +112,10 @@ export const configSchema: JSONSchemaType<ConfigFile> = {
       type: "object",
       additionalProperties: false,
       required: [],
-      properties: { terraform: { type: "string", minLength: 1, nullable: true } },
+      properties: {
+        terraform: { type: "string", minLength: 1, nullable: true },
+        kubernetes: { type: "string", minLength: 1, nullable: true },
+      },
       default: emptyObject,
     },
     agent: {
@@ -190,6 +193,11 @@ export function parseConfig(text: string, root: string, file = configPath): Conf
   if (language !== undefined && languages !== undefined) {
     problems.push(
       `${at(["languages"])}"language" and "languages" can't both be set; list every language under "languages"`,
+    );
+  }
+  if (rest.iac.terraform !== undefined && rest.iac.kubernetes !== undefined) {
+    problems.push(
+      `${at(["iac", "kubernetes"])}"iac.terraform" and "iac.kubernetes" can't both be set yet; Bearing compares one with the deployment view`,
     );
   }
   if (tsconfig !== undefined && language === undefined) {

@@ -69,6 +69,20 @@ describe("init", () => {
     expect(read(root, "AGENTS.md")).toContain("`bearing test -- npm run test:integration`");
   });
 
+  it("fills in a folder of Kubernetes manifests, but not a Helm chart", () => {
+    const root = emptyRepo();
+    mkdirSync(join(root, "k8s"));
+    writeFileSync(join(root, "k8s", "app.yaml"), "apiVersion: apps/v1\nkind: Deployment\n");
+    init(root);
+    expect(loadConfig(root).iac).toEqual({ kubernetes: "k8s/" });
+
+    const chart = emptyRepo();
+    mkdirSync(join(chart, "kubernetes"));
+    writeFileSync(join(chart, "kubernetes", "Chart.yaml"), "name: app\nkind: x\n");
+    init(chart);
+    expect(loadConfig(chart).iac).toEqual({});
+  });
+
   it("leaves them commented out when it doesn't", () => {
     const root = emptyRepo();
     init(root);

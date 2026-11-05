@@ -336,7 +336,7 @@ tests:
   integration: npm run test:integration
   tag: "#<issue>/AC<n>"
 iac:
-  terraform: infra/
+  terraform: infra/         # or, for everything in one Kubernetes cluster: kubernetes: k8s/
 agent:
   selfHealAttempts: 3
 checks:
@@ -380,7 +380,7 @@ Reading Python code needs Python 3.11 or later as `python3` on `PATH`, or the in
 | `bearing validate` | Agent, CI | Structurizr validation plus Bearing's rules: open issue IDs on every element, a path on every component, a dynamic view per issue pinning its current criteria |
 | `bearing claim` | Agent | Writes the branch's claims file |
 | `bearing test -- <cmd>` | Agent, CI | Runs the integration tests with tracing on |
-| `bearing derive` | CI, anyone | Builds the as-built model from each language's imports and from Terraform: deployment nodes, and relationships through queues |
+| `bearing derive` | CI, anyone | Builds the as-built model from each language's imports, and from Terraform (deployment nodes, and relationships through queues) or Kubernetes manifests (deployment nodes) |
 | `bearing check` | Agent, CI | Runs every check; exits non-zero on a blocking failure |
 | `bearing report` | CI | Writes the PR comment with Mermaid overlays |
 | `bearing guard` | CI | Flags a target change from the base branch: label, the changed files' diffs atop the comment, and `bearing/target` |
@@ -394,7 +394,7 @@ Reading Python code needs Python 3.11 or later as `python3` on `PATH`, or the in
 | Target change | A proposed target against main's current target: first merged wins | Yes |
 | Claim | Claims file against the as-built model | Yes |
 | Boundaries | As-built relationships between components against the target | Yes |
-| Deployment | Terraform against the target deployment view | Yes |
+| Deployment | Terraform, or Kubernetes manifests, against the target deployment view | Yes |
 | Criteria coverage | Each criterion of the touched issues has a tagged test that ran and passed in CI | Yes |
 | Trace paths | Traces from those tests against each issue's dynamic view | Yes |
 | Surplus | Code outside any component path, in a component that serves only closed issues, or untouched by any criterion's trace | No |
@@ -455,7 +455,7 @@ Source files under no component path are listed for the surplus check. Tests (`*
 
 ### How Terraform maps to deployment nodes
 
-When `iac.terraform` is set, `bearing derive` also reads the `.tf` files in that directory, one root module as Terraform reads it, and prints the deployment nodes it finds under `deployment`. Kubernetes manifests follow later.
+When `iac.terraform` is set, `bearing derive` also reads the `.tf` files in that directory, one root module as Terraform reads it, and prints the deployment nodes it finds under `deployment`. Kubernetes manifests are read as [below](#how-kubernetes-manifests-map-to-deployment-nodes).
 
 Each resource of a type in this table is one node:
 
@@ -480,6 +480,38 @@ These types configure, connect or secure a node rather than being one, so they m
 Nodes are compared with the target's deployment view, which must have exactly one environment for now. A resource matches the target node whose `bearing.terraform` property names its address, e.g. `"bearing.terraform" "aws_ecs_service.basket_api"`. Failing that, it matches by technology when its kind has exactly one resource and one target node left. Two buckets and two S3 nodes stay unmatched until the nodes say which bucket is which. A matched node takes the target's ID; an unmatched resource keeps its address as its ID, so it reads as a node the target doesn't have. A target node of a mapped technology with no resource reads as removed. A node whose instances come from a plain number in the resource drifts when the number differs from the target's. Nodes of no mapped technology, such as a region grouping the others, and the container instances inside matched nodes aren't compared.
 
 `count` and `for_each` read as one node, and a node stops at the resource: an RDS instance is one node however many databases it holds, which is a known gap in v0.1.
+
+### How Kubernetes manifests map to deployment nodes
+
+Some systems run everything in one Kubernetes cluster: the front end, the back end and the database, on a developer's machine or on an edge device such as a server in a clinic or a shop. For those, `iac.kubernetes` takes the place of `iac.terraform`. Only one of the two can be set for now, as Bearing compares one source with the one deployment environment.
+
+When `iac.kubernetes` is set, `bearing derive` reads the `.yaml`, `.yml` and `.json` files in that directory as `kubectl apply -f` reads it: subfolders aren't read, a file may hold several documents, and a `List` stands for its items. Helm charts and Kustomize overlays aren't rendered; render them into a folder first, with `helm template` or `kustomize build`, and point `iac.kubernetes` at that. A folder that is a chart, or a chart's `templates/`, is refused.
+
+An object is named `<kind>/<name>`, or `<kind>/<namespace>/<name>` when its manifest sets a namespace, e.g. `Deployment/booking-api`. Each object of a kind in this table is one node:
+
+| Kind (API group) | Node | Technology | Matches a target node whose technology contains | Instances from |
+| --- | --- | --- | --- | --- |
+| `Deployment` (apps) | Deployment | Kubernetes Deployment | Deployment | `spec.replicas` |
+| `StatefulSet` (apps) | Deployment | Kubernetes StatefulSet | StatefulSet | `spec.replicas` |
+| `DaemonSet` (apps) | Deployment | Kubernetes DaemonSet | DaemonSet | |
+| `ReplicaSet` (apps) | Deployment | Kubernetes ReplicaSet | ReplicaSet | `spec.replicas` |
+| `Pod` (core) | Deployment | Kubernetes Pod | Pod | |
+| `Job` (batch) | Deployment | Kubernetes Job | Job, but not CronJob | |
+| `CronJob` (batch) | Deployment | Kubernetes CronJob | CronJob | |
+| `Ingress` (networking.k8s.io) | Infrastructure | Kubernetes Ingress | Ingress | |
+| `Service` (core) of `type: LoadBalancer` | Infrastructure | Kubernetes LoadBalancer Service | Load balancer, ALB, NLB, GLB or ELB | |
+
+These kinds configure, connect or secure a node rather than being one, so they make no node: `ConfigMap`, `Endpoints`, `LimitRange`, `Namespace`, `PersistentVolume`, `PersistentVolumeClaim`, `ResourceQuota`, `Secret`, `Service` of any other type, `ServiceAccount`, `HorizontalPodAutoscaler`, `EndpointSlice`, `IngressClass`, `NetworkPolicy`, `PodDisruptionBudget`, `ClusterRole`, `ClusterRoleBinding`, `Role`, `RoleBinding`, `PriorityClass` and `StorageClass`. Any other kind, such as a custom resource, or a known kind in another API group, is listed under `unknown` with its file and line.
+
+Give each workload its own deployment node in the target, holding the container instances it runs, inside nodes for the machine, the cluster and the namespace as you like. One cluster usually runs several Deployments, so matching by technology alone rarely settles which is which. An object matches:
+
+1. the target node whose `bearing.kubernetes` property names it, e.g. `"bearing.kubernetes" "StatefulSet/chairside/postgres"`;
+2. failing that, the target node of the same kind of node (deployment or infrastructure) with the same name, ignoring case, spaces and punctuation, so `deploymentNode "Booking API"` matches `Deployment/booking-api`. A name two objects or two target nodes share matches neither;
+3. failing that, by technology, when its kind has exactly one object and one target node left.
+
+A matched node takes the target's ID; an unmatched object keeps its address, so it reads as a node the target doesn't have. A target node holding container or software system instances and no other node is a workload, and is compared whatever its technology, so a "PostgreSQL 16" node with no StatefulSet reads as removed. So is a node pinned with `bearing.kubernetes` or of a technology in the table. Nodes that only group others, such as the machine, the cluster and the namespace, aren't compared. A node's instances drift when `spec.replicas` is a plain number that differs from the target's.
+
+Calls between workloads, such as the front end calling the back end through a Service, aren't read from the manifests, and traces don't cross HTTP yet ([#110](https://github.com/My5t3ryMach1n3/bearing/issues/110)).
 
 ### How queues map to relationships
 
@@ -566,7 +598,7 @@ The target they compare against depends on the branch. A branch that changes the
 
   An addition the code doesn't make yet isn't a mismatch, since the target may lead the code. A branch with no claims file, such as a human's Terraform PR, skips this check.
 - **Boundaries** fails each relationship between two components that the code makes and the target doesn't declare, listing the imports that make it, and each relationship through a queue that the Terraform allows and the target doesn't declare, listing the IAM statements that allow it. Anything inside one component passes.
-- **Deployment** compares the nodes `bearing derive` reads from the Terraform with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when `iac.terraform` isn't set.
+- **Deployment** compares the nodes `bearing derive` reads from the Terraform or the Kubernetes manifests with the target's deployment view, and fails on a node the target doesn't have, a target node with no resource, or an instance count that differs. Resources Bearing doesn't map are listed but never fail it. It's skipped when neither `iac.terraform` nor `iac.kubernetes` is set.
 - **Criteria coverage** is the check above.
 - **Trace paths** compares the traces of an issue's passing tagged tests with its dynamic view. A story has one view but its criteria can take different parts of it, so each test must follow an unbroken run of the view's steps, in order, with no call into a component the view doesn't declare between them, and together the story's tests must take every step. A step no test takes fails the view. A run that stops short of the view's end is checked for those undeclared calls to the end of its trace. Any call in the trace between two components the target declares no relationship for also fails it, even if a later read-back takes the view's steps. That catches a shortcut imports can't show, such as through a port the caller is handed. A call the target declares but the view doesn't draw passes, since setup and read-back run them.
 

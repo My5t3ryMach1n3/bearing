@@ -11,8 +11,8 @@ import {
   resourceMappings,
   supportingResources,
   TerraformError,
-  terraformModel,
 } from "../src/terraform.js";
+import { asBuiltDeployment } from "../src/iac.js";
 import { basketDir, copyBasket } from "./basket.js";
 
 const basketTarget = modelFromWorkspace(JSON.parse(readFileSync(join(basketDir, "workspace.json"), "utf8")));
@@ -51,7 +51,7 @@ function repo(files: Record<string, string>) {
 }
 
 const deploymentDiff = (target: Model, config = loadConfig(join(basketDir, "repo"))) => {
-  const diff = diffModels(target, terraformModel(target, deriveTerraform(config, target))).deployment;
+  const diff = diffModels(target, asBuiltDeployment(target, deriveTerraform(config, target))).deployment;
   return {
     added: diff.added.map(({ id }) => id),
     removed: diff.removed.map(({ id }) => id),
@@ -238,6 +238,7 @@ describe("deriveTerraform", () => {
     const graph = deriveTerraform(config, target({ db: "Amazon RDS for PostgreSQL" }));
     expect(graph).toEqual({
       environment: "Production",
+      source: "terraform",
       nodes: [
         {
           id: "db",
@@ -304,7 +305,7 @@ describe("deriveTerraform", () => {
   });
 });
 
-describe("terraformModel", () => {
+describe("asBuiltDeployment from Terraform", () => {
   it("reads instance counts as drift and target nodes with no resource as removed", () => {
     const config = repo({ "main.tf": 'resource "aws_ecs_service" "api" {\n  desired_count = 3\n}\n' });
     const nodes = target({
