@@ -204,6 +204,50 @@ describe("bearing test", () => {
     ]);
   });
 
+  it(
+    "records the HTTP requests a component sends under Jest, with fetch and node:http",
+    { timeout: 60_000 },
+    async () => {
+      const root = node({
+        "package.json": '{ "private": true }\n',
+        "src/client/index.js": [
+          'const http = require("node:http");',
+          "exports.book = async (port) => {",
+          '  await (await fetch(`http://localhost:${port}/bookings`, { method: "POST" })).text();',
+          '  await new Promise((done) => http.get(`http://localhost:${port}/slots`, (r) => r.resume().on("end", done)));',
+          "};",
+        ].join("\n"),
+        "test/client.test.js": [
+          'const { createServer } = require("node:http");',
+          'const { book } = require("../src/client/index.js");',
+          'test("#1/AC1 books a slot", async () => {',
+          '  const server = createServer((_, response) => response.end("ok"));',
+          '  await new Promise((done) => server.listen(0, "127.0.0.1", done));',
+          "  try {",
+          "    await book(server.address().port);",
+          "  } finally {",
+          "    server.close();",
+          "  }",
+          "});",
+        ].join("\n"),
+      });
+      symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "junction");
+      const config = parseConfig("version: 1\nmodel: architecture/workspace.dsl\nlanguage: typescript\n", root);
+      const result = await runTraced(config, [{ id: "bookingClient", path: "src/client" }], ["npx jest"], quiet);
+      expect(result.exitCode).toBe(0);
+      const spans = readSpanRecords(join(root, tracesDir));
+      const book = spans.find((span) => span.name === "book")!;
+      const requests = spans.filter((span) => span.http !== undefined);
+      expect(requests.map((span) => [span.name, span.http?.method, span.http?.host])).toEqual([
+        ["POST localhost", "POST", "localhost"],
+        ["GET localhost", "GET", "localhost"],
+      ]);
+      for (const span of requests) {
+        expect(span).toMatchObject({ parentSpanId: book.spanId, test: "#1/AC1 books a slot", criterion: "#1/AC1" });
+      }
+    },
+  );
+
   it("clears traces from the last run first", { timeout: 60_000 }, async () => {
     const root = copyBasket();
     mkdirSync(join(root, tracesDir), { recursive: true });

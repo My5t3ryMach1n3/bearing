@@ -40,7 +40,10 @@ type span struct {
 	adopted bool
 	// For a messaging span: the queue's name, "send" or "receive", and how the call ended.
 	queue, operation string
-	err              error
+	// For an outgoing HTTP request: its method, host and port, 0 when the URL gives none.
+	method, host string
+	port         int
+	err          error
 	// Spans that continue this one in a message's trace, which end when it does. See Consume.
 	followers []*span
 	// A span on the stack only as a parent for what follows, which is never written: a message's consumer span
@@ -258,7 +261,15 @@ func open(kind string) *os.File {
 func spanJSON(s *span, stop int64) string {
 	kind, status := "1", `{"code":1}`
 	var attrs []string
-	if s.queue != "" {
+	if s.host != "" {
+		// OpenTelemetry's HTTP conventions; the component is the container the host reaches, which Bearing finds from
+		// the Kubernetes Services.
+		kind = "3"
+		attrs = []string{attr("http.request.method", s.method), attr("server.address", s.host)}
+		if s.port > 0 {
+			attrs = append(attrs, `{"key":"server.port","value":{"intValue":"`+strconv.Itoa(s.port)+`"}}`)
+		}
+	} else if s.queue != "" {
 		// OpenTelemetry's messaging conventions; the component is the queue, which Bearing finds by name.
 		kind = map[string]string{"send": "4", "receive": "5"}[s.operation]
 		attrs = []string{

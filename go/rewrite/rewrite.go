@@ -12,6 +12,12 @@
 // context in the messages' attributes:
 //
 //	client.SendMessage(ctx, input)  ->  __bt.SQSSendMessage(client.SendMessage, ctx, input)
+//
+// And in any file that imports net/http, each http.Client composite literal's Transport goes through the hook, which
+// records the requests the client sends:
+//
+//	&http.Client{Timeout: d}           ->  &http.Client{Timeout: d, Transport: __bt.HTTPTransport(nil)}
+//	http.Client{Transport: t}          ->  http.Client{Transport: __bt.HTTPTransport(t)}
 package rewrite
 
 import (
@@ -92,6 +98,49 @@ func File(path string, src []byte, s Settings) ([]byte, error) {
 			inserts = append(inserts,
 				insert{start.Offset, alias + ".SQS" + sel.Sel.Name + "(" + directive(call.Fun.Pos()), 0},
 				insert{paren.Offset, ", " + directive(call.Args[0].Pos()), 1})
+			return true
+		})
+	}
+
+	if h := importName(f, "net/http"); h != "" && h != "_" {
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			typ, ok := lit.Type.(*ast.SelectorExpr)
+			if !ok || typ.Sel.Name != "Client" {
+				return true
+			}
+			if x, ok := typ.X.(*ast.Ident); !ok || x.Name != h {
+				return true
+			}
+			var transport ast.Expr
+			for _, elt := range lit.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					// Fields by position: every one is given, so the Transport is too, and left as it is.
+					return true
+				}
+				if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Transport" {
+					transport = kv.Value
+				}
+			}
+			switch {
+			case transport != nil:
+				start, end := fset.Position(transport.Pos()), fset.Position(transport.End())
+				inserts = append(inserts,
+					insert{start.Offset, alias + ".HTTPTransport(" + directive(transport.Pos()), 0},
+					insert{end.Offset, ")" + directive(transport.End()), 0})
+			case len(lit.Elts) > 0:
+				last := lit.Elts[len(lit.Elts)-1].End()
+				inserts = append(inserts,
+					insert{fset.Position(last).Offset, ", Transport: " + alias + ".HTTPTransport(nil)" + directive(last), 0})
+			default:
+				inside := lit.Lbrace + 1
+				inserts = append(inserts,
+					insert{fset.Position(inside).Offset, "Transport: " + alias + ".HTTPTransport(nil)" + directive(inside), 0})
+			}
 			return true
 		})
 	}
