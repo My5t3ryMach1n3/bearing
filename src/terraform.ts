@@ -147,15 +147,14 @@ export const terraformProperty = "bearing.terraform";
 // Nodes are matched with the target's deployment nodes in its one environment: first by `bearing.terraform`, then
 // by technology where a kind of node has exactly one resource and one target node left. A resource that matches
 // nothing keeps its address as its ID, so it reads as an added node.
-export function deriveTerraform(config: Config, target: Model): TerraformGraph {
-  const dir = config.iac.terraform;
-  if (dir === undefined) throw new TerraformError('"iac.terraform" is not set in .bearing/config.yaml');
+export function deriveTerraform(config: Config, target: Model, blocks = readTerraform(config)): TerraformGraph {
   const environment = environmentOf(target);
-  const resources = readModule(resolve(config.root, dir), posix.normalize(dir.split("\\").join("/")));
 
   const unknown: TerraformResource[] = [];
   const found: Array<{ node: TerraformNode; mapping: Mapping }> = [];
-  for (const block of resources) {
+  for (const block of blocks) {
+    // A data source deploys nothing.
+    if (block.kind === "data") continue;
     const resource = { address: block.address, file: block.file, line: block.line };
     const mapping = block.type === undefined ? undefined : resourceMappings[block.type];
     if (mapping === undefined) {
@@ -267,14 +266,54 @@ function environmentOf(target: Model): string {
   );
 }
 
-interface Block {
+// A top-level block of a `.tf` file that Bearing reads.
+export interface Block {
+  kind: "resource" | "data" | "module";
+  // As Terraform writes it: "aws_ecs_service.basket_api", "data.aws_iam_policy_document.send" or "module.network".
   address: string;
-  // The resource type; absent for a module.
+  // The resource or data source type; absent for a module.
   type?: string;
+  // The resource's or data source's name, e.g. "basket_api".
+  name: string;
   file: string;
   line: number;
-  // Top-level attributes whose value is a plain number or string.
+  // Top-level attributes whose value is a plain number, word or string.
   attributes: Map<string, string>;
+  body: Body;
+}
+
+// What a block holds: its attributes, with their expressions, and the blocks nested in it.
+export interface Body {
+  attributes: Map<string, Value>;
+  blocks: NestedBlock[];
+}
+
+export interface NestedBlock {
+  type: string;
+  labels: string[];
+  line: number;
+  body: Body;
+}
+
+// An HCL expression, read as far as Bearing needs: literals, references, collections and function calls. Anything
+// else, such as an operator, a conditional or a `for` expression, is an `expression` holding the parts it's made of.
+export type Value =
+  | { kind: "string"; value: string }
+  // A quoted string with interpolation, or a heredoc: its text as written, `${...}` included.
+  | { kind: "template"; text: string; line: number }
+  // A number, `true`, `false`, `null` or a reference such as `aws_sqs_queue.events.arn`. An index or splat after a
+  // reference is dropped: `aws_sqs_queue.events[0].arn` reads as `aws_sqs_queue.events`.
+  | { kind: "word"; value: string }
+  | { kind: "tuple"; items: Value[] }
+  | { kind: "object"; entries: Array<{ key: string; value: Value }>; line: number }
+  | { kind: "call"; name: string; args: Value[] }
+  | { kind: "expression"; parts: Value[] };
+
+// Every block in a Terraform directory: one root module, as Terraform reads it. Modules aren't followed.
+export function readTerraform(config: Config): Block[] {
+  const dir = config.iac.terraform;
+  if (dir === undefined) throw new TerraformError('"iac.terraform" is not set in .bearing/config.yaml');
+  return readModule(resolve(config.root, dir), posix.normalize(dir.split("\\").join("/")));
 }
 
 function readModule(dir: string, repoDir: string): Block[] {
@@ -290,12 +329,12 @@ function readModule(dir: string, repoDir: string): Block[] {
 interface Token {
   // A template is a string with interpolation, or a heredoc: its value isn't known without evaluating it.
   kind: "word" | "string" | "template" | "punct" | "newline";
+  // A string's contents, a template's text as written, or the word or punctuation itself.
   text: string;
   line: number;
 }
 
-// Finds the `resource` and `module` blocks in one file of HCL. It reads only as much of the language as that needs:
-// block labels, nesting, and top-level attributes with a literal value.
+// Finds the `resource`, `data` and `module` blocks in one file of HCL.
 export function parseBlocks(text: string, file: string): Block[] {
   const tokens = tokenize(text, file);
   const blocks: Block[] = [];
@@ -312,41 +351,227 @@ export function parseBlocks(text: string, file: string): Block[] {
       j++;
     }
     if (tokens[j]?.text !== "{") continue;
-    if (token.text === "resource" && labels.length === 2) {
-      const body = attributesOf(tokens, j);
-      blocks.push({ address: `${labels[0]}.${labels[1]}`, type: labels[0], file, line: token.line, attributes: body });
-    } else if (token.text === "module" && labels.length === 1) {
-      blocks.push({ address: `module.${labels[0]}`, file, line: token.line, attributes: new Map() });
+    const kind = token.text;
+    if ((kind === "resource" || kind === "data") && labels.length === 2) {
+      const body = new Parser(tokens).body(j);
+      const address = kind === "data" ? `data.${labels[0]}.${labels[1]}` : `${labels[0]}.${labels[1]}`;
+      blocks.push({
+        kind,
+        address,
+        type: labels[0]!,
+        name: labels[1]!,
+        file,
+        line: token.line,
+        attributes: literalAttributes(body),
+        body,
+      });
+    } else if (kind === "module" && labels.length === 1) {
+      blocks.push({
+        kind,
+        address: `module.${labels[0]}`,
+        name: labels[0]!,
+        file,
+        line: token.line,
+        attributes: new Map(),
+        body: { attributes: new Map(), blocks: [] },
+      });
     }
   }
   return blocks;
 }
 
-// The literal top-level attributes of the block whose `{` is at `open`.
-function attributesOf(tokens: Token[], open: number): Map<string, string> {
+function literalAttributes(body: Body): Map<string, string> {
   const attributes = new Map<string, string>();
-  let depth = 0;
-  for (let i = open; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    if (token.kind === "punct" && "{[(".includes(token.text)) depth++;
-    else if (token.kind === "punct" && "}])".includes(token.text) && --depth === 0) break;
-    const [equals, value, end] = [tokens[i + 1], tokens[i + 2], tokens[i + 3]];
-    if (
-      depth === 1 &&
-      token.kind === "word" &&
-      (tokens[i - 1]!.kind === "newline" || tokens[i - 1]!.text === "{") &&
-      equals?.text === "=" &&
-      (value?.kind === "word" || value?.kind === "string") &&
-      (end?.kind === "newline" || end?.text === "}")
-    ) {
-      attributes.set(token.text, value.text);
-    }
+  for (const [name, value] of body.attributes) {
+    if (value.kind === "string" || value.kind === "word") attributes.set(name, value.value);
   }
   return attributes;
 }
 
+// Reads block bodies and expressions from the tokens. It never throws: what it can't read becomes an `expression`,
+// and a line it can't read at all is skipped.
+class Parser {
+  private i = 0;
+  constructor(private readonly tokens: Token[]) {}
+
+  private peek(offset = 0): Token | undefined {
+    return this.tokens[this.i + offset];
+  }
+
+  private is(text: string, offset = 0): boolean {
+    const token = this.peek(offset);
+    return token !== undefined && token.kind === "punct" && token.text === text;
+  }
+
+  private skipNewlines() {
+    while (this.peek()?.kind === "newline") this.i++;
+  }
+
+  // The body of the block whose `{` is at `open`.
+  body(open: number): Body {
+    this.i = open + 1;
+    return this.readBody();
+  }
+
+  private readBody(): Body {
+    const body: Body = { attributes: new Map(), blocks: [] };
+    for (;;) {
+      this.skipNewlines();
+      const token = this.peek();
+      if (token === undefined) return body;
+      if (this.is("}")) {
+        this.i++;
+        return body;
+      }
+      if (token.kind === "word" && this.is("=", 1) && !this.is("=", 2)) {
+        this.i += 2;
+        body.attributes.set(token.text, this.sequence(["\n", "}"]));
+        continue;
+      }
+      if (token.kind === "word") {
+        const labels: string[] = [];
+        let offset = 1;
+        while (this.peek(offset)?.kind === "string" || this.peek(offset)?.kind === "word") {
+          labels.push(this.peek(offset)!.text);
+          offset++;
+        }
+        if (this.is("{", offset)) {
+          this.i += offset + 1;
+          body.blocks.push({ type: token.text, labels, line: token.line, body: this.readBody() });
+          continue;
+        }
+      }
+      // Not an attribute or a block: skip the line, and any brackets it opens.
+      this.sequence(["\n", "}"]);
+    }
+  }
+
+  // An expression running up to one of `stops` outside any brackets, which is left unread. A newline is a stop only
+  // if `stops` has one; otherwise it's skipped.
+  private sequence(stops: string[]): Value {
+    const parts: Value[] = [];
+    let operators = 0;
+    for (;;) {
+      const token = this.peek();
+      if (token === undefined) break;
+      if (token.kind === "newline") {
+        if (stops.includes("\n")) break;
+        this.i++;
+        continue;
+      }
+      if (token.kind === "punct" && stops.includes(token.text)) break;
+      const value = this.primary();
+      if (value === undefined) operators++;
+      else parts.push(value);
+    }
+    if (parts.length === 1 && operators === 0) return parts[0]!;
+    return { kind: "expression", parts };
+  }
+
+  // One literal, reference, collection or call, or undefined after skipping an operator or a stray closing bracket.
+  private primary(): Value | undefined {
+    const token = this.peek()!;
+    this.i++;
+    switch (token.kind) {
+      case "string":
+        return { kind: "string", value: token.text };
+      case "template":
+        return { kind: "template", text: token.text, line: token.line };
+      case "word": {
+        if (this.is("(")) {
+          this.i++;
+          const args = this.list(")");
+          return { kind: "call", name: token.text, args };
+        }
+        // Indexes, splats and the attributes after them.
+        while (this.is("[") || (this.peek()?.kind === "word" && this.peek()!.text.startsWith("."))) {
+          if (this.is("[")) {
+            this.i++;
+            this.sequence(["]"]);
+            if (this.is("]")) this.i++;
+          } else {
+            this.i++;
+          }
+        }
+        return { kind: "word", value: token.text };
+      }
+      case "newline":
+        return undefined;
+      case "punct":
+        break;
+    }
+    switch (token.text) {
+      case "[":
+        if (this.peek()?.text === "for") return this.rest("]");
+        return { kind: "tuple", items: this.list("]") };
+      case "{":
+        this.skipNewlines();
+        if (this.peek()?.text === "for") return this.rest("}");
+        return this.object(token.line);
+      case "(": {
+        const inner = this.sequence([")"]);
+        if (this.is(")")) this.i++;
+        return inner;
+      }
+      default:
+        return undefined;
+    }
+  }
+
+  // Comma-separated items up to `close`, which is read.
+  private list(close: string): Value[] {
+    const items: Value[] = [];
+    for (;;) {
+      this.skipNewlines();
+      if (this.peek() === undefined) return items;
+      if (this.is(close)) {
+        this.i++;
+        return items;
+      }
+      if (this.is(",")) {
+        this.i++;
+        continue;
+      }
+      const item = this.sequence([",", close]);
+      if (item.kind !== "expression" || item.parts.length > 0) items.push(item);
+    }
+  }
+
+  // Everything up to `close`, such as a `for` expression, as one expression.
+  private rest(close: string): Value {
+    const value = this.sequence([close]);
+    if (this.is(close)) this.i++;
+    return value.kind === "expression" ? value : { kind: "expression", parts: [value] };
+  }
+
+  // An object's entries up to its `}`: `key = value` or `key: value`, separated by commas or newlines.
+  private object(line: number): Value {
+    const entries: Array<{ key: string; value: Value }> = [];
+    for (;;) {
+      this.skipNewlines();
+      const token = this.peek();
+      if (token === undefined) break;
+      if (this.is("}")) {
+        this.i++;
+        break;
+      }
+      if (this.is(",")) {
+        this.i++;
+        continue;
+      }
+      if ((token.kind === "word" || token.kind === "string") && (this.is("=", 1) || this.is(":", 1))) {
+        this.i += 2;
+        entries.push({ key: token.text, value: this.sequence([",", "\n", "}"]) });
+        continue;
+      }
+      this.sequence([",", "\n", "}"]);
+    }
+    return { kind: "object", entries, line };
+  }
+}
+
 // Splits HCL into words, strings, templates, punctuation and newlines, dropping comments. A string's text is its
-// contents; a template's is empty.
+// contents; a template's is its text as written.
 function tokenize(text: string, file: string): Token[] {
   const tokens: Token[] = [];
   let line = 1;
@@ -415,10 +640,11 @@ function tokenize(text: string, file: string): Token[] {
       i = end + 2;
     } else if (c === '"') {
       const start = line;
+      const from = i + 1;
       const value = skipString();
       tokens.push(
         value === undefined
-          ? { kind: "template", text: "", line: start }
+          ? { kind: "template", text: text.slice(from, i - 1), line: start }
           : { kind: "string", text: value, line: start },
       );
     } else if (rest === "<<" && /^<<-?[A-Za-z_]/.test(text.slice(i, i + 4))) {
@@ -428,7 +654,7 @@ function tokenize(text: string, file: string): Token[] {
       const body = text.slice(i + match![0].length);
       const end = marker.exec(body);
       if (end === null) fail(`heredoc ${match![1]} is never closed`);
-      tokens.push({ kind: "template", text: "", line });
+      tokens.push({ kind: "template", text: body.slice(0, end!.index), line });
       // Up to the end of the closing marker, leaving the newline after it to end the attribute.
       const skipped = match![0] + body.slice(0, end!.index + end![0].length);
       for (const char of skipped) if (char === "\n") line++;
