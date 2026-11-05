@@ -70,6 +70,14 @@ export const messagingAttributes = {
   destination: "messaging.destination.name",
 } as const;
 
+// What the hooks put on a span for an outgoing HTTP request, after OpenTelemetry's HTTP conventions. Like a messaging
+// span it has no component of its own: the trace path check finds the container the host reaches.
+export const httpAttributes = {
+  method: "http.request.method",
+  host: "server.address",
+  port: "server.port",
+} as const;
+
 // Span files are named `spans-<pid>-<thread>.jsonl` and test files `tests-<pid>-<thread>.jsonl`.
 export const spansFile = /^spans-.*\.jsonl$/;
 export const testsFile = /^tests-.*\.jsonl$/;

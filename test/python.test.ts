@@ -440,6 +440,117 @@ class BaseClient:
       ).toEqual(["poll"]);
     });
 
+    it("records the HTTP requests sent with requests and httpx, sync and async", slow, async () => {
+      // Stand-ins for requests and httpx: just enough of each to send a request through the method the hook patches.
+      const sessions = `
+class PreparedRequest:
+    def __init__(self, method, url):
+        self.method = method
+        self.url = url
+
+
+class Session:
+    def get(self, url):
+        return self.send(PreparedRequest("GET", url))
+
+    def send(self, request, **kwargs):
+        return {"status": 200, "url": request.url}
+`;
+      const httpx = `
+class URL:
+    def __init__(self, url):
+        self._url = url
+
+    def __str__(self):
+        return self._url
+
+
+class Request:
+    def __init__(self, method, url):
+        self.method = method
+        self.url = URL(url)
+
+
+class Client:
+    def post(self, url):
+        return self.send(Request("post", url))
+
+    def send(self, request, **kwargs):
+        return str(request.url)
+
+
+class AsyncClient:
+    async def get(self, url):
+        return await self.send(Request("GET", url))
+
+    async def send(self, request, **kwargs):
+        return str(request.url)
+`;
+      const root = pythonRepo({
+        "pyproject.toml": '[tool.pytest.ini_options]\npythonpath = [".", "stubs"]\ntestpaths = ["tests"]\n',
+        "stubs/requests/__init__.py":
+          "from .sessions import Session\n\n\ndef get(url):\n    return Session().get(url)\n",
+        "stubs/requests/sessions.py": sessions,
+        "stubs/httpx/__init__.py": httpx,
+        "app/__init__.py": "",
+        "app/client/__init__.py": [
+          "import asyncio",
+          "",
+          "import httpx",
+          "import requests",
+          "",
+          "",
+          "def list_slots():",
+          '    return requests.get("http://booking-api:8000/slots")',
+          "",
+          "",
+          "def book():",
+          '    return httpx.Client().post("http://booking-api.chairside.svc.cluster.local/bookings")',
+          "",
+          "",
+          "def remind():",
+          '    return asyncio.run(httpx.AsyncClient().get("https://notifier/reminders"))',
+          "",
+        ].join("\n"),
+        "tests/test_client.py": [
+          "import pytest",
+          "",
+          "from app.client import book, list_slots, remind",
+          "",
+          "",
+          '@pytest.mark.req("#1/AC1")',
+          "def test_books_a_slot():",
+          '    assert list_slots() == {"status": 200, "url": "http://booking-api:8000/slots"}',
+          "    book()",
+          '    assert remind() == "https://notifier/reminders"',
+          "",
+        ].join("\n"),
+      });
+      const result = await runTraced(
+        loadConfig(root),
+        [{ id: "bookingClient", path: "app/client" }],
+        [pytestCommand],
+        quiet,
+      );
+      expect(result.exitCode).toBe(0);
+      const spans = readSpanRecords(join(root, tracesDir));
+      expect(spans.every((span) => span.test === "tests/test_client.py::test_books_a_slot")).toBe(true);
+      expect(spans.every((span) => span.criterion === "#1/AC1")).toBe(true);
+      expect(callTree(spans)).toEqual([
+        "bookingClient.list_slots",
+        "  .GET booking-api",
+        "bookingClient.book",
+        "  .POST booking-api.chairside.svc.cluster.local",
+        "bookingClient.remind",
+        "  .GET notifier",
+      ]);
+      expect(spans.flatMap((span) => (span.http === undefined ? [] : [span.http]))).toEqual([
+        { method: "GET", host: "booking-api", port: 8000 },
+        { method: "POST", host: "booking-api.chairside.svc.cluster.local" },
+        { method: "GET", host: "notifier" },
+      ]);
+    });
+
     it("refuses a PYTEST_PLUGINS that already loads Bearing's plugin", () => {
       return expect(
         traced(copyBooking(), [pytestCommand], { PYTEST_PLUGINS: "xdist,bearing_python.pytest_plugin" }),
