@@ -109,9 +109,26 @@ function detectConfig(root: string): Record<string, string> {
       return false;
     }
   });
+  // A folder of manifests: YAML with a kind in it, and no Helm chart, which Bearing can't read until it's rendered.
+  const kubernetes = ["k8s", "kubernetes"].find((dir) => {
+    try {
+      if (existsSync(join(root, dir, "Chart.yaml"))) return false;
+      return readdirSync(join(root, dir)).some(
+        (file) => /\.ya?ml$/.test(file) && /^kind:/m.test(readFileSync(join(root, dir, file), "utf8")),
+      );
+    } catch {
+      return false;
+    }
+  });
+  // Only one can be compared with the deployment view, so Terraform wins and the manifests are left for the team.
+  const iac = terraform
+    ? `iac:\n  terraform: ${terraform}/${kubernetes ? `\n  # kubernetes: ${kubernetes}/  # in place of terraform` : ""}`
+    : kubernetes
+      ? `iac:\n  kubernetes: ${kubernetes}/`
+      : "# iac:\n#   terraform: infra/\n#   kubernetes: k8s/  # in place of terraform, for one Kubernetes cluster";
   return {
     integration: "test:integration" in scripts ? integration : `# ${integration}`,
-    iac: terraform ? `iac:\n  terraform: ${terraform}/` : "# iac:\n#   terraform: infra/",
+    iac,
   };
 }
 

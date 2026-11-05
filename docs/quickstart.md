@@ -17,7 +17,7 @@ bearing init
 gh label create requirement --description "A user story Bearing designs and checks against"
 ```
 
-`bearing init` writes the model, the config, a requirement issue form, the three workflows and a section of AGENTS.md for your coding agent. Check `.bearing/config.yaml`: `tests.integration` is the command that runs your integration tests, and `iac.terraform` the folder to compare with the deployment view, if you have one.
+`bearing init` writes the model, the config, a requirement issue form, the three workflows and a section of AGENTS.md for your coding agent. Check `.bearing/config.yaml`: `tests.integration` is the command that runs your integration tests, and `iac.terraform` and `iac.kubernetes` the folders of Terraform and of Kubernetes manifests to compare with the deployment view, if you have them.
 
 Land these files through a PR. Once the workflows have run on a PR, turn on branch protection for main: require a pull request, and require the `bearing/target` and `bearing/conformance` checks. GitHub only lists those checks after they've run once.
 

@@ -1,0 +1,17 @@
+version: 1
+model: architecture/workspace.dsl
+structurizr:
+  runner: docker
+language: typescript
+requirements:
+  source: github-issues
+  label: requirement
+tests:
+  tag: "#<issue>/AC<n>"
+iac:
+  kubernetes: k8s/
+agent:
+  selfHealAttempts: 3
+checks:
+  surplus: advisory
+  responsibilities: advisory

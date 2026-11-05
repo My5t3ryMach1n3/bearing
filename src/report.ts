@@ -3,7 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { Command } from "commander";
 import { changedPaths, changedSourceFiles, ClaimError, claimsDir, modelPathspec } from "./claims.js";
-import { checkedTarget, checkTitles, formatCheck, runChecks, type CheckOptions, type CheckReport } from "./check.js";
+import {
+  checkedTarget,
+  checkTitles,
+  deploymentSource,
+  formatCheck,
+  runChecks,
+  type CheckOptions,
+  type CheckReport,
+} from "./check.js";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { CoverageError } from "./coverage.js";
 import { DeriveError } from "./derive.js";
@@ -14,10 +22,10 @@ import { componentOf, componentPaths } from "./paths.js";
 import { RequirementsError } from "./requirements.js";
 import { exportStaticSite, StructurizrError } from "./structurizr.js";
 import { cell, describeKind, formatTargetChange, kinds, type Adr } from "./target-change.js";
-import { TerraformError } from "./terraform.js";
+import { IacError } from "./deployment.js";
 
 // `bearing report`: the PR comment. A summary of every check comes first, then one Mermaid overlay of where the code
-// or the Terraform drifts from the target, then each failing or flagged check's details. In target-change mode the
+// or the IaC drifts from the target, then each failing or flagged check's details. In target-change mode the
 // target-change section from target-change.ts comes before all of it, so whoever merges sees it first. See the How
 // `bearing report` works section of docs/product-spec.md.
 
@@ -46,7 +54,7 @@ export const overlayLimit = 15;
 
 // Where the PR drifts from the target, and the relationships between what that touches:
 // - relationships the code makes that the target doesn't declare (Boundaries);
-// - deployment nodes the Terraform adds, lacks or counts differently from the target (Deployment);
+// - deployment nodes the IaC adds, lacks or counts differently from the target (Deployment);
 // - calls a tagged test made that its issue's dynamic view doesn't have, and the view's steps it missed (Trace paths).
 //
 // Around them it draws, as context, the target's relationships between the elements it shows, and the component an
@@ -276,8 +284,9 @@ function summarise(check: CheckReport["checks"][number]): string {
         : `${count(check.undeclared.length + (check.queues ?? []).length, "relationship")} the target doesn't declare`;
     case "deployment": {
       const differ = check.added.length + check.removed.length + check.drifted.length;
+      const { name, plural } = deploymentSource(check);
       return check.status === "passed"
-        ? `the Terraform matches the target's ${check.environment} deployment`
+        ? `${name} ${plural ? "match" : "matches"} the target's ${check.environment} deployment`
         : `${count(differ, "node")} ${differ === 1 ? "differs" : "differ"} from the target's ${check.environment} deployment`;
     }
     case "coverage": {
@@ -540,7 +549,7 @@ export function reportCommand(): Command {
           error instanceof ConfigError ||
           error instanceof StructurizrError ||
           error instanceof DeriveError ||
-          error instanceof TerraformError ||
+          error instanceof IacError ||
           error instanceof ClaimError ||
           error instanceof RequirementsError ||
           error instanceof CoverageError ||

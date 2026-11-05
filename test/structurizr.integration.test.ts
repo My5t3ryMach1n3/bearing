@@ -121,6 +121,18 @@ describe.runIf(runner === "docker" || runner === "java")(`loadWorkspace with ${r
     expect(model).toEqual(modelFromWorkspace(JSON.parse(readFileSync(join(bookingDir, "workspace.json"), "utf8"))));
   });
 
+  it("converts the clinic fixture's target as its exported JSON has it", { timeout: 600_000 }, async () => {
+    const dir = join(import.meta.dirname, "fixtures", "clinic");
+    const root = mkdtempSync(join(tmpdir(), "bearing-clinic-"));
+    cpSync(join(dir, "repo"), root, { recursive: true });
+    const config = parseConfig(
+      readFileSync(join(root, ".bearing", "config.yaml"), "utf8").replace("runner: docker", `runner: ${runner}`),
+      root,
+    );
+    const model = await loadModel(join(root, "architecture", "workspace.dsl"), () => config);
+    expect(model).toEqual(modelFromWorkspace(JSON.parse(readFileSync(join(dir, "workspace.json"), "utf8"))));
+  });
+
   it("exports the basket fixture's target as a static site", { timeout: 600_000 }, async () => {
     const root = copyBasket();
     const config = parseConfig(

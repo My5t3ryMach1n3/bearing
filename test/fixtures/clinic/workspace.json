@@ -1,0 +1,426 @@
+{
+  "configuration": {},
+  "description": "Chairside's target when everything runs in one Kubernetes cluster on the clinic's own server.",
+  "documentation": {},
+  "id": 0,
+  "model": {
+    "deploymentNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "containerInstances": [
+                      {
+                        "containerId": "3",
+                        "environment": "Clinic",
+                        "id": "15",
+                        "instanceId": 1,
+                        "properties": {
+                          "structurizr.dsl.identifier": "015cf058-2193-4351-a92c-87939e319979"
+                        },
+                        "relationships": [
+                          {
+                            "description": "Calls",
+                            "destinationId": "17",
+                            "id": "18",
+                            "linkedRelationshipId": "8",
+                            "sourceId": "15",
+                            "technology": "JSON over HTTP"
+                          }
+                        ],
+                        "tags": "Container Instance"
+                      }
+                    ],
+                    "environment": "Clinic",
+                    "id": "14",
+                    "instances": "2",
+                    "name": "web",
+                    "properties": {
+                      "structurizr.dsl.identifier": "web"
+                    },
+                    "tags": "Element,Deployment Node,",
+                    "technology": "Kubernetes Deployment"
+                  },
+                  {
+                    "containerInstances": [
+                      {
+                        "containerId": "4",
+                        "environment": "Clinic",
+                        "id": "17",
+                        "instanceId": 1,
+                        "properties": {
+                          "structurizr.dsl.identifier": "ab0fc66a-7e05-4b93-aac5-4d6be2c7cb7f"
+                        },
+                        "relationships": [
+                          {
+                            "description": "Reads and writes",
+                            "destinationId": "20",
+                            "id": "21",
+                            "linkedRelationshipId": "9",
+                            "sourceId": "17",
+                            "technology": "SQL"
+                          }
+                        ],
+                        "tags": "Container Instance"
+                      }
+                    ],
+                    "environment": "Clinic",
+                    "id": "16",
+                    "instances": "2",
+                    "name": "Booking API",
+                    "properties": {
+                      "structurizr.dsl.identifier": "api"
+                    },
+                    "tags": "Element,Deployment Node,",
+                    "technology": "Kubernetes Deployment"
+                  },
+                  {
+                    "containerInstances": [
+                      {
+                        "containerId": "5",
+                        "environment": "Clinic",
+                        "id": "20",
+                        "instanceId": 1,
+                        "properties": {
+                          "structurizr.dsl.identifier": "1856d925-2166-4b6e-a44e-9ff4283ecd07"
+                        },
+                        "tags": "Container Instance"
+                      }
+                    ],
+                    "environment": "Clinic",
+                    "id": "19",
+                    "instances": "1",
+                    "name": "Database server",
+                    "properties": {
+                      "structurizr.dsl.identifier": "db",
+                      "bearing.kubernetes": "StatefulSet/chairside/postgres"
+                    },
+                    "tags": "Element,Deployment Node",
+                    "technology": "PostgreSQL 16"
+                  }
+                ],
+                "environment": "Clinic",
+                "id": "12",
+                "infrastructureNodes": [
+                  {
+                    "description": "Routes the front desk's requests",
+                    "environment": "Clinic",
+                    "id": "13",
+                    "name": "Ingress",
+                    "properties": {
+                      "structurizr.dsl.identifier": "ingress"
+                    },
+                    "relationships": [
+                      {
+                        "description": "Routes / to",
+                        "destinationId": "14",
+                        "id": "22",
+                        "sourceId": "13",
+                        "tags": "Relationship",
+                        "technology": "HTTP"
+                      },
+                      {
+                        "description": "Routes /api to",
+                        "destinationId": "16",
+                        "id": "23",
+                        "sourceId": "13",
+                        "tags": "Relationship",
+                        "technology": "HTTP"
+                      }
+                    ],
+                    "tags": "Element,Infrastructure Node",
+                    "technology": "Traefik Ingress"
+                  }
+                ],
+                "instances": "1",
+                "name": "chairside",
+                "properties": {
+                  "structurizr.dsl.identifier": "namespace"
+                },
+                "tags": "Element,Deployment Node",
+                "technology": "Kubernetes Namespace"
+              }
+            ],
+            "environment": "Clinic",
+            "id": "11",
+            "instances": "1",
+            "name": "k3s",
+            "properties": {
+              "structurizr.dsl.identifier": "cluster"
+            },
+            "tags": "Element,Deployment Node",
+            "technology": "k3s"
+          }
+        ],
+        "description": "The small PC in the clinic's comms cupboard",
+        "environment": "Clinic",
+        "id": "10",
+        "instances": "1",
+        "name": "Clinic server",
+        "properties": {
+          "structurizr.dsl.identifier": "server"
+        },
+        "tags": "Element,Deployment Node",
+        "technology": "Intel NUC, Ubuntu 24.04"
+      }
+    ],
+    "people": [
+      {
+        "description": "Books patients into open slots at the front desk",
+        "id": "1",
+        "name": "Receptionist",
+        "properties": {
+          "structurizr.dsl.identifier": "receptionist",
+          "bearing.requirements": "#1"
+        },
+        "relationships": [
+          {
+            "description": "Books appointments with",
+            "destinationId": "3",
+            "id": "6",
+            "properties": {
+              "bearing.requirements": "#1"
+            },
+            "sourceId": "1",
+            "tags": "Relationship",
+            "technology": "HTTPS"
+          },
+          {
+            "description": "Books appointments with",
+            "destinationId": "2",
+            "id": "7",
+            "linkedRelationshipId": "6",
+            "sourceId": "1",
+            "technology": "HTTPS"
+          }
+        ],
+        "tags": "Element,Person"
+      }
+    ],
+    "softwareSystems": [
+      {
+        "containers": [
+          {
+            "description": "The booking screens the front desk uses",
+            "documentation": {},
+            "id": "3",
+            "name": "Web app",
+            "properties": {
+              "structurizr.dsl.identifier": "webApp",
+              "bearing.requirements": "#1"
+            },
+            "relationships": [
+              {
+                "description": "Calls",
+                "destinationId": "4",
+                "id": "8",
+                "properties": {
+                  "bearing.requirements": "#1"
+                },
+                "sourceId": "3",
+                "tags": "Relationship",
+                "technology": "JSON over HTTP"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "TypeScript, React, served by nginx"
+          },
+          {
+            "description": "Lists open slots and books them",
+            "documentation": {},
+            "id": "4",
+            "name": "Booking API",
+            "properties": {
+              "structurizr.dsl.identifier": "bookingApi",
+              "bearing.requirements": "#1"
+            },
+            "relationships": [
+              {
+                "description": "Reads and writes",
+                "destinationId": "5",
+                "id": "9",
+                "properties": {
+                  "bearing.requirements": "#1"
+                },
+                "sourceId": "4",
+                "tags": "Relationship",
+                "technology": "SQL"
+              }
+            ],
+            "tags": "Element,Container",
+            "technology": "Python, FastAPI"
+          },
+          {
+            "description": "Holds clinicians, slots and appointments",
+            "documentation": {},
+            "id": "5",
+            "name": "Database",
+            "properties": {
+              "structurizr.dsl.identifier": "database",
+              "bearing.requirements": "#1"
+            },
+            "tags": "Element,Container,Database",
+            "technology": "PostgreSQL 16"
+          }
+        ],
+        "description": "Books dental appointments",
+        "documentation": {},
+        "id": "2",
+        "name": "Chairside",
+        "properties": {
+          "structurizr.dsl.identifier": "chairside",
+          "bearing.requirements": "#1"
+        },
+        "tags": "Element,Software System"
+      }
+    ]
+  },
+  "name": "Chairside clinic",
+  "properties": {
+    "structurizr.inspection.error": "9",
+    "structurizr.dsl": "d29ya3NwYWNlICJDaGFpcnNpZGUgY2xpbmljIiAiQ2hhaXJzaWRlJ3MgdGFyZ2V0IHdoZW4gZXZlcnl0aGluZyBydW5zIGluIG9uZSBLdWJlcm5ldGVzIGNsdXN0ZXIgb24gdGhlIGNsaW5pYydzIG93biBzZXJ2ZXIuIiB7CiAgbW9kZWwgewogICAgcmVjZXB0aW9uaXN0ID0gcGVyc29uICJSZWNlcHRpb25pc3QiICJCb29rcyBwYXRpZW50cyBpbnRvIG9wZW4gc2xvdHMgYXQgdGhlIGZyb250IGRlc2siIHsKICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEiCiAgICAgIH0KICAgIH0KCiAgICBjaGFpcnNpZGUgPSBzb2Z0d2FyZVN5c3RlbSAiQ2hhaXJzaWRlIiAiQm9va3MgZGVudGFsIGFwcG9pbnRtZW50cyIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSIKICAgICAgfQoKICAgICAgd2ViQXBwID0gY29udGFpbmVyICJXZWIgYXBwIiAiVGhlIGJvb2tpbmcgc2NyZWVucyB0aGUgZnJvbnQgZGVzayB1c2VzIiAiVHlwZVNjcmlwdCwgUmVhY3QsIHNlcnZlZCBieSBuZ2lueCIgewogICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEiCiAgICAgICAgfQogICAgICB9CiAgICAgIGJvb2tpbmdBcGkgPSBjb250YWluZXIgIkJvb2tpbmcgQVBJIiAiTGlzdHMgb3BlbiBzbG90cyBhbmQgYm9va3MgdGhlbSIgIlB5dGhvbiwgRmFzdEFQSSIgewogICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgImJlYXJpbmcucmVxdWlyZW1lbnRzIiAiIzEiCiAgICAgICAgfQogICAgICB9CiAgICAgIGRhdGFiYXNlID0gY29udGFpbmVyICJEYXRhYmFzZSIgIkhvbGRzIGNsaW5pY2lhbnMsIHNsb3RzIGFuZCBhcHBvaW50bWVudHMiICJQb3N0Z3JlU1FMIDE2IiB7CiAgICAgICAgdGFncyAiRGF0YWJhc2UiCiAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSIKICAgICAgICB9CiAgICAgIH0KICAgIH0KCiAgICByZWNlcHRpb25pc3QgLT4gd2ViQXBwICJCb29rcyBhcHBvaW50bWVudHMgd2l0aCIgIkhUVFBTIiB7CiAgICAgIHByb3BlcnRpZXMgewogICAgICAgICJiZWFyaW5nLnJlcXVpcmVtZW50cyIgIiMxIgogICAgICB9CiAgICB9CiAgICB3ZWJBcHAgLT4gYm9va2luZ0FwaSAiQ2FsbHMiICJKU09OIG92ZXIgSFRUUCIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSIKICAgICAgfQogICAgfQogICAgYm9va2luZ0FwaSAtPiBkYXRhYmFzZSAiUmVhZHMgYW5kIHdyaXRlcyIgIlNRTCIgewogICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAiYmVhcmluZy5yZXF1aXJlbWVudHMiICIjMSIKICAgICAgfQogICAgfQoKICAgIGNsaW5pYyA9IGRlcGxveW1lbnRFbnZpcm9ubWVudCAiQ2xpbmljIiB7CiAgICAgIHNlcnZlciA9IGRlcGxveW1lbnROb2RlICJDbGluaWMgc2VydmVyIiAiVGhlIHNtYWxsIFBDIGluIHRoZSBjbGluaWMncyBjb21tcyBjdXBib2FyZCIgIkludGVsIE5VQywgVWJ1bnR1IDI0LjA0IiB7CiAgICAgICAgY2x1c3RlciA9IGRlcGxveW1lbnROb2RlICJrM3MiICIiICJrM3MiIHsKICAgICAgICAgIG5hbWVzcGFjZSA9IGRlcGxveW1lbnROb2RlICJjaGFpcnNpZGUiICIiICJLdWJlcm5ldGVzIE5hbWVzcGFjZSIgewogICAgICAgICAgICBpbmdyZXNzID0gaW5mcmFzdHJ1Y3R1cmVOb2RlICJJbmdyZXNzIiAiUm91dGVzIHRoZSBmcm9udCBkZXNrJ3MgcmVxdWVzdHMiICJUcmFlZmlrIEluZ3Jlc3MiCiAgICAgICAgICAgIHdlYiA9IGRlcGxveW1lbnROb2RlICJ3ZWIiICIiICJLdWJlcm5ldGVzIERlcGxveW1lbnQiICIiIDIgewogICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIHdlYkFwcAogICAgICAgICAgICB9CiAgICAgICAgICAgIGFwaSA9IGRlcGxveW1lbnROb2RlICJCb29raW5nIEFQSSIgIiIgIkt1YmVybmV0ZXMgRGVwbG95bWVudCIgIiIgMiB7CiAgICAgICAgICAgICAgY29udGFpbmVySW5zdGFuY2UgYm9va2luZ0FwaQogICAgICAgICAgICB9CiAgICAgICAgICAgIGRiID0gZGVwbG95bWVudE5vZGUgIkRhdGFiYXNlIHNlcnZlciIgIiIgIlBvc3RncmVTUUwgMTYiIHsKICAgICAgICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICAgICAgICJiZWFyaW5nLmt1YmVybmV0ZXMiICJTdGF0ZWZ1bFNldC9jaGFpcnNpZGUvcG9zdGdyZXMiCiAgICAgICAgICAgICAgfQogICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGRhdGFiYXNlCiAgICAgICAgICAgIH0KICAgICAgICAgIH0KICAgICAgICB9CiAgICAgIH0KICAgICAgaW5ncmVzcyAtPiB3ZWIgIlJvdXRlcyAvIHRvIiAiSFRUUCIKICAgICAgaW5ncmVzcyAtPiBhcGkgIlJvdXRlcyAvYXBpIHRvIiAiSFRUUCIKICAgIH0KICB9CgogIHZpZXdzIHsKICAgIGNvbnRhaW5lciBjaGFpcnNpZGUgImNvbnRhaW5lcnMiIHsKICAgICAgaW5jbHVkZSAqCiAgICAgIGF1dG9MYXlvdXQKICAgIH0KICAgIGRlcGxveW1lbnQgY2hhaXJzaWRlIGNsaW5pYyAiY2xpbmljIiB7CiAgICAgIGluY2x1ZGUgKgogICAgICBhdXRvTGF5b3V0CiAgICB9CiAgfQp9",
+    "structurizr.inspection.info": "0",
+    "structurizr.inspection.ignore": "0",
+    "structurizr.inspection.warning": "0"
+  },
+  "views": {
+    "configuration": {
+      "styles": {},
+      "terminology": {}
+    },
+    "containerViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "3",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "5",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "externalSoftwareSystemBoundariesVisible": false,
+        "key": "containers",
+        "name": "Container View: Chairside",
+        "order": 1,
+        "relationships": [
+          {
+            "id": "6"
+          },
+          {
+            "id": "8"
+          },
+          {
+            "id": "9"
+          }
+        ],
+        "softwareSystemId": "2"
+      }
+    ],
+    "deploymentViews": [
+      {
+        "automaticLayout": {
+          "edgeSeparation": 50,
+          "nodeSeparation": 50,
+          "rankDirection": "LeftRight",
+          "rankSeparation": 100,
+          "vertices": true
+        },
+        "elements": [
+          {
+            "id": "10",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "11",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "12",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "13",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "14",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "15",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "16",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "17",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "19",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "20",
+            "x": 0,
+            "y": 0
+          }
+        ],
+        "environment": "Clinic",
+        "key": "clinic",
+        "name": "Deployment View: Chairside - Clinic",
+        "order": 2,
+        "relationships": [
+          {
+            "id": "18"
+          },
+          {
+            "id": "21"
+          },
+          {
+            "id": "22"
+          },
+          {
+            "id": "23"
+          }
+        ],
+        "softwareSystemId": "2"
+      }
+    ]
+  }
+}

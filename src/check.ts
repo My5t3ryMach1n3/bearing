@@ -34,14 +34,9 @@ import { checkSurplus, closedComponents, formatSurplus, type SurplusResult } fro
 import { readSpanRecords, tracesDir } from "./test.js";
 import { checkTracePaths, formatTracePaths, type ViewPaths } from "./trace-paths.js";
 import { validateModel, type Problem } from "./validate.js";
-import {
-  deriveTerraform,
-  readTerraform,
-  TerraformError,
-  terraformModel,
-  type TerraformGraph,
-  type TerraformResource,
-} from "./terraform.js";
+import { IacError, sourceNames, type DeploymentGraph, type IacResource, type IacSource } from "./deployment.js";
+import { asBuiltDeployment, deriveDeployment } from "./iac.js";
+import { readTerraform } from "./terraform.js";
 
 // The checks `bearing check` runs. The blocking ones, Target valid, Target change, Claim, Boundaries, Deployment,
 // Criteria coverage and Trace paths, each pass, fail or are skipped when there's nothing for them to check. The advisory one, Surplus,
@@ -133,14 +128,16 @@ export interface BoundariesCheck extends CheckBase {
 export interface DeploymentCheck extends CheckBase {
   check: "deployment";
   environment?: string;
-  // Nodes in the Terraform that the target doesn't have.
-  added: Array<{ id: string; technology: string; resource: TerraformResource }>;
+  // The IaC compared. Older reports have none, as they only read Terraform.
+  source?: IacSource;
+  // Nodes in the IaC that the target doesn't have.
+  added: Array<{ id: string; technology: string; resource: IacResource }>;
   // Target nodes of a mapped technology with no resource.
   removed: Array<{ id: string; name: string; technology: string }>;
   // Nodes in both whose instance counts differ.
   drifted: Drift[];
   // Resources Bearing can't map, and modules it doesn't follow. Listed, never failed.
-  unknown: TerraformResource[];
+  unknown: IacResource[];
 }
 
 export interface CoverageCheck extends CheckBase {
@@ -244,21 +241,25 @@ export function checkQueueBoundaries(target: Model, queues: QueueRelationship[])
   return queues.filter((relationship) => !declared.has(relationship.id));
 }
 
-// The Terraform's deployment nodes against the target's deployment view: nodes it adds, target nodes it has no
-// resource for, and instance counts that differ.
+// The IaC's deployment nodes against the target's deployment view: nodes it adds, target nodes it has no resource
+// for, and instance counts that differ.
 export function checkDeployment(
   target: Model,
-  graph: TerraformGraph,
-): Pick<DeploymentCheck, "environment" | "added" | "removed" | "drifted" | "unknown"> {
-  const diff = diffModels(target, terraformModel(target, graph)).deployment;
+  graph: DeploymentGraph,
+): Pick<DeploymentCheck, "environment" | "source" | "added" | "removed" | "drifted" | "unknown"> {
+  const diff = diffModels(target, asBuiltDeployment(target, graph)).deployment;
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   return {
     environment: graph.environment,
+    ...(graph.source === undefined ? {} : { source: graph.source }),
     added: diff.added.map(({ id }) => {
       const node = nodes.get(id)!;
       return { id, technology: node.technology, resource: node.resource };
     }),
-    removed: diff.removed.map(({ id, name, technology }) => ({ id, name, technology })),
+    // The instances inside a removed node go with it, so only the node is named.
+    removed: diff.removed
+      .filter(({ type }) => type === "deploymentNode" || type === "infrastructureNode")
+      .map(({ id, name, technology }) => ({ id, name, technology })),
     drifted: diff.drifted,
     unknown: graph.unknown,
   };
@@ -307,8 +308,8 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   const { target, forked, fork, base, proposed, moved } = await checkedTarget(config, options.base);
   const graph = deriveImports(config, target);
   const blocks = config.iac.terraform === undefined ? undefined : readTerraform(config);
-  const terraform = blocks === undefined ? undefined : deriveTerraform(config, target, blocks);
-  const queues = blocks === undefined ? [] : deriveQueues(config, target, blocks, terraform);
+  const deployed = deriveDeployment(config, target, blocks);
+  const queues = blocks === undefined ? [] : deriveQueues(config, target, blocks, deployed);
   const branch = options.branch ?? (await currentBranch(config.root));
   const claim = await readClaim(config, branch);
 
@@ -377,19 +378,19 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   };
 
   let deployment: DeploymentCheck;
-  if (terraform === undefined) {
+  if (deployed === undefined) {
     deployment = {
       check: "deployment",
       status: "skipped",
       blocking: true,
-      reason: '"iac.terraform" is not set in .bearing/config.yaml',
+      reason: 'neither "iac.terraform" nor "iac.kubernetes" is set in .bearing/config.yaml',
       added: [],
       removed: [],
       drifted: [],
       unknown: [],
     };
   } else {
-    const result = checkDeployment(target, terraform);
+    const result = checkDeployment(target, deployed);
     const failed = result.added.length + result.removed.length + result.drifted.length > 0;
     deployment = { check: "deployment", status: failed ? "failed" : "passed", blocking: true, ...result };
   }
@@ -605,23 +606,31 @@ function formatBoundaries(check: BoundariesCheck): string {
   return `${lines.join("\n")}\n`;
 }
 
+// What the check compared, e.g. "the Terraform"; older reports only read Terraform.
+export function deploymentSource(check: DeploymentCheck): { name: string; plural: boolean } {
+  return sourceNames[check.source ?? "terraform"];
+}
+
 function formatDeployment(check: DeploymentCheck): string {
+  const { name, plural } = deploymentSource(check);
   const lines =
     check.status === "passed"
-      ? [`Deployment: passed, the Terraform matches the target's ${check.environment} deployment`]
-      : [`Deployment: failed, the Terraform doesn't match the target's ${check.environment} deployment`];
+      ? [`Deployment: passed, ${name} ${plural ? "match" : "matches"} the target's ${check.environment} deployment`]
+      : [
+          `Deployment: failed, ${name} ${plural ? "don't" : "doesn't"} match the target's ${check.environment} deployment`,
+        ];
   for (const node of check.added) {
     lines.push(
-      `  ${node.id}: ${node.technology} in the Terraform, but not in the target (${node.resource.file}:${node.resource.line})`,
+      `  ${node.id}: ${node.technology} in ${name}, but not in the target (${node.resource.file}:${node.resource.line})`,
     );
   }
   for (const node of check.removed) {
-    lines.push(`  ${node.id}: ${node.technology} in the target, but no resource in the Terraform`);
+    lines.push(`  ${node.id}: ${node.technology} in the target, but no resource in ${name}`);
   }
   for (const drift of check.drifted) {
     const changes = drift.changes.map(
       (change) =>
-        `${change.field} ${String(change.from ?? "unset")} in the target, ${String(change.to ?? "unset")} in the Terraform`,
+        `${change.field} ${String(change.from ?? "unset")} in the target, ${String(change.to ?? "unset")} in ${name}`,
     );
     lines.push(`  ${drift.id}: ${changes.join("; ")}`);
   }
@@ -647,7 +656,7 @@ function toPosix(path: string): string {
 export function checkCommand(): Command {
   return new Command("check")
     .description(
-      "run the blocking checks: the target against Bearing's rules (Target valid), a target change against the base branch's current target (Target change), the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
+      "run the blocking checks: the target against Bearing's rules (Target valid), a target change against the base branch's current target (Target change), the claims file against the code (Claim), relationships between components against the target (Boundaries), the Terraform or Kubernetes manifests against the target's deployment view (Deployment), criteria coverage from `bearing test`, and each tested issue's traces against its dynamic view (Trace paths); then flags code outside every component or reached by no tagged test (Surplus, advisory); exits non-zero if a blocking check fails",
     )
     .argument("[issues...]", "the issues to check coverage for, e.g. 2 4; defaults to the claims file's")
     .option("--branch <name>", "the branch whose claims file to check; defaults to the current one")
@@ -675,7 +684,7 @@ export function checkCommand(): Command {
           error instanceof ConfigError ||
           error instanceof StructurizrError ||
           error instanceof DeriveError ||
-          error instanceof TerraformError ||
+          error instanceof IacError ||
           error instanceof ClaimError ||
           error instanceof RequirementsError ||
           error instanceof CoverageError

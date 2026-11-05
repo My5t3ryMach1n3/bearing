@@ -149,6 +149,14 @@ describe("parseConfig", () => {
     expect(problems(specExample.replace("version: 1", "version: 2"))).toEqual(['line 1: "version" must be 1']);
   });
 
+  it("reads one IaC source, not both", () => {
+    const kubernetes = specExample.replace(/terraform: infra\/.*/, "kubernetes: k8s/");
+    expect(parseConfig(kubernetes, "/repo").iac).toEqual({ kubernetes: "k8s/" });
+    expect(problems(kubernetes.replace("kubernetes: k8s/", "terraform: infra/\n  kubernetes: k8s/"))).toEqual([
+      expect.stringMatching(/^line \d+: "iac.terraform" and "iac.kubernetes" can't both be set yet/),
+    ]);
+  });
+
   it("reports every problem at once", () => {
     const text = specExample.replace("runner: docker", "runner: podman").replace("surplus: advisory", "surplus: loud");
     expect(problems(text)).toEqual([
