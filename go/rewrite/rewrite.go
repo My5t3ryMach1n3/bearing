@@ -6,6 +6,12 @@
 //   - after the package clause:            ; import __bt "<runtime>"
 //   - at the top of each traced function:  defer __bt.Span("<component>", "<name>", "<file>")();
 //   - at the top of each test function:    __bt.Test(t, "<file>");
+//
+// And in any file that imports the AWS SDK for Go v2's SQS package, each call of a method named SendMessage,
+// SendMessageBatch or ReceiveMessage with at least two arguments goes through the hook, which carries the trace
+// context in the messages' attributes:
+//
+//	client.SendMessage(ctx, input)  ->  __bt.SQSSendMessage(client.SendMessage, ctx, input)
 package rewrite
 
 import (
@@ -35,6 +41,11 @@ type Settings struct {
 
 const alias = "__bt"
 
+// The SQS package whose calls carry trace context, and its methods the hook wraps.
+const sqsPackage = "github.com/aws/aws-sdk-go-v2/service/sqs"
+
+var sqsMethods = map[string]bool{"SendMessage": true, "SendMessageBatch": true, "ReceiveMessage": true}
+
 // File returns src instrumented, or nil if nothing in it is traced.
 func File(path string, src []byte, s Settings) ([]byte, error) {
 	rel, err := filepath.Rel(s.Root, path)
@@ -48,9 +59,11 @@ func File(path string, src []byte, s Settings) ([]byte, error) {
 		// Leave broken files to the compiler, which reports them better.
 		return nil, nil
 	}
+	// Text to put at an offset, in place of the `cut` bytes there.
 	type insert struct {
 		at   int
 		text string
+		cut  int
 	}
 	var inserts []insert
 	// Each insertion ends with a line directive giving the position of the text after it, so compile errors
@@ -58,27 +71,46 @@ func File(path string, src []byte, s Settings) ([]byte, error) {
 	at := func(body *ast.BlockStmt, text string) {
 		next := fset.Position(body.Lbrace + 1)
 		inserts = append(inserts, insert{next.Offset, text + fmt.Sprintf("/*line %s:%d:%d*/", path, next.Line,
-			next.Column)})
+			next.Column), 0})
+	}
+	directive := func(pos token.Pos) string {
+		p := fset.Position(pos)
+		return fmt.Sprintf("/*line %s:%d:%d*/", path, p.Line, p.Column)
+	}
+
+	if importName(f, sqsPackage) != "" {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) < 2 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !sqsMethods[sel.Sel.Name] {
+				return true
+			}
+			start, paren := fset.Position(call.Fun.Pos()), fset.Position(call.Lparen)
+			inserts = append(inserts,
+				insert{start.Offset, alias + ".SQS" + sel.Sel.Name + "(" + directive(call.Fun.Pos()), 0},
+				insert{paren.Offset, ", " + directive(call.Args[0].Pos()), 1})
+			return true
+		})
 	}
 
 	if strings.HasSuffix(rel, "_test.go") {
 		testing := importName(f, "testing")
-		if testing == "" {
-			return nil, nil
-		}
 		// Tests are TestXxx functions and the function literals handed to t.Run. Helpers that take a *testing.T
 		// aren't tests of their own.
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch fn := n.(type) {
 			case *ast.FuncDecl:
-				if strings.HasPrefix(fn.Name.Name, "Test") && fn.Recv == nil && fn.Body != nil {
+				if testing != "" && strings.HasPrefix(fn.Name.Name, "Test") && fn.Recv == nil && fn.Body != nil {
 					if t := testParam(fn.Type, testing); t != "" {
 						at(fn.Body, alias+".Test("+t+", "+strconv.Quote(rel)+");")
 					}
 				}
 			case *ast.CallExpr:
 				sel, ok := fn.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "Run" || len(fn.Args) != 2 {
+				if testing == "" || !ok || sel.Sel.Name != "Run" || len(fn.Args) != 2 {
 					return true
 				}
 				if lit, ok := fn.Args[1].(*ast.FuncLit); ok {
@@ -100,14 +132,16 @@ func File(path string, src []byte, s Settings) ([]byte, error) {
 	}
 	pkgEnd := fset.Position(f.Name.End())
 	inserts = append(inserts, insert{pkgEnd.Offset, "; import " + alias + " " + strconv.Quote(s.Runtime) +
-		fmt.Sprintf("/*line %s:%d:%d*/", path, pkgEnd.Line, pkgEnd.Column)})
-	sort.Slice(inserts, func(i, j int) bool { return inserts[i].at > inserts[j].at })
+		fmt.Sprintf("/*line %s:%d:%d*/", path, pkgEnd.Line, pkgEnd.Column), 0})
+	// Applied last first. Two at one offset go in the order they were added, which puts an SQS call after the defer
+	// at the top of the function it opens.
+	sort.SliceStable(inserts, func(i, j int) bool { return inserts[i].at > inserts[j].at })
 	out := append([]byte("//line "+path+":1\n"), src...)
 	for i := range inserts {
 		inserts[i].at += len("//line " + path + ":1\n")
 	}
 	for _, in := range inserts {
-		out = append(out[:in.at], append([]byte(in.text), out[in.at:]...)...)
+		out = append(out[:in.at], append([]byte(in.text), out[in.at+in.cut:]...)...)
 	}
 	return out, nil
 }

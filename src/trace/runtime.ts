@@ -63,6 +63,13 @@ export const attributes = {
   file: "code.file.path",
 } as const;
 
+// What the Python and Go hooks put on a span for a message sent to or received from a queue, after OpenTelemetry's
+// messaging conventions. Such a span has no component of its own: the trace path check finds the queue's element.
+export const messagingAttributes = {
+  operation: "messaging.operation.type",
+  destination: "messaging.destination.name",
+} as const;
+
 // Span files are named `spans-<pid>-<thread>.jsonl` and test files `tests-<pid>-<thread>.jsonl`.
 export const spansFile = /^spans-.*\.jsonl$/;
 export const testsFile = /^tests-.*\.jsonl$/;

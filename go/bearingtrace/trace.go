@@ -35,6 +35,17 @@ type span struct {
 	test                      *test
 	component, name, file     string
 	start                     int64
+	// Set on a span that continues a trace a message brought in, and on the spans under it: they join that trace
+	// whichever test, if any, the goroutine is running.
+	adopted bool
+	// For a messaging span: the queue's name, "send" or "receive", and how the call ended.
+	queue, operation string
+	err              error
+	// Spans that continue this one in a message's trace, which end when it does. See Consume.
+	followers []*span
+	// A span on the stack only as a parent for what follows, which is never written: a message's consumer span
+	// when the code that received it wasn't in a traced call.
+	marker bool
 }
 
 type test struct {
@@ -92,9 +103,9 @@ func Span(component, name, file string) func() {
 	mu.Lock()
 	g := state(id)
 	s := &span{spanID: spanID(), component: component, name: name, file: file, start: time.Now().UnixNano()}
-	if n := len(g.stack); n > 0 && g.stack[n-1].test == g.test {
+	if n := len(g.stack); n > 0 && (g.stack[n-1].test == g.test || g.stack[n-1].adopted) {
 		top := g.stack[n-1]
-		s.traceID, s.parentID, s.test = top.traceID, top.spanID, top.test
+		s.traceID, s.parentID, s.test, s.adopted = top.traceID, top.spanID, top.test, top.adopted
 	} else if g.test != nil {
 		s.traceID, s.test = g.test.traceID, g.test
 	} else {
@@ -109,10 +120,18 @@ func end(id uint64, s *span) {
 	stop := time.Now().UnixNano()
 	mu.Lock()
 	defer mu.Unlock()
-	pending = append(pending, spanJSON(s, stop))
-	pendingBytes += len(pending[len(pending)-1])
-	if g := goroutines[id]; g != nil && len(g.stack) > g.base {
-		g.stack = g.stack[:len(g.stack)-1]
+	for _, f := range s.followers {
+		record(f, stop)
+	}
+	record(s, stop)
+	// The span and anything above it: a span continuing it in a message's trace, or a marker.
+	if g := goroutines[id]; g != nil {
+		for i := len(g.stack) - 1; i >= g.base; i-- {
+			if g.stack[i] == s {
+				g.stack = g.stack[:i]
+				break
+			}
+		}
 	}
 	// Spans are written when each test ends (see Test), or here once a lot have built up. A test binary exits
 	// without running exit hooks, so spans from after the last test ends are lost; they belong to no test anyway.
@@ -160,6 +179,12 @@ func Test(t T, file string) {
 		}
 		testsOut.WriteString(line + "}\n")
 	})
+}
+
+// record queues a span to be written. Called with mu held.
+func record(s *span, stop int64) {
+	pending = append(pending, spanJSON(s, stop))
+	pendingBytes += len(pending[len(pending)-1])
 }
 
 func noop() {}
@@ -231,10 +256,25 @@ func open(kind string) *os.File {
 }
 
 func spanJSON(s *span, stop int64) string {
-	attrs := []string{
-		attr("bearing.component", s.component),
-		attr("code.function.name", s.name),
-		attr("code.file.path", s.file),
+	kind, status := "1", `{"code":1}`
+	var attrs []string
+	if s.queue != "" {
+		// OpenTelemetry's messaging conventions; the component is the queue, which Bearing finds by name.
+		kind = map[string]string{"send": "4", "receive": "5"}[s.operation]
+		attrs = []string{
+			attr("messaging.system", "aws_sqs"),
+			attr("messaging.operation.type", s.operation),
+			attr("messaging.destination.name", s.queue),
+		}
+	} else {
+		attrs = []string{
+			attr("bearing.component", s.component),
+			attr("code.function.name", s.name),
+			attr("code.file.path", s.file),
+		}
+	}
+	if s.err != nil {
+		status = `{"code":2,"message":` + quote(s.err.Error()) + `}`
 	}
 	if s.test != nil {
 		attrs = append(attrs, attr("bearing.test", s.test.name))
@@ -247,8 +287,8 @@ func spanJSON(s *span, stop int64) string {
 		parent = `"parentSpanId":"` + s.parentID + `",`
 	}
 	return `{"traceId":"` + s.traceID + `","spanId":"` + s.spanID + `",` + parent + `"name":` + quote(s.name) +
-		`,"kind":1,"startTimeUnixNano":"` + strconv.FormatInt(s.start, 10) + `","endTimeUnixNano":"` +
-		strconv.FormatInt(stop, 10) + `","attributes":[` + strings.Join(attrs, ",") + `],"status":{"code":1}}`
+		`,"kind":` + kind + `,"startTimeUnixNano":"` + strconv.FormatInt(s.start, 10) + `","endTimeUnixNano":"` +
+		strconv.FormatInt(stop, 10) + `","attributes":[` + strings.Join(attrs, ",") + `],"status":` + status + `}`
 }
 
 func attr(key, value string) string {

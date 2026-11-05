@@ -150,6 +150,33 @@ export function queueElements(target: Model, queues: Block[]): Map<string, strin
   return ids;
 }
 
+// The target's queues: the elements a queue in the Terraform stands for, and any container or software system of an
+// SQS technology or whose `bearing.terraform` names a queue.
+export function queueTargets(target: Model): Set<string> {
+  return new Set(
+    [...target.elements.values()]
+      .filter(
+        (element) =>
+          (element.type === "container" || element.type === "softwareSystem") &&
+          (queueTechnology.test(element.technology) ||
+            element.properties[terraformProperty]?.startsWith(`${queueType}.`) === true),
+      )
+      .map((element) => element.id),
+  );
+}
+
+// The element each queue's literal `name` in the Terraform stands for, which is how the trace hooks name a queue.
+export function queueNames(target: Model, blocks: Block[]): Map<string, string> {
+  const queues = blocks.filter((block) => block.kind === "resource" && block.type === queueType);
+  const ids = queueElements(target, queues);
+  const names = new Map<string, string>();
+  for (const queue of queues) {
+    const name = queue.attributes.get("name");
+    if (name !== undefined && target.elements.has(ids.get(queue.address)!)) names.set(name, ids.get(queue.address)!);
+  }
+  return names;
+}
+
 // The containers deployed in a target deployment node, at any depth.
 function containersOf(target: Model, node: string): string[] {
   const within = (id: string | undefined): boolean => {

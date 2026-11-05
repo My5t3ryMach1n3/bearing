@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { checkClaim, checkQueueBoundaries } from "../src/check.js";
 import { parseConfig } from "../src/config.js";
 import type { DeploymentElement, Element, Model, Relationship } from "../src/model.js";
-import { deriveQueues } from "../src/queues.js";
-import { deriveTerraform } from "../src/terraform.js";
+import { deriveQueues, queueNames, queueTargets } from "../src/queues.js";
+import { deriveTerraform, readTerraform } from "../src/terraform.js";
 
 // Writes Terraform files under `infra/` in a temp repo and returns its config.
 function repo(files: Record<string, string>) {
@@ -373,5 +373,25 @@ describe("checkClaim with queues", () => {
     expect(
       checkClaim(claim(["eventPublisher->appointmentEvents"], []), { forked, target, graph, changed: [], queues }),
     ).toEqual([]);
+  });
+});
+
+describe("queueNames", () => {
+  it("names each queue's element by the queue's literal name, as the trace hooks name it", () => {
+    const config = repo({
+      "main.tf": [
+        'resource "aws_sqs_queue" "appointment_events" {',
+        '  name = "appointment-events"',
+        "}",
+        'resource "aws_sqs_queue" "audit" {',
+        '  name = "${var.env}-audit"',
+        "}",
+      ].join("\n"),
+    });
+    const target = chairside();
+    target.elements.get("appointmentEvents")!.properties["bearing.terraform"] = "aws_sqs_queue.appointment_events";
+    // A queue with no literal name, or no element, can't be named.
+    expect(queueNames(target, readTerraform(config))).toEqual(new Map([["appointment-events", "appointmentEvents"]]));
+    expect(queueTargets(target)).toEqual(new Set(["appointmentEvents"]));
   });
 });

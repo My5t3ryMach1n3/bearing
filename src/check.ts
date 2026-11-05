@@ -27,7 +27,7 @@ import { deriveImports, DeriveError, type ImportGraph, type ImportRelationship, 
 import { diffModels, loadModel, type Drift } from "./diff.js";
 import type { Model } from "./model.js";
 import { componentOf, componentPaths } from "./paths.js";
-import { deriveQueues, type QueueGrant, type QueueRelationship } from "./queues.js";
+import { deriveQueues, queueNames, type QueueGrant, type QueueRelationship } from "./queues.js";
 import { loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
 import { checkSurplus, closedComponents, formatSurplus, type SurplusResult } from "./surplus.js";
@@ -432,6 +432,7 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
       issues: numbers,
       tests,
       spans,
+      ...(blocks === undefined ? {} : { queueNames: queueNames(target, blocks) }),
     });
     paths = views.some((view) => view.status === "failed")
       ? { check: "paths", status: "failed", blocking: true, issues, views }

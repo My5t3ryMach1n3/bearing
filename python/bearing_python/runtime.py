@@ -21,9 +21,17 @@ import secrets
 import sys
 import threading
 import time
+import urllib.parse
 from typing import Any, Callable, Optional
 
 from .instrument import RUNTIME_NAME, instrument, is_test_file
+
+TRACEPARENT = "traceparent"
+BAGGAGE = "baggage"
+TEST_BAGGAGE_KEY = "bearing.test"
+CRITERION_BAGGAGE_KEY = "bearing.criterion"
+# SQS allows this many attributes on a message. The hook leaves out what doesn't fit rather than fail the send.
+MAX_ATTRIBUTES = 10
 
 ATTRIBUTES = {
     "component": "bearing.component",
@@ -41,9 +49,23 @@ def criterion_pattern(tag: str) -> "re.Pattern[str]":
 
 
 class _Span:
-    __slots__ = ("trace_id", "span_id", "parent_id", "test", "criterion", "name", "component", "file", "start")
+    __slots__ = (
+        "trace_id",
+        "span_id",
+        "parent_id",
+        "test",
+        "criterion",
+        "name",
+        "component",
+        "file",
+        "start",
+        "adopted",
+        "queue",
+        "operation",
+        "followers",
+    )
 
-    def __init__(self, trace_id, span_id, parent_id, test, criterion, name, component, file):
+    def __init__(self, trace_id, span_id, parent_id, test, criterion, name, component, file, adopted=False):
         self.trace_id = trace_id
         self.span_id = span_id
         self.parent_id = parent_id
@@ -53,6 +75,14 @@ class _Span:
         self.component = component
         self.file = file
         self.start = time.time_ns()
+        # Set on a span that continues a trace a message brought in, and on the spans under it: they join that trace
+        # whichever test, if any, is running.
+        self.adopted = adopted
+        # For a messaging span: the queue's name, and "send" or "receive".
+        self.queue: Optional[str] = None
+        self.operation: Optional[str] = None
+        # Spans continuing this one in a message's trace, which end when it does. See `Runtime.consume`.
+        self.followers: list = []
 
 
 class _Test:
@@ -128,26 +158,53 @@ class Runtime:
 
     # Spans.
 
-    def _start(self, name: str, component: str, file: str) -> _Span:
-        test = self._test
-        parent = _current.get()
+    def _span_id(self) -> str:
         with self._lock:
             span_id = f"{self._id_prefix}{self._next_id:08x}"
             self._next_id += 1
+        return span_id
+
+    def _start(self, name: str, component: str, file: str) -> _Span:
+        test = self._test
+        parent = _current.get()
+        span_id = self._span_id()
         test_name = None if test is None else test.name
-        # A call that outlives its test, such as a background thread's, starts a new trace.
-        if parent is not None and parent.test == test_name:
-            return _Span(parent.trace_id, span_id, parent.span_id, test_name, parent.criterion, name, component, file)
+        # A call that outlives its test, such as a background thread's, starts a new trace, unless it carries on a
+        # trace a message brought in.
+        if parent is not None and (parent.test == test_name or parent.adopted):
+            return _Span(
+                parent.trace_id,
+                span_id,
+                parent.span_id,
+                parent.test,
+                parent.criterion,
+                name,
+                component,
+                file,
+                parent.adopted,
+            )
         trace_id = self._process_trace if test is None else test.trace_id
         criterion = None if test is None else test.criterion
         return _Span(trace_id, span_id, None, test_name, criterion, name, component, file)
 
     def _end(self, span: _Span, error: Optional[BaseException] = None) -> None:
-        attributes = [
-            _attribute(ATTRIBUTES["component"], span.component),
-            _attribute(ATTRIBUTES["function"], span.name),
-            _attribute(ATTRIBUTES["file"], span.file),
-        ]
+        for follower in span.followers:
+            self._end(follower)
+        if span.queue is not None:
+            # OpenTelemetry's messaging conventions; the component is the queue, which Bearing finds by name.
+            kind = 4 if span.operation == "send" else 5
+            attributes = [
+                _attribute("messaging.system", "aws_sqs"),
+                _attribute("messaging.operation.type", span.operation),
+                _attribute("messaging.destination.name", span.queue),
+            ]
+        else:
+            kind = 1
+            attributes = [
+                _attribute(ATTRIBUTES["component"], span.component),
+                _attribute(ATTRIBUTES["function"], span.name),
+                _attribute(ATTRIBUTES["file"], span.file),
+            ]
         if span.test is not None:
             attributes.append(_attribute(ATTRIBUTES["test"], span.test))
             if span.criterion is not None:
@@ -158,7 +215,7 @@ class Runtime:
         record.update(
             {
                 "name": span.name,
-                "kind": 1,
+                "kind": kind,
                 "startTimeUnixNano": str(span.start),
                 "endTimeUnixNano": str(time.time_ns()),
                 "attributes": attributes,
@@ -169,6 +226,60 @@ class Runtime:
             self._pending.append(record)
         if span.parent_id is None:
             self.flush()
+
+    # Messaging. Trace context crosses a queue in two message attributes, as W3C Trace Context and W3C Baggage put it
+    # in headers: `traceparent` names the span that sent the message, and `baggage` carries the test that sent it, so
+    # the code that receives it, in this process or another, continues that test's trace. The Go runtime does the
+    # same; see go/bearingtrace/messaging.go.
+
+    def produce(self, queue: str) -> _Span:
+        """Starts a producer span for a send to `queue`, under the current span."""
+        span = self._start(f"send {queue}", "", "")
+        span.queue, span.operation = queue, "send"
+        return span
+
+    @staticmethod
+    def context_attributes(span: _Span) -> dict:
+        """The message attributes carrying a producer span's context."""
+        attributes = {TRACEPARENT: f"00-{span.trace_id}-{span.span_id}-01"}
+        if span.test is not None:
+            members = [f"{TEST_BAGGAGE_KEY}={urllib.parse.quote(span.test, safe='')}"]
+            if span.criterion is not None:
+                members.append(f"{CRITERION_BAGGAGE_KEY}={urllib.parse.quote(span.criterion, safe='')}")
+            attributes[BAGGAGE] = ",".join(members)
+        return attributes
+
+    def consume(self, queue: str, messages: list) -> None:
+        """Records a consumer span for messages received from `queue`, under the span that sent the first of them
+        that carries a `traceparent`, and continues that trace here: the traced call that received them carries on
+        in it, so the calls it makes next join the sender's trace and test. Received outside a traced call, the calls
+        made next in this context join it instead. Each message is a dict of its attributes' string values."""
+        found = None
+        for attributes in messages:
+            parsed = _parse_traceparent(attributes.get(TRACEPARENT, ""))
+            if parsed is not None:
+                found = (parsed, _baggage(attributes.get(BAGGAGE, "")))
+                break
+        if found is None:
+            return
+        (trace_id, parent_id), baggage = found
+        test = baggage.get(TEST_BAGGAGE_KEY)
+        # The sender's criterion can come from where only it can see, such as a pytest marker.
+        criterion = baggage.get(CRITERION_BAGGAGE_KEY) or (None if test is None else self.criterion(test))
+        consumer = _Span(trace_id, self._span_id(), parent_id, test, criterion, f"receive {queue}", "", "", True)
+        consumer.queue, consumer.operation = queue, "receive"
+        self._end(consumer)
+        top = _current.get()
+        if top is not None and top.component != "":
+            continued = _Span(
+                trace_id, self._span_id(), consumer.span_id, test, criterion, top.name, top.component, top.file, True
+            )
+            top.followers.append(continued)
+            _current.set(continued)
+        else:
+            # A marker, never written: what this context calls next goes under the consumer span.
+            marker = _Span(trace_id, consumer.span_id, None, test, criterion, "", "", "", True)
+            _current.set(marker)
 
     def flush(self) -> None:
         with self._lock:
@@ -389,9 +500,31 @@ def install(settings: dict) -> Runtime:
     if _runtime is None:
         _runtime = Runtime(settings)
         sys.meta_path.insert(0, _Finder(_runtime))
+        from . import sqs
+
+        sqs.install(_runtime)
         # Drop finders cached for path entries, so nothing found before the hook skips it.
         importlib.invalidate_caches()
     return _runtime
+
+
+_TRACEPARENT = re.compile(r"^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$")
+
+
+def _parse_traceparent(value: str) -> Optional[tuple]:
+    match = _TRACEPARENT.match(value.strip())
+    return None if match is None else (match.group(1), match.group(2))
+
+
+def _baggage(value: str) -> dict:
+    """A `baggage` value's members: comma-separated key=value, each value percent-encoded and maybe followed by
+    ;properties."""
+    members = {}
+    for member in value.split(","):
+        key, equals, rest = member.strip().partition("=")
+        if equals:
+            members.setdefault(key.strip(), urllib.parse.unquote(rest.split(";", 1)[0].strip()))
+    return members
 
 
 def _attribute(key: str, value):

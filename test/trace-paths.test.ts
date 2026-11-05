@@ -314,3 +314,108 @@ describe("checkTracePaths", () => {
     ]);
   });
 });
+
+describe("checkTracePaths across a queue", async () => {
+  const { remindersDir } = await import("./reminders.js");
+  const reminders = {
+    config: loadConfig(join(remindersDir, "repo")),
+    target: modelFromWorkspace(JSON.parse(readFileSync(join(remindersDir, "workspace.json"), "utf8"))),
+  };
+  const remindersRequirements = await loadRequirements(reminders.config, {
+    issuesFile: join(remindersDir, "issues.json"),
+  });
+  const test = "TestBooking/#3/AC1_sends_a_reminder";
+
+  // A messaging span: a send to the queue or a receive from it, as the Python and Go hooks write them.
+  const message = (
+    operation: "send" | "receive",
+    spanId: string,
+    parentSpanId: string | undefined,
+    queue = "appointment-events",
+  ): SpanRecord => ({
+    traceId: test,
+    spanId,
+    ...(parentSpanId === undefined ? {} : { parentSpanId }),
+    name: `${operation} ${queue}`,
+    component: "",
+    file: "",
+    start: BigInt(spanId),
+    test,
+    queue,
+    operation,
+  });
+  const call = (component: string, name: string, spanId: string, parentSpanId?: string): SpanRecord => ({
+    traceId: test,
+    spanId,
+    ...(parentSpanId === undefined ? {} : { parentSpanId }),
+    name,
+    component,
+    file: `${component}.go`,
+    start: BigInt(spanId),
+    test,
+  });
+  // The booking API sends the message from the test; the worker receives it in Poll and carries on in its trace.
+  const acrossTheQueue = [
+    message("send", "1", undefined),
+    message("receive", "2", "1"),
+    call("eventConsumer", "Consumer.Poll", "3", "2"),
+    call("scheduler", "Scheduler.Schedule", "4", "3"),
+    call("scheduler", "Scheduler.RunDue", "5"),
+    call("reminderStore", "Store.WasSent", "6", "5"),
+    call("smsSender", "Sender.Send", "7", "5"),
+    call("reminderStore", "Store.MarkSent", "8", "5"),
+  ];
+  const check = (spans: SpanRecord[], queueNames?: Map<string, string>) =>
+    checkTracePaths(reminders.config, {
+      target: reminders.target,
+      requirements: remindersRequirements,
+      issues: [3],
+      tests: [passed(test, "#3/AC1")],
+      spans,
+      ...(queueNames === undefined ? {} : { queueNames }),
+    })[0]!;
+
+  it("expects the view's step out of the queue, and follows the trace across it", () => {
+    const view = check(acrossTheQueue);
+    expect(pairs(view.expected)).toEqual([
+      "appointmentEvents->eventConsumer",
+      "eventConsumer->scheduler",
+      "scheduler->reminderStore",
+      "scheduler->smsSender",
+      "scheduler->reminderStore",
+    ]);
+    expect(pairs(view.tests[0]!.observed)).toEqual([
+      "(test)->appointmentEvents",
+      "appointmentEvents->eventConsumer",
+      "eventConsumer->scheduler",
+      "(test)->scheduler",
+      "scheduler->reminderStore",
+      "scheduler->smsSender",
+      "scheduler->reminderStore",
+    ]);
+    expect(view.status).toBe("passed");
+  });
+
+  it("lets the test stand in for the queue, handing the consumer its messages", () => {
+    expect(
+      check(
+        acrossTheQueue
+          .slice(2)
+          .map(({ parentSpanId, ...span }) =>
+            parentSpanId === "2" ? span : { ...span, ...(parentSpanId === undefined ? {} : { parentSpanId }) },
+          ),
+      ).status,
+    ).toBe("passed");
+  });
+
+  it("names a queue by the Terraform's name for it, and fails a send to a queue the target doesn't have", () => {
+    const audit = [...acrossTheQueue, message("send", "9", "7", "audit")];
+    const view = check(audit, new Map([["appointment-events", "appointmentEvents"]]));
+    expect(view.status).toBe("failed");
+    const offTarget = view.tests[0]!.offTarget.map((index) => pairs([view.tests[0]!.observed[index]!])[0]);
+    expect(offTarget).toEqual(["smsSender->audit"]);
+    expect(formatTracePaths([view])).toContain(
+      "smsSender -> audit: send audit()  <- the target declares no relationship for this call",
+    );
+  });
+});
