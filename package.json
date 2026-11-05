@@ -11,6 +11,8 @@
     "dist",
     "go",
     "!go/**/*_test.go",
+    "python",
+    "!python/**/__pycache__",
     "templates"
   ],
   "engines": {

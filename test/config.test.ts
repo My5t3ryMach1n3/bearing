@@ -125,7 +125,7 @@ describe("parseConfig", () => {
     it("rejects unknown languages and keys, and an empty list", () => {
       expect(problems(`${base}languages:\n  - name: cobol\n    rot: x\n`)).toEqual([
         'line 5: unknown key "languages.0.rot"',
-        'line 4: "languages.0.name" must be one of: typescript, go',
+        'line 4: "languages.0.name" must be one of: typescript, go, python',
       ]);
       expect(problems(`${base}languages: []\n`)).toEqual(['line 3: "languages" must NOT have fewer than 1 items']);
     });
@@ -140,8 +140,8 @@ describe("parseConfig", () => {
   });
 
   it("rejects languages Bearing has no adapter for", () => {
-    expect(problems(specExample.replace("language: typescript", "language: python"))).toEqual([
-      'line 5: "language" must be one of: typescript, go',
+    expect(problems(specExample.replace("language: typescript", "language: java"))).toEqual([
+      'line 5: "language" must be one of: typescript, go, python',
     ]);
   });
 

@@ -1,0 +1,13 @@
+branch: slot-check-in-route
+issues: ["#5"]
+model:
+  added: []
+  removed: []
+files:
+  - path: app/routes/api.py
+    component: bookingRoutes
+  - path: app/booking/service.py
+    component: bookingService
+  - path: app/availability/service.py
+    component: availabilityService
+note: "Refuses a booking for a slot that's already taken, for #5."

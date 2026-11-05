@@ -2,10 +2,11 @@ import type { Config, Language, LanguageConfig } from "../config.js";
 import { within } from "../paths.js";
 import type { LanguageAdapter } from "./adapter.js";
 import { go } from "./go.js";
+import { python } from "./python.js";
 import { typescript } from "./typescript.js";
 
 // Every language Bearing has an adapter for. A new adapter is added here and to `languageNames` in config.ts.
-export const adapters: Record<Language, LanguageAdapter> = { typescript, go };
+export const adapters: Record<Language, LanguageAdapter> = { typescript, go, python };
 
 // The configured language a repo-relative file belongs to: the one with the deepest root holding it whose adapter
 // reads files like it. Undefined for files no language reads, such as Terraform or docs.

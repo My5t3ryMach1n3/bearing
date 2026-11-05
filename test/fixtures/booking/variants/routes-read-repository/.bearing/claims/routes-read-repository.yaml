@@ -1,0 +1,11 @@
+branch: routes-read-repository
+issues: ["#1"]
+model:
+  added: []
+  removed: []
+files:
+  - path: app/routes/api.py
+    component: bookingRoutes
+  - path: app/booking/service.py
+    component: bookingService
+note: "Reads an appointment back without going through the booking service, for #1."

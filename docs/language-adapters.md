@@ -2,7 +2,7 @@
 
 Bearing reads code through one adapter per language. The checks themselves (boundaries, coverage, trace paths and surplus) never look at a language's syntax: they work from what the adapters return. Adding a language means writing an adapter. No check needs to change.
 
-The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScript adapter in [`src/lang/typescript.ts`](../src/lang/typescript.ts) is the reference implementation. The Go adapter in [`src/lang/go.ts`](../src/lang/go.ts) shows how to handle a language whose code can't be wrapped as it loads. It shells out to a small Go command in [`go/`](../go) for parsing and rewriting, and Bearing builds that command on first use.
+The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScript adapter in [`src/lang/typescript.ts`](../src/lang/typescript.ts) is the reference implementation. The Go adapter in [`src/lang/go.ts`](../src/lang/go.ts) shows how to handle a language whose code can't be wrapped as it loads. It shells out to a small Go command in [`go/`](../go) for parsing and rewriting, and Bearing builds that command on first use. The Python adapter in [`src/lang/python.ts`](../src/lang/python.ts) runs Python code it ships in [`python/`](../python) with the system's interpreter to read code, and loads it into the project's tests as a pytest plugin.
 
 ## What an adapter provides
 

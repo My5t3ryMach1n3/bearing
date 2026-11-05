@@ -344,7 +344,7 @@ checks:
   responsibilities: advisory
 ```
 
-A repo with several languages, or with code below the repo root, lists them under `languages:` in place of `language:` and `tsconfig:`. Each entry gives a `name`, a `root` folder (the repo root by default) and a `project` file relative to it (`tsconfig.json` for TypeScript and `go.mod` for Go by default). Each language is read by its adapter; see [Writing a language adapter](language-adapters.md).
+A repo with several languages, or with code below the repo root, lists them under `languages:` in place of `language:` and `tsconfig:`. Each entry gives a `name`, a `root` folder (the repo root by default) and a `project` file relative to it (`tsconfig.json` for TypeScript, `go.mod` for Go and `pyproject.toml` for Python by default). Each language is read by its adapter; see [Writing a language adapter](language-adapters.md).
 
 ```yaml
 languages:
@@ -355,14 +355,19 @@ languages:
     project: tsconfig.build.json
   - name: go
     root: services/reminder-worker
+  - name: python
+    root: services/booking-api
 ```
 
 | Language | `name` | Project file | Where a test carries its tag |
 | --- | --- | --- | --- |
 | TypeScript and JavaScript | `typescript` | `tsconfig.json` | In its name, or a `describe` around it |
 | Go | `go` | `go.mod`, one entry per module | In a subtest's name, `t.Run("#3/AC1 sends a reminder", …)` |
+| Python | `python` | `pyproject.toml` | In a pytest marker, `@pytest.mark.req("#5/AC1")`, on the test, its class or its module |
 
 Reading Go code needs the go command on `PATH`, and tracing it needs Go 1.21 or later.
+
+Reading Python code needs Python 3.11 or later as `python3` on `PATH`, or the interpreter `BEARING_PYTHON` names; before 3.11 it needs the `tomli` package. Absolute imports resolve against the source roots `pyproject.toml` declares for setuptools, Hatch, Poetry, PDM or uv, and pytest's `pythonpath`; with none, against the project's folder and its `src/`. Tracing Python needs the tests to run under pytest 7 or later, on Python 3.9 or later.
 
 ### Commands
 
@@ -499,6 +504,12 @@ Go code can't be wrapped as it loads, so for Go `bearing test` rewrites it befor
 - **Vendored dependencies** aren't supported yet. A module with `vendor/modules.txt` needs `GOFLAGS=-mod=mod`.
 - About 3 µs per traced call. Where the go command downloaded the toolchain into the module cache, Go 1.25 and later won't let the overlay add to the standard library, and goroutine IDs come from stack traces instead, at 10 to 40 µs a call.
 
+Python modules can be wrapped as they're imported, as Node modules are. `bearing test` puts Bearing's `bearing_python` package on `PYTHONPATH` and its pytest plugin in `PYTEST_PLUGINS`, so every pytest the command runs loads the plugin before any test or `conftest.py`. The plugin adds an import hook that compiles each module under a component path from its source with a trace decorator on every public module-level function and every public method of a public module-level class, as `Class.method`. Names starting with an underscore, typing stubs, abstract methods and the methods of a `Protocol` aren't traced.
+
+- **Decorators**: the trace decorator is the innermost, so other decorators get the wrapper: a FastAPI route registers it, and `staticmethod` or `property` wrap it. It keeps the function's kind, plain, coroutine, generator or async generator, and its signature, so frameworks that inspect it see what they'd see without it.
+- **Nesting**: calls nest under the call that made them through a context variable, across `await`s and into the worker threads FastAPI and Starlette run sync code in, which copy the context. Bytecode for instrumented modules is never read or written, so nothing in `__pycache__` changes, and tracebacks point at the original lines.
+- **Criteria**: each test records how it ended under its pytest node ID, `tests/test_booking.py::test_refuses_a_slot_already_booked`, with the tag from its closest `req` marker. A test passes only if its setup, call and teardown all pass. Tests that run outside pytest, such as in a subprocess the tests start, aren't traced.
+
 ### How criteria coverage is checked
 
 Criteria coverage reads the test outcomes from the last `bearing test` run. For each criterion of the issues a change works on, it looks at the tests whose names carry that criterion's tag:
@@ -507,7 +518,7 @@ Criteria coverage reads the test outcomes from the last `bearing test` run. For 
 - **Failing**: at least one failed, even if another passed.
 - **Missing**: none ran. Skipped tests don't count as having run.
 
-A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
+A test counts only through the tag in its name, `#2/AC1` by default, which may sit in the test's own name or in a `describe` around it; in Python, through the tag in its `req` marker. A name that mentions the issue some other way, such as `#2 adds an item`, is untagged and never counts. Each test counts for the first tag in its name.
 
 The check fails if any criterion is missing or failing, listing each with its text, the tag to add for a missing one, and the tests that failed. It checks the issues the claims file names, or, if it has none or there's no claims file, the ones in the branch name. Issues given as arguments, `bearing check 2 4`, replace both.
 

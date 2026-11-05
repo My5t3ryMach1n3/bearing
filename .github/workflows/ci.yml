@@ -25,6 +25,11 @@ jobs:
         with:
           go-version: stable
           cache: false
+      # For the Python adapter's tests.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install fastapi httpx pytest
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
@@ -74,6 +79,27 @@ jobs:
         working-directory: go/bearingtrace
       - run: npm ci
       - run: npx vitest run test/go.test.ts --reporter=verbose
+
+  # The Python adapter's tests on the oldest Python its trace hook supports and the latest. Bearing reads code with
+  # the same interpreter, which before Python 3.11 needs tomli to read pyproject.toml.
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python --version
+      - run: python -m pip install fastapi httpx pytest "tomli; python_version < '3.11'"
+      - run: npm ci
+      - run: npx vitest run test/python.test.ts --reporter=verbose
 
   # Converts the fixture DSLs with the real Structurizr, once per runner, and logs how long one conversion takes.
   structurizr:
