@@ -1,0 +1,1488 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture changes</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #ffffff;
+        --panel: #f6f8fa;
+        --text: #1f2328;
+        --muted: #59636e;
+        --line: #d1d9e0;
+        --node: #ffffff;
+        --node-stroke: #8c959f;
+        --boundary: #8c959f;
+        --edge: #6e7781;
+        --accent: #0969da;
+        --accent-soft: #ddf4ff;
+        --added: #1a7f37;
+        --added-bg: #dafbe1;
+        --removed: #8c959f;
+        --removed-bg: #f6f8fa;
+        --removed-text: #59636e;
+        --changed: #9a6700;
+        --changed-bg: #fff8c5;
+        --drifted: #cf222e;
+        --drifted-bg: #ffebe9;
+        --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #0d1117;
+          --panel: #151b23;
+          --text: #f0f6fc;
+          --muted: #9198a1;
+          --line: #3d444d;
+          --node: #151b23;
+          --node-stroke: #656c76;
+          --boundary: #656c76;
+          --edge: #9198a1;
+          --accent: #4493f8;
+          --accent-soft: #121d2f;
+          --added: #3fb950;
+          --added-bg: #12261e;
+          --removed: #656c76;
+          --removed-bg: #151b23;
+          --removed-text: #9198a1;
+          --changed: #d29922;
+          --changed-bg: #272115;
+          --drifted: #f85149;
+          --drifted-bg: #2d1416;
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #151b23;
+        --text: #f0f6fc;
+        --muted: #9198a1;
+        --line: #3d444d;
+        --node: #151b23;
+        --node-stroke: #656c76;
+        --boundary: #656c76;
+        --edge: #9198a1;
+        --accent: #4493f8;
+        --accent-soft: #121d2f;
+        --added: #3fb950;
+        --added-bg: #12261e;
+        --removed: #656c76;
+        --removed-bg: #151b23;
+        --removed-text: #9198a1;
+        --changed: #d29922;
+        --changed-bg: #272115;
+        --drifted: #f85149;
+        --drifted-bg: #2d1416;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.45 var(--font);
+        display: flex;
+        flex-direction: column;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+      }
+      .checks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip.failed {
+        color: var(--drifted);
+        border-color: var(--drifted);
+      }
+      .chip.flagged {
+        color: var(--changed);
+        border-color: var(--changed);
+      }
+      .app {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr) 300px;
+        min-height: 0;
+      }
+      nav,
+      aside {
+        background: var(--panel);
+        overflow: auto;
+        padding: 12px;
+      }
+      nav {
+        border-right: 1px solid var(--line);
+      }
+      aside {
+        border-left: 1px solid var(--line);
+      }
+      nav h2,
+      aside h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 12px 4px 6px;
+      }
+      nav h2:first-child {
+        margin-top: 0;
+      }
+      nav ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      nav button {
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 0;
+        border-radius: 6px;
+        padding: 5px 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+      }
+      nav button:hover {
+        background: var(--accent-soft);
+      }
+      nav button[aria-current="true"] {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      nav .depth-1 {
+        padding-left: 20px;
+      }
+      nav .depth-2 {
+        padding-left: 32px;
+      }
+      nav .label {
+        flex: 1;
+        min-width: 0;
+      }
+      .count {
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 0 6px;
+      }
+      .count.changes {
+        background: var(--changed-bg);
+        color: var(--changed);
+      }
+      .count.drifts {
+        background: var(--drifted-bg);
+        color: var(--drifted);
+      }
+      .count.added {
+        background: var(--added-bg);
+        color: var(--added);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .crumbs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+      }
+      .crumbs li + li::before {
+        content: "›";
+        margin-right: 4px;
+      }
+      .crumbs button {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--accent);
+        cursor: pointer;
+      }
+      .crumbs li:last-child {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .modes {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .modes button {
+        background: var(--bg);
+        border: 0;
+        padding: 4px 12px;
+        cursor: pointer;
+      }
+      .modes button + button {
+        border-left: 1px solid var(--line);
+      }
+      .modes button[aria-pressed="true"] {
+        background: var(--accent);
+        color: #fff;
+      }
+      #stage {
+        flex: 1;
+        overflow: auto;
+        padding: 16px;
+        min-height: 0;
+      }
+      #diagram {
+        display: block;
+        margin: 0 auto;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        padding: 8px 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .swatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 2px solid;
+        vertical-align: -2px;
+        margin-right: 4px;
+      }
+      .stepper {
+        border-top: 1px solid var(--line);
+        padding: 8px 16px;
+        display: grid;
+        gap: 6px;
+      }
+      .stepper[hidden] {
+        display: none;
+      }
+      .stepper .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .stepper button {
+        border: 1px solid var(--line);
+        background: var(--bg);
+        border-radius: 6px;
+        padding: 2px 10px;
+        cursor: pointer;
+      }
+      .stepper button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .stepper .now {
+        font-weight: 600;
+        flex: 1;
+        min-width: 200px;
+      }
+      .warn {
+        color: var(--changed);
+      }
+      .bad {
+        color: var(--drifted);
+      }
+      aside .empty {
+        color: var(--muted);
+      }
+      aside h3 {
+        margin: 0 0 2px;
+        font-size: 16px;
+      }
+      aside .kind {
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      aside dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 10px;
+        margin: 8px 0;
+      }
+      aside dt {
+        color: var(--muted);
+      }
+      aside dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      aside code {
+        font: 12px var(--mono);
+      }
+      aside ul {
+        padding-left: 18px;
+        margin: 4px 0;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 4px;
+        padding: 0 6px;
+        margin-bottom: 6px;
+      }
+      .badge.added {
+        background: var(--added-bg);
+        color: var(--added);
+      }
+      .badge.removed {
+        background: var(--removed-bg);
+        color: var(--removed-text);
+        border: 1px dashed var(--removed);
+      }
+      .badge.changed {
+        background: var(--changed-bg);
+        color: var(--changed);
+      }
+      .badge.drifted {
+        background: var(--drifted-bg);
+        color: var(--drifted);
+      }
+      .open {
+        margin-top: 8px;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        background: none;
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      .change {
+        font-size: 13px;
+      }
+      .change del {
+        color: var(--drifted);
+      }
+      .change ins {
+        color: var(--added);
+        text-decoration: none;
+      }
+
+      /* The diagram */
+      svg text {
+        font-family: var(--font);
+        fill: var(--text);
+      }
+      .node rect {
+        fill: var(--node);
+        stroke: var(--node-stroke);
+        stroke-width: 1.5;
+      }
+      .node .kindline {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .node .name {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .node.person rect {
+        rx: 30;
+      }
+      .node.added rect {
+        fill: var(--added-bg);
+        stroke: var(--added);
+        stroke-width: 2.5;
+      }
+      .node.removed rect {
+        fill: var(--removed-bg);
+        stroke: var(--removed);
+        stroke-dasharray: 5 4;
+        stroke-width: 2;
+      }
+      .node.removed text {
+        fill: var(--removed-text);
+      }
+      .node.changed rect {
+        fill: var(--changed-bg);
+        stroke: var(--changed);
+        stroke-width: 2.5;
+      }
+      .node.openable {
+        cursor: pointer;
+      }
+      .node.selected rect {
+        stroke: var(--accent);
+        stroke-width: 3;
+      }
+      .node,
+      .edge {
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .dim {
+        opacity: 0.18;
+      }
+      .boundary rect {
+        fill: none;
+        stroke: var(--boundary);
+        stroke-dasharray: 6 4;
+        stroke-width: 1.5;
+      }
+      .boundary text {
+        fill: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .edge path {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.5;
+      }
+      .edge .hit {
+        stroke: transparent;
+        stroke-width: 12;
+      }
+      .edge .label rect {
+        fill: var(--bg);
+        opacity: 0.9;
+      }
+      .edge .label text {
+        font-size: 11px;
+        fill: var(--muted);
+      }
+      .edge.added path.line {
+        stroke: var(--added);
+        stroke-width: 2.5;
+      }
+      .edge.removed path.line {
+        stroke: var(--removed);
+        stroke-dasharray: 5 4;
+        stroke-width: 2;
+      }
+      .edge.changed path.line {
+        stroke: var(--changed);
+        stroke-width: 2.5;
+      }
+      .edge.drifted path.line {
+        stroke: var(--drifted);
+        stroke-width: 2.5;
+      }
+      .edge.drifted .label text {
+        fill: var(--drifted);
+        font-weight: 600;
+      }
+      .edge.selected path.line {
+        stroke: var(--accent);
+        stroke-width: 3;
+      }
+      .edge.step path.line {
+        stroke: var(--accent);
+        stroke-width: 2;
+      }
+      .edge.step.current path.line {
+        stroke-width: 3.5;
+      }
+      .edge.step.uncovered path.line {
+        stroke: var(--changed);
+        stroke-dasharray: 3 3;
+      }
+      .stepnum circle {
+        fill: var(--accent);
+      }
+      .stepnum.uncovered circle {
+        fill: var(--changed);
+      }
+      .stepnum text {
+        fill: #fff;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .pin circle {
+        fill: var(--panel);
+        stroke: var(--line);
+      }
+      .pin text {
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: minmax(0, 1fr);
+          grid-auto-rows: auto;
+        }
+        nav,
+        aside {
+          border: 0;
+          border-bottom: 1px solid var(--line);
+          max-height: 40vh;
+        }
+        aside {
+          order: 3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Architecture changes</h1>
+      <div class="checks" id="checks"></div>
+    </header>
+    <div class="app">
+      <nav aria-label="Diagrams and views">
+        <h2>Diagrams</h2>
+        <ul id="levels"></ul>
+        <h2>Dynamic views</h2>
+        <ul id="views"></ul>
+      </nav>
+      <main>
+        <div class="toolbar">
+          <ol class="crumbs" id="crumbs"></ol>
+          <div class="tools">
+            <div class="modes" id="zoom" role="group" aria-label="Zoom">
+              <button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button
+              ><button id="zoom-in" aria-label="Zoom in">+</button>
+            </div>
+            <div class="modes" id="modes" role="group" aria-label="What to show"></div>
+          </div>
+        </div>
+        <div id="stage"><svg id="diagram" role="img"></svg></div>
+        <div class="stepper" id="stepper" hidden></div>
+        <div class="legend" id="legend"></div>
+      </main>
+      <aside id="details" aria-live="polite"></aside>
+    </div>
+    <script id="data" type="application/json">
+      /*DATA*/ null
+    </script>
+    <script>
+      "use strict";
+      const data = JSON.parse(document.getElementById("data").textContent);
+      const svgNS = "http://www.w3.org/2000/svg";
+      const levels = new Map(data.levels.map((level) => [level.id, level]));
+      const views = new Map(data.views.map((view) => [view.id, view]));
+      const element = (id) => data.elements[id];
+
+      const titles = {
+        valid: "Target valid",
+        target: "Target change",
+        claim: "Claim",
+        boundaries: "Boundaries",
+        deployment: "Deployment",
+        coverage: "Criteria coverage",
+        paths: "Trace paths",
+        surplus: "Surplus",
+        responsibilities: "Responsibilities",
+      };
+      const icons = { passed: "✓", failed: "✗", skipped: "–", flagged: "!" };
+      const kindNames = {
+        person: "Person",
+        softwareSystem: "Software system",
+        container: "Container",
+        component: "Component",
+      };
+      const modes = data.changed
+        ? [
+            ["change", "Change"],
+            ["before", "Before"],
+            ["after", "After"],
+            ["drift", "Drift"],
+          ]
+        : [
+            ["after", "Target"],
+            ["drift", "Drift"],
+          ];
+
+      // What the reader is looking at, kept in the URL's hash so a link or a reload keeps it.
+      const state = {
+        level: "context",
+        mode: data.changed ? "change" : "drift",
+        view: undefined,
+        step: 0,
+        selected: undefined,
+        zoom: undefined,
+      };
+      function readHash() {
+        const params = new URLSearchParams(location.hash.slice(1));
+        if (levels.has(params.get("level"))) state.level = params.get("level");
+        if (modes.some(([id]) => id === params.get("mode"))) state.mode = params.get("mode");
+        state.view = views.has(params.get("view")) ? params.get("view") : undefined;
+        state.step = Number(params.get("step")) || 0;
+        if (state.view !== undefined) state.level = levelForView(views.get(state.view));
+      }
+      function writeHash() {
+        const params = new URLSearchParams({ level: state.level, mode: state.mode });
+        if (state.view !== undefined) (params.set("view", state.view), params.set("step", String(state.step)));
+        history.replaceState(null, "", `#${params}`);
+      }
+
+      // The chain of elements from the outermost to `id`.
+      function chain(id) {
+        const out = [];
+        for (let at = id; at !== undefined && element(at) !== undefined; at = element(at).parent) out.unshift(at);
+        return out;
+      }
+      // The element that stands for `id` in a level, as the build lifted relationships.
+      function liftTo(level, id) {
+        const ids = chain(id);
+        if (level.scope !== undefined && ids.includes(level.scope)) return ids[ids.indexOf(level.scope) + 1];
+        const scopeChain = level.scope === undefined ? [] : chain(level.scope);
+        const split = ids.findIndex((each, index) => each !== scopeChain[index]);
+        return split === -1 ? undefined : ids[split];
+      }
+      function levelForView(view) {
+        return view.scope !== undefined && levels.has(view.scope) ? view.scope : "context";
+      }
+
+      // Replaces a box's contents, skipping what's left out.
+      function fill(box, ...children) {
+        box.replaceChildren(...children.flat().filter((child) => child !== undefined && child !== null));
+      }
+
+      function el(tag, attrs = {}, ...children) {
+        const node = tag.startsWith("svg:")
+          ? document.createElementNS(svgNS, tag.slice(4))
+          : document.createElement(tag);
+        for (const [key, value] of Object.entries(attrs)) {
+          if (value === undefined || value === false) continue;
+          if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+          else node.setAttribute(key, value === true ? "" : value);
+        }
+        for (const child of children.flat()) if (child !== undefined && child !== null) node.append(child);
+        return node;
+      }
+
+      // --- Header and navigation --------------------------------------------------------------------------------------
+
+      function renderChecks() {
+        const box = document.getElementById("checks");
+        fill(
+          box,
+          ...data.checks.map((check) =>
+            el(
+              "span",
+              {
+                class: `chip ${check.status}`,
+                title: `${titles[check.check] ?? check.check}: ${check.status}${check.blocking ? "" : " (advisory)"}`,
+              },
+              `${icons[check.status] ?? ""} ${titles[check.check] ?? check.check}`,
+            ),
+          ),
+        );
+      }
+
+      function counts(id) {
+        const count = data.counts[id];
+        if (count === undefined) return [];
+        return [
+          count.changes > 0
+            ? el("span", { class: "count changes", title: `${count.changes} changed inside` }, String(count.changes))
+            : undefined,
+          count.drifts > 0
+            ? el("span", { class: "count drifts", title: `${count.drifts} drifted inside` }, String(count.drifts))
+            : undefined,
+        ];
+      }
+
+      function renderNav() {
+        const depth = (level) => (level.scope === undefined ? 0 : chain(level.scope).length);
+        document.getElementById("levels").replaceChildren(
+          ...data.levels.map((level) =>
+            el(
+              "li",
+              {},
+              el(
+                "button",
+                {
+                  class: `depth-${depth(level)}`,
+                  "aria-current": state.view === undefined && state.level === level.id ? "true" : "false",
+                  onclick: () => {
+                    state.level = level.id;
+                    state.view = undefined;
+                    state.selected = undefined;
+                    render();
+                  },
+                },
+                el("span", { class: "label" }, level.scope === undefined ? level.title : element(level.scope).name),
+                ...(level.scope === undefined ? [] : counts(level.scope)),
+              ),
+            ),
+          ),
+        );
+
+        const ordered = [...data.views].sort((a, b) => (b.mark ? 1 : 0) - (a.mark ? 1 : 0));
+        document.getElementById("views").replaceChildren(
+          ...ordered.map((view) =>
+            el(
+              "li",
+              {},
+              el(
+                "button",
+                {
+                  "aria-current": state.view === view.id ? "true" : "false",
+                  title: view.title,
+                  onclick: () => {
+                    state.view = view.id;
+                    state.step = 0;
+                    state.level = levelForView(view);
+                    state.selected = undefined;
+                    render();
+                  },
+                },
+                el("span", { class: "label" }, view.title || view.id),
+                view.mark === undefined
+                  ? undefined
+                  : el("span", { class: `count ${view.mark === "added" ? "added" : "changes"}` }, view.mark),
+                view.trace?.status === "failed" ? el("span", { class: "count drifts" }, "trace") : undefined,
+              ),
+            ),
+          ),
+        );
+      }
+
+      function renderToolbar() {
+        const level = levels.get(state.level);
+        const trail = [];
+        for (
+          let at = level;
+          at !== undefined;
+          at = at.parentLevel === undefined ? undefined : (levels.get(at.parentLevel) ?? levels.get("context"))
+        ) {
+          trail.unshift(at);
+          if (at.id === "context") break;
+        }
+        const crumbs = trail.map((each, index) =>
+          el(
+            "li",
+            {},
+            index === trail.length - 1
+              ? each.scope === undefined
+                ? each.title
+                : each.title
+              : el(
+                  "button",
+                  {
+                    onclick: () => {
+                      state.level = each.id;
+                      state.view = undefined;
+                      state.selected = undefined;
+                      render();
+                    },
+                  },
+                  each.scope === undefined ? "System context" : element(each.scope).name,
+                ),
+          ),
+        );
+        if (state.view !== undefined) crumbs.push(el("li", {}, views.get(state.view).title || state.view));
+        document.getElementById("crumbs").replaceChildren(...crumbs);
+        document.getElementById("modes").replaceChildren(
+          ...modes.map(([id, label]) =>
+            el(
+              "button",
+              {
+                "aria-pressed": state.mode === id ? "true" : "false",
+                onclick: () => {
+                  state.mode = id;
+                  render();
+                },
+              },
+              label,
+            ),
+          ),
+        );
+      }
+
+      // --- The diagram --------------------------------------------------------------------------------------------------
+
+      function visible(level) {
+        const show = (item) =>
+          state.mode === "before" ? item.inBefore : state.mode === "change" ? true : item.inAfter;
+        const nodes = level.nodes.filter((id) => show(element(id)));
+        const shown = new Set(nodes);
+        const edges = level.edges.filter((edge) => show(edge) && shown.has(edge.source) && shown.has(edge.destination));
+        const drift =
+          state.mode === "drift"
+            ? level.drift.filter((edge) => shown.has(edge.source) && shown.has(edge.destination))
+            : [];
+        return { nodes, edges, drift, shown };
+      }
+
+      function wrap(text, max) {
+        const words = text.split(/\s+/);
+        const lines = [""];
+        for (const word of words) {
+          const line = lines.at(-1);
+          if (line === "" || (line + " " + word).length <= max)
+            lines[lines.length - 1] = line === "" ? word : `${line} ${word}`;
+          else lines.push(word);
+        }
+        if (lines.length > 2) {
+          lines.length = 2;
+          lines[1] = `${lines[1].slice(0, max - 1)}…`;
+        }
+        return lines;
+      }
+
+      function pathOf(points) {
+        return points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x},${y}`).join(" ");
+      }
+
+      function midpoint(points) {
+        // The middle of the polyline by length, for a label or a step number.
+        const lengths = points.slice(1).map(([x, y], i) => Math.hypot(x - points[i][0], y - points[i][1]));
+        let half = lengths.reduce((a, b) => a + b, 0) / 2;
+        for (let i = 0; i < lengths.length; i++) {
+          if (half <= lengths[i]) {
+            const t = lengths[i] === 0 ? 0 : half / lengths[i];
+            return [
+              points[i][0] + t * (points[i + 1][0] - points[i][0]),
+              points[i][1] + t * (points[i + 1][1] - points[i][1]),
+            ];
+          }
+          half -= lengths[i];
+        }
+        return points[0];
+      }
+
+      function renderDiagram() {
+        const level = levels.get(state.level);
+        const { width, height, shapes, routes } = level.layout;
+        const svg = document.getElementById("diagram");
+        const pad = 16;
+        svg.setAttribute("viewBox", `${-pad} ${-pad} ${width + 2 * pad} ${height + 2 * pad}`);
+        // Fit to the stage's width, but never so small the text can't be read; past that the stage scrolls.
+        const stage = document.getElementById("stage");
+        const fit = Math.max(0.65, Math.min(1, (stage.clientWidth - 32) / (width + 2 * pad)));
+        const scale = state.zoom ?? fit;
+        svg.setAttribute("width", String((width + 2 * pad) * scale));
+        svg.setAttribute("height", String((height + 2 * pad) * scale));
+        svg.setAttribute("aria-label", level.title);
+        const { nodes, edges, drift, shown } = visible(level);
+        const marks = state.mode === "change";
+
+        // A dynamic view's steps, lifted to this level.
+        const view = state.view === undefined ? undefined : views.get(state.view);
+        const steps =
+          view === undefined
+            ? []
+            : view.steps.map((step, index) => ({
+                index,
+                step,
+                source: liftTo(level, step.source),
+                destination: liftTo(level, step.destination),
+                uncovered: view.trace?.uncovered?.includes(index) ?? false,
+              }));
+        const inView = new Set(steps.flatMap((step) => [step.source, step.destination]));
+
+        const defs = el(
+          "svg:defs",
+          {},
+          ...["edge", "added", "removed", "changed", "drifted", "accent"].map((name) =>
+            el(
+              "svg:marker",
+              {
+                id: `arrow-${name}`,
+                viewBox: "0 0 10 10",
+                refX: "9",
+                refY: "5",
+                markerWidth: "7",
+                markerHeight: "7",
+                orient: "auto-start-reverse",
+              },
+              el("svg:path", { d: "M0,0 L10,5 L0,10 z", style: `fill: var(--${name})` }),
+            ),
+          ),
+        );
+
+        const layer = [];
+        if (level.scope !== undefined) {
+          const box = shapes[`boundary:${level.scope}`];
+          const scope = element(level.scope);
+          layer.push(
+            el(
+              "svg:g",
+              { class: "boundary" },
+              el("svg:rect", { x: box.x, y: box.y, width: box.width, height: box.height, rx: 8 }),
+              el("svg:text", { x: box.x + 12, y: box.y + 20 }, `${scope.name}  [${kindNames[scope.type]}]`),
+            ),
+          );
+        }
+
+        const edgeGroup = (edge, kind) => {
+          const route = routes[edge.id];
+          if (route === undefined) return undefined;
+          const mark = kind === "drift" ? "drifted" : marks ? edge.mark : undefined;
+          const stepHere = steps.filter((step) => step.source === edge.source && step.destination === edge.destination);
+          const classes = [
+            "edge",
+            mark,
+            stepHere.length > 0 ? "step" : undefined,
+            stepHere.some((step) => step.index === state.step) ? "current" : undefined,
+            stepHere.some((step) => step.uncovered) ? "uncovered" : undefined,
+            state.selected === `edge:${edge.id}` ? "selected" : undefined,
+            view !== undefined && stepHere.length === 0 ? "dim" : undefined,
+          ].filter(Boolean);
+          const arrow = stepHere.length > 0 ? "accent" : (mark ?? "edge");
+          const label =
+            route.label === undefined
+              ? []
+              : [
+                  el(
+                    "svg:g",
+                    { class: "label" },
+                    el("svg:rect", {
+                      x: route.label.x - 2,
+                      y: route.label.y - 1,
+                      width: route.label.width + 4,
+                      height: 16,
+                      rx: 3,
+                    }),
+                    el(
+                      "svg:text",
+                      { x: route.label.x + route.label.width / 2, y: route.label.y + 11, "text-anchor": "middle" },
+                      edge.label,
+                    ),
+                  ),
+                ];
+          return el(
+            "svg:g",
+            {
+              class: classes.join(" "),
+              onclick: (event) => {
+                event.stopPropagation();
+                select(`edge:${edge.id}`);
+              },
+            },
+            el("svg:path", { class: "hit", d: pathOf(route.points) }),
+            el("svg:path", { class: "line", d: pathOf(route.points), "marker-end": `url(#arrow-${arrow})` }),
+            ...label,
+          );
+        };
+        for (const edge of edges) layer.push(edgeGroup(edge));
+        for (const edge of drift) layer.push(edgeGroup(edge, "drift"));
+
+        for (const id of nodes) {
+          const box = shapes[id];
+          const item = element(id);
+          if (box === undefined) continue;
+          const mark = marks ? item.mark : undefined;
+          const openable = levels.has(id) && id !== level.scope;
+          const classes = [
+            "node",
+            item.type,
+            mark,
+            openable ? "openable" : undefined,
+            state.selected === `node:${id}` ? "selected" : undefined,
+            view !== undefined && !inView.has(id) ? "dim" : undefined,
+          ].filter(Boolean);
+          const name = wrap(item.name, 24);
+          const kind = `[${kindNames[item.type] ?? item.type}${item.technology ? `: ${item.technology}` : ""}]`;
+          const top = box.y + box.height / 2 - (name.length * 16 + 14) / 2 + 12;
+          const count = data.counts[id];
+          const pins = [];
+          if (openable && count !== undefined) {
+            let x = box.x + box.width - 4;
+            for (const [key, colour] of [
+              ["drifts", "drifted"],
+              ["changes", "changed"],
+            ]) {
+              if (count[key] === 0) continue;
+              pins.push(
+                el(
+                  "svg:g",
+                  { class: "pin" },
+                  el("svg:circle", { cx: x, cy: box.y + 4, r: 9, style: `stroke: var(--${colour})` }),
+                  el(
+                    "svg:text",
+                    { x, y: box.y + 7.5, "text-anchor": "middle", style: `fill: var(--${colour})` },
+                    String(count[key]),
+                  ),
+                ),
+              );
+              x -= 22;
+            }
+          }
+          layer.push(
+            el(
+              "svg:g",
+              {
+                class: classes.join(" "),
+                onclick: (event) => {
+                  event.stopPropagation();
+                  select(`node:${id}`);
+                },
+                ondblclick: openable ? () => open(id) : undefined,
+              },
+              el("svg:title", {}, openable ? `${item.name}: double-click to open` : item.name),
+              el("svg:rect", {
+                x: box.x,
+                y: box.y,
+                width: box.width,
+                height: box.height,
+                rx: item.type === "person" ? 30 : 6,
+              }),
+              ...name.map((line, index) =>
+                el(
+                  "svg:text",
+                  { class: "name", x: box.x + box.width / 2, y: top + index * 16, "text-anchor": "middle" },
+                  line,
+                ),
+              ),
+              el(
+                "svg:text",
+                { class: "kindline", x: box.x + box.width / 2, y: top + name.length * 16, "text-anchor": "middle" },
+                kind.length > 32 ? `${kind.slice(0, 30)}…]` : kind,
+              ),
+              ...(openable
+                ? [
+                    el(
+                      "svg:text",
+                      { class: "kindline", x: box.x + box.width - 8, y: box.y + box.height - 8, "text-anchor": "end" },
+                      "open ›",
+                    ),
+                  ]
+                : []),
+              ...pins,
+            ),
+          );
+        }
+
+        // Each step's number at its edge. A step with no edge here, between two elements the level doesn't relate, gets a
+        // straight line.
+        for (const step of steps) {
+          if (!shown.has(step.source) || !shown.has(step.destination) || step.source === step.destination) continue;
+          const edge =
+            level.edges.find((each) => each.source === step.source && each.destination === step.destination) ??
+            level.edges.find((each) => each.source === step.destination && each.destination === step.source);
+          let points = edge === undefined ? undefined : routes[edge.id]?.points;
+          if (points === undefined) {
+            const a = shapes[step.source];
+            const b = shapes[step.destination];
+            points = [
+              [a.x + a.width / 2, a.y + a.height / 2],
+              [b.x + b.width / 2, b.y + b.height / 2],
+            ];
+            layer.push(
+              el(
+                "svg:g",
+                {
+                  class: `edge step${step.index === state.step ? " current" : ""}${step.uncovered ? " uncovered" : ""}`,
+                },
+                el("svg:path", { class: "line", d: pathOf(points), "marker-end": "url(#arrow-accent)" }),
+              ),
+            );
+          }
+          const sameEdge = steps.filter(
+            (other) => other.source === step.source && other.destination === step.destination,
+          );
+          const offset = sameEdge.indexOf(step) * 20;
+          const [x, y] = midpoint(points);
+          layer.push(
+            el(
+              "svg:g",
+              {
+                class: `stepnum${step.uncovered ? " uncovered" : ""}`,
+                onclick: (event) => {
+                  event.stopPropagation();
+                  state.step = step.index;
+                  render();
+                },
+                style: "cursor: pointer",
+              },
+              el("svg:circle", { cx: x + offset, cy: y - 14, r: step.index === state.step ? 11 : 9 }),
+              el(
+                "svg:text",
+                { x: x + offset, y: y - 10, "text-anchor": "middle" },
+                step.step.order || String(step.index + 1),
+              ),
+            ),
+          );
+        }
+        svg.replaceChildren(defs, ...layer.filter(Boolean));
+        svg.onclick = () => select(undefined);
+      }
+
+      function renderLegend() {
+        const items = [];
+        const swatch = (name, label, dashed) =>
+          el(
+            "span",
+            {},
+            el("span", {
+              class: "swatch",
+              style: `background: var(--${name}-bg); border-color: var(--${name}); border-style: ${dashed ? "dashed" : "solid"}`,
+            }),
+            label,
+          );
+        if (state.mode === "change")
+          items.push(swatch("added", "added"), swatch("removed", "removed", true), swatch("changed", "changed"));
+        if (state.mode === "drift") items.push(swatch("drifted", "code that doesn't do what the target says"));
+        if (state.mode === "before") items.push(el("span", {}, "The target before this PR"));
+        if (state.mode === "after")
+          items.push(el("span", {}, data.changed ? "The target this PR proposes" : "The target"));
+        items.push(el("span", {}, "Click an element for details; double-click one marked “open ›” to see inside it."));
+        document.getElementById("legend").replaceChildren(...items);
+      }
+
+      function renderStepper() {
+        const box = document.getElementById("stepper");
+        const view = state.view === undefined ? undefined : views.get(state.view);
+        if (view === undefined) {
+          box.hidden = true;
+          return;
+        }
+        box.hidden = false;
+        const step = view.steps[state.step];
+        const name = (id) => element(id)?.name ?? id;
+        const uncovered = view.trace?.uncovered?.includes(state.step);
+        const trace =
+          view.trace === undefined
+            ? el("span", { class: "warn" }, "No trace results: the checks didn't trace this view's issue.")
+            : view.trace.status === "passed"
+              ? el(
+                  "span",
+                  {},
+                  `Traced: ${view.trace.tests} tagged test${view.trace.tests === 1 ? "" : "s"} follow this view.`,
+                )
+              : el(
+                  "span",
+                  { class: view.trace.status === "failed" ? "bad" : "warn" },
+                  `Trace paths ${view.trace.status}${view.trace.reason ? `: ${view.trace.reason}` : ""}`,
+                );
+        fill(
+          box,
+          el(
+            "div",
+            { class: "row" },
+            el(
+              "button",
+              {
+                disabled: state.step === 0,
+                onclick: () => {
+                  state.step--;
+                  render();
+                },
+              },
+              "‹ Back",
+            ),
+            el(
+              "span",
+              { class: "now" },
+              step === undefined
+                ? ""
+                : `${step.order || state.step + 1}. ${name(step.source)} → ${name(step.destination)}${step.description ? `: ${step.description}` : ""}`,
+            ),
+            el("span", {}, `${state.step + 1} of ${view.steps.length}`),
+            el(
+              "button",
+              {
+                disabled: state.step >= view.steps.length - 1,
+                onclick: () => {
+                  state.step++;
+                  render();
+                },
+              },
+              "Next ›",
+            ),
+          ),
+          el(
+            "div",
+            { class: "row" },
+            uncovered ? el("span", { class: "warn" }, "No tagged test takes this step.") : undefined,
+            trace,
+            view.mark === "changed" && view.before !== undefined
+              ? el(
+                  "details",
+                  {},
+                  el("summary", {}, "Steps before this PR"),
+                  el(
+                    "ol",
+                    {},
+                    ...view.before.map((each) =>
+                      el(
+                        "li",
+                        {},
+                        `${name(each.source)} → ${name(each.destination)}${each.description ? `: ${each.description}` : ""}`,
+                      ),
+                    ),
+                  ),
+                )
+              : undefined,
+          ),
+        );
+      }
+
+      // --- Details --------------------------------------------------------------------------------------------------------
+
+      const markText = {
+        added: "Added by this PR",
+        removed: "Removed by this PR",
+        changed: "Changed by this PR",
+        drifted: "Drifted",
+      };
+
+      function show(value) {
+        if (value === undefined || value === null || value === "") return "(none)";
+        return typeof value === "string" ? value : JSON.stringify(value);
+      }
+
+      function changeList(changes) {
+        if (changes === undefined) return [];
+        return [
+          el("h2", {}, "What changes"),
+          el(
+            "ul",
+            { class: "change" },
+            ...changes.map((change) =>
+              el(
+                "li",
+                {},
+                el("code", {}, change.field),
+                ": ",
+                el("del", {}, show(change.from)),
+                " → ",
+                el("ins", {}, show(change.to)),
+              ),
+            ),
+          ),
+        ];
+      }
+
+      function renderDetails() {
+        const box = document.getElementById("details");
+        const level = levels.get(state.level);
+        if (state.selected === undefined) {
+          const changes = data.changed ? Object.values(data.elements).filter((each) => each.mark).length : 0;
+          const drifts = level.drift.length;
+          fill(
+            box,
+            el("h2", {}, "This diagram"),
+            el("h3", {}, level.title),
+            el(
+              "p",
+              { class: "empty" },
+              data.changed
+                ? `This PR changes the target: ${changes} element${changes === 1 ? "" : "s"} added, removed or changed across the model.`
+                : "This PR doesn't change the target.",
+            ),
+            drifts > 0
+              ? el(
+                  "p",
+                  { class: "bad" },
+                  `${drifts} relationship${drifts === 1 ? "" : "s"} here drift from the target. Switch to Drift to see them.`,
+                )
+              : undefined,
+            el("p", { class: "empty" }, "Select an element or a relationship to see its details."),
+          );
+          return;
+        }
+        const [kind, id] = state.selected.split(/:(.*)/s);
+        if (kind === "node") {
+          const item = element(id);
+          const rels = level.edges.filter((edge) => edge.source === id || edge.destination === id);
+          fill(
+            box,
+            el("h2", {}, "Element"),
+            item.mark ? el("span", { class: `badge ${item.mark}` }, markText[item.mark]) : undefined,
+            el("h3", {}, item.name),
+            el(
+              "p",
+              { class: "kind" },
+              `${kindNames[item.type] ?? item.type}${item.technology ? `: ${item.technology}` : ""}`,
+            ),
+            item.description ? el("p", {}, item.description) : undefined,
+            el(
+              "dl",
+              {},
+              item.path ? [el("dt", {}, "Code"), el("dd", {}, el("code", {}, item.path))] : undefined,
+              item.requirements?.length
+                ? [el("dt", {}, "Serves"), el("dd", {}, item.requirements.join(", "))]
+                : undefined,
+              el("dt", {}, "ID"),
+              el("dd", {}, el("code", {}, id)),
+            ),
+            ...changeList(item.changes),
+            rels.length > 0
+              ? [
+                  el("h2", {}, "Relationships here"),
+                  el(
+                    "ul",
+                    {},
+                    ...rels.map((edge) =>
+                      el(
+                        "li",
+                        {},
+                        `${edge.source === id ? "→ " + element(edge.destination).name : "← " + element(edge.source).name}${edge.label ? `: ${edge.label}` : ""}`,
+                        edge.mark && data.changed
+                          ? [" ", el("span", { class: `badge ${edge.mark}` }, edge.mark)]
+                          : undefined,
+                      ),
+                    ),
+                  ),
+                ]
+              : undefined,
+            levels.has(id) && id !== level.scope
+              ? el("button", { class: "open", onclick: () => open(id) }, `Open ${item.name} ›`)
+              : undefined,
+          );
+          return;
+        }
+        const edge = level.edges.find((each) => each.id === id);
+        if (edge !== undefined) {
+          fill(
+            box,
+            el("h2", {}, "Relationship"),
+            el("h3", {}, `${element(edge.source).name} → ${element(edge.destination).name}`),
+            edge.relationships.length > 1
+              ? el("p", { class: "kind" }, `${edge.relationships.length} relationships between what's inside them`)
+              : undefined,
+            ...edge.relationships.map((rid) => {
+              const rel = data.relationships[rid];
+              return el(
+                "div",
+                {},
+                rel.mark ? el("span", { class: `badge ${rel.mark}` }, markText[rel.mark]) : undefined,
+                el(
+                  "p",
+                  {},
+                  `${element(rel.source).name} → ${element(rel.destination).name}`,
+                  el("br"),
+                  el(
+                    "span",
+                    { class: "kind" },
+                    `${rel.description || "(no description)"}${rel.technology ? ` [${rel.technology}]` : ""}`,
+                  ),
+                ),
+                ...changeList(rel.changes),
+              );
+            }),
+          );
+          return;
+        }
+        const drifted = level.drift.find((each) => each.id === id);
+        if (drifted !== undefined) {
+          fill(
+            box,
+            el("h2", {}, "Drift"),
+            el("span", { class: "badge drifted" }, markText.drifted),
+            el("h3", {}, `${element(drifted.source).name} → ${element(drifted.destination).name}`),
+            el("p", {}, drifted.label),
+            el(
+              "p",
+              { class: "empty" },
+              "The code makes this relationship, and the target doesn't declare it. Fix the code within the target, or propose the relationship as a target change.",
+            ),
+          );
+        }
+      }
+
+      // --- Wiring ---------------------------------------------------------------------------------------------------------
+
+      function select(id) {
+        state.selected = id;
+        render();
+      }
+      function open(id) {
+        state.level = id;
+        state.view = undefined;
+        state.selected = undefined;
+        state.zoom = undefined;
+        render();
+      }
+      const currentScale = () => {
+        const svg = document.getElementById("diagram");
+        return Number(svg.getAttribute("width")) / svg.viewBox.baseVal.width;
+      };
+      document.getElementById("zoom-in").onclick = () => {
+        state.zoom = Math.min(2, currentScale() * 1.25);
+        renderDiagram();
+      };
+      document.getElementById("zoom-out").onclick = () => {
+        state.zoom = Math.max(0.25, currentScale() / 1.25);
+        renderDiagram();
+      };
+      document.getElementById("zoom-fit").onclick = () => {
+        state.zoom = undefined;
+        renderDiagram();
+      };
+      addEventListener("resize", () => {
+        if (state.zoom === undefined) renderDiagram();
+      });
+
+      function render() {
+        writeHash();
+        renderNav();
+        renderToolbar();
+        renderDiagram();
+        renderLegend();
+        renderStepper();
+        renderDetails();
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (state.view === undefined || event.target.closest?.("input, textarea")) return;
+        const steps = views.get(state.view).steps.length;
+        if (event.key === "ArrowRight" && state.step < steps - 1) (state.step++, render());
+        if (event.key === "ArrowLeft" && state.step > 0) (state.step--, render());
+        if (event.key === "Escape") ((state.view = undefined), render());
+      });
+
+      renderChecks();
+      readHash();
+      render();
+    </script>
+  </body>
+</html>
