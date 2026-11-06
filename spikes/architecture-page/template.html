@@ -27,6 +27,8 @@
         --changed-bg: #fff8c5;
         --drifted: #cf222e;
         --drifted-bg: #ffebe9;
+        --external-bg: #eaeef2;
+        --kind: #0969da;
         --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
         --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
       }
@@ -53,6 +55,8 @@
           --changed-bg: #272115;
           --drifted: #f85149;
           --drifted-bg: #2d1416;
+          --external-bg: #212830;
+          --kind: #4493f8;
         }
       }
       :root[data-theme="dark"] {
@@ -77,6 +81,8 @@
         --changed-bg: #272115;
         --drifted: #f85149;
         --drifted-bg: #2d1416;
+        --external-bg: #212830;
+        --kind: #4493f8;
       }
       * {
         box-sizing: border-box;
@@ -425,10 +431,27 @@
         font-family: var(--font);
         fill: var(--text);
       }
-      .node rect {
+      .node .shape {
         fill: var(--node);
         stroke: var(--node-stroke);
         stroke-width: 1.5;
+      }
+      .node .detail {
+        fill: none;
+        stroke: var(--node-stroke);
+        stroke-width: 1.5;
+      }
+      .node.external .shape {
+        fill: var(--external-bg);
+      }
+      .node .kindtag {
+        fill: var(--kind);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+      .node.external .kindtag {
+        fill: var(--muted);
       }
       .node .kindline {
         fill: var(--muted);
@@ -438,32 +461,37 @@
         font-weight: 600;
         font-size: 13px;
       }
-      .node.person rect {
-        rx: 30;
-      }
-      .node.added rect {
+      .node.added .shape,
+      .node.added .detail {
         fill: var(--added-bg);
         stroke: var(--added);
         stroke-width: 2.5;
       }
-      .node.removed rect {
+      .node.removed .shape,
+      .node.removed .detail {
         fill: var(--removed-bg);
         stroke: var(--removed);
         stroke-dasharray: 5 4;
         stroke-width: 2;
       }
-      .node.removed text {
+      .node.removed text,
+      .node.removed .kindtag {
         fill: var(--removed-text);
       }
-      .node.changed rect {
+      .node.changed .shape,
+      .node.changed .detail {
         fill: var(--changed-bg);
         stroke: var(--changed);
         stroke-width: 2.5;
       }
+      .node .detail {
+        fill: none;
+      }
       .node.openable {
         cursor: pointer;
       }
-      .node.selected rect {
+      .node.selected .shape,
+      .node.selected .detail {
         stroke: var(--accent);
         stroke-width: 3;
       }
@@ -876,8 +904,66 @@
         return lines;
       }
 
-      function pathOf(points) {
-        return points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x},${y}`).join(" ");
+      // A route's SVG path: straight runs, or for splines, cubic Bézier curves of three points each after the first.
+      function pathOf(points, curve = false) {
+        if (!curve) return points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x},${y}`).join(" ");
+        const parts = [`M${points[0][0]},${points[0][1]}`];
+        let i = 1;
+        for (; i + 2 < points.length; i += 3) {
+          parts.push(`C${points[i].join(",")} ${points[i + 1].join(",")} ${points[i + 2].join(",")}`);
+        }
+        // ELK's control points don't always come in threes: what's left is a quadratic curve or a straight run.
+        if (points.length - i === 2) parts.push(`Q${points[i].join(",")} ${points[i + 1].join(",")}`);
+        if (points.length - i === 1) parts.push(`L${points[i].join(",")}`);
+        return parts.join(" ");
+      }
+
+      // An element's outline in the shape its kind calls for, with any decoration drawn over it: a database's lid, a
+      // queue's end, a browser's toolbar.
+      function outline(shape, type, x, y, w, h) {
+        const r = 10;
+        switch (shape) {
+          case "Cylinder":
+            return [
+              `M${x},${y + r} A${w / 2},${r} 0 0 1 ${x + w},${y + r} V${y + h - r} A${w / 2},${r} 0 0 1 ${x},${y + h - r} Z`,
+              `M${x},${y + r} A${w / 2},${r} 0 0 0 ${x + w},${y + r}`,
+            ];
+          case "Pipe":
+            return [
+              `M${x + r},${y} H${x + w - r} A${r},${h / 2} 0 0 1 ${x + w - r},${y + h} H${x + r} A${r},${h / 2} 0 0 1 ${x + r},${y} Z`,
+              `M${x + w - r},${y} A${r},${h / 2} 0 0 0 ${x + w - r},${y + h}`,
+            ];
+          case "WebBrowser":
+            return [
+              rounded(x, y, w, h, 6),
+              `M${x},${y + 14} H${x + w} M${x + 8},${y + 7} h0.1 M${x + 15},${y + 7} h0.1 M${x + 22},${y + 7} h0.1`,
+            ];
+          case "MobileDevicePortrait":
+          case "MobileDeviceLandscape":
+            return [rounded(x, y, w, h, 14), `M${x + w / 2 - 12},${y + h - 7} h24`];
+          case "Folder":
+            return [`M${x},${y + 8} V${y + h} H${x + w} V${y + 8} H${x + 52} l-8,-8 H${x} Z`, undefined];
+          case "Hexagon":
+            return [
+              `M${x + 14},${y} H${x + w - 14} L${x + w},${y + h / 2} L${x + w - 14},${y + h} H${x + 14} L${x},${y + h / 2} Z`,
+            ];
+          case "Person":
+            return [rounded(x, y, w, h, 30)];
+          case "RoundedBox":
+            return [rounded(x, y, w, h, 14)];
+          default:
+            return [rounded(x, y, w, h, type === "person" ? 30 : 6)];
+        }
+      }
+
+      function rounded(x, y, w, h, r) {
+        return `M${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x + r} Q${x},${y + h} ${x},${y + h - r} V${y + r} Q${x},${y} ${x + r},${y} Z`;
+      }
+
+      // What an element is, in words: its kind from the model or its technology, or else its C4 type.
+      function kindOf(item) {
+        const kind = item.kind ?? kindNames[item.type] ?? item.type;
+        return item.external ? `External ${kind.toLowerCase()}` : kind;
       }
 
       function midpoint(points) {
@@ -1006,8 +1092,12 @@
                 select(`edge:${edge.id}`);
               },
             },
-            el("svg:path", { class: "hit", d: pathOf(route.points) }),
-            el("svg:path", { class: "line", d: pathOf(route.points), "marker-end": `url(#arrow-${arrow})` }),
+            el("svg:path", { class: "hit", d: pathOf(route.points, route.curve) }),
+            el("svg:path", {
+              class: "line",
+              d: pathOf(route.points, route.curve),
+              "marker-end": `url(#arrow-${arrow})`,
+            }),
             ...label,
           );
         };
@@ -1023,14 +1113,19 @@
           const classes = [
             "node",
             item.type,
+            item.external ? "external" : undefined,
             mark,
             openable ? "openable" : undefined,
             state.selected === `node:${id}` ? "selected" : undefined,
             view !== undefined && !inView.has(id) ? "dim" : undefined,
           ].filter(Boolean);
           const name = wrap(item.name, 24);
-          const kind = `[${kindNames[item.type] ?? item.type}${item.technology ? `: ${item.technology}` : ""}]`;
-          const top = box.y + box.height / 2 - (name.length * 16 + 14) / 2 + 12;
+          const technology = item.technology.length > 30 ? `${item.technology.slice(0, 29)}…` : item.technology;
+          // The kind on top, then the name, then the technology, centred in the box; a database's lid pushes them down.
+          const lines = 1 + name.length + (technology ? 1 : 0);
+          const lid = item.shape === "Cylinder" ? 8 : item.shape === "WebBrowser" ? 7 : 0;
+          const top = box.y + lid + (box.height - lid) / 2 - (lines * 15) / 2 + 11;
+          const [shapePath, detailPath] = outline(item.shape, item.type, box.x, box.y, box.width, box.height);
           const count = data.counts[id];
           const pins = [];
           if (openable && count !== undefined) {
@@ -1067,25 +1162,32 @@
                 ondblclick: openable ? () => open(id) : undefined,
               },
               el("svg:title", {}, openable ? `${item.name}: double-click to open` : item.name),
-              el("svg:rect", {
-                x: box.x,
-                y: box.y,
-                width: box.width,
-                height: box.height,
-                rx: item.type === "person" ? 30 : 6,
-              }),
+              el("svg:path", { class: "shape", d: shapePath }),
+              detailPath === undefined ? undefined : el("svg:path", { class: "detail", d: detailPath }),
+              el(
+                "svg:text",
+                { class: "kindtag", x: box.x + box.width / 2, y: top, "text-anchor": "middle" },
+                kindOf(item).toUpperCase(),
+              ),
               ...name.map((line, index) =>
                 el(
                   "svg:text",
-                  { class: "name", x: box.x + box.width / 2, y: top + index * 16, "text-anchor": "middle" },
+                  { class: "name", x: box.x + box.width / 2, y: top + 15 * (index + 1), "text-anchor": "middle" },
                   line,
                 ),
               ),
-              el(
-                "svg:text",
-                { class: "kindline", x: box.x + box.width / 2, y: top + name.length * 16, "text-anchor": "middle" },
-                kind.length > 32 ? `${kind.slice(0, 30)}…]` : kind,
-              ),
+              technology
+                ? el(
+                    "svg:text",
+                    {
+                      class: "kindline",
+                      x: box.x + box.width / 2,
+                      y: top + 15 * (name.length + 1),
+                      "text-anchor": "middle",
+                    },
+                    technology,
+                  )
+                : undefined,
               ...(openable
                 ? [
                     el(
@@ -1338,11 +1440,7 @@
             el("h2", {}, "Element"),
             item.mark ? el("span", { class: `badge ${item.mark}` }, markText[item.mark]) : undefined,
             el("h3", {}, item.name),
-            el(
-              "p",
-              { class: "kind" },
-              `${kindNames[item.type] ?? item.type}${item.technology ? `: ${item.technology}` : ""}`,
-            ),
+            el("p", { class: "kind" }, `${kindOf(item)}${item.technology ? `: ${item.technology}` : ""}`),
             item.description ? el("p", {}, item.description) : undefined,
             el(
               "dl",
