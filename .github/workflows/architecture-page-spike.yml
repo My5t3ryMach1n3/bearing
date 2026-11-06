@@ -1,0 +1,61 @@
+name: Architecture page spike
+
+# For the #114 spike only: builds the prototype page for the demo basket PR and links it from the PR as a workflow
+# artifact, the way `bearing report` would expose it. Remove it with the spike.
+
+on:
+  pull_request:
+    paths:
+      - spikes/architecture-page/**
+      - .github/workflows/architecture-page-spike.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: spikes/architecture-page
+      - run: ./demo.sh
+        working-directory: spikes/architecture-page
+      - run: |
+          mkdir -p "$RUNNER_TEMP/page"
+          cp spikes/architecture-page/out/basket.html "$RUNNER_TEMP/page/architecture.html"
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-page
+          path: ${{ runner.temp }}/page/architecture.html
+      # One comment, updated on each push, as Bearing's report comment is.
+      - name: Link the page from the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker="<!-- bearing:architecture-page -->"
+          body="$marker
+          ### 🧭 Explore this PR's architecture
+
+          [Download the architecture page]($URL) for ${SHA:0:7}, unzip it and open \`architecture.html\` in a browser. It works offline.
+
+          It shows the demo basket PR from \`spikes/architecture-page/demo.sh\`, which adds basket sharing to the target and drifts from it, rather than this PR."
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi
