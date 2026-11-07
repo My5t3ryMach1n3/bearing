@@ -1,0 +1,9 @@
+{
+  "name": "bearing-architecture-page-spike",
+  "private": true,
+  "type": "module",
+  "description": "Prototype for #114. Not part of Bearing; nothing builds or tests it in CI.",
+  "dependencies": {
+    "elkjs": "0.9.3"
+  }
+}

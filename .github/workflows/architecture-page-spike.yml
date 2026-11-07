@@ -1,0 +1,71 @@
+name: Architecture page spike
+
+# For the #114 spike only: builds the prototype page for the demo basket PR and links it from the PR as a workflow
+# artifact, the way `bearing report` would expose it. Remove it with the spike.
+
+on:
+  pull_request:
+    paths:
+      - spikes/architecture-page/**
+      - .github/workflows/architecture-page-spike.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: spikes/architecture-page
+      - name: Build the pages
+        working-directory: spikes/architecture-page
+        run: |
+          ./demo.sh
+          mkdir -p "$RUNNER_TEMP/pages"
+          cp out/basket.html "$RUNNER_TEMP/pages/basket-architecture.html"
+          node bench.mjs --write-generated "$RUNNER_TEMP/shop.json"
+          node build.mjs --workspace "$RUNNER_TEMP/shop.json" --out "$RUNNER_TEMP/pages/shop-architecture.html"
+      # Each page is uploaded as it is, not zipped, so the link downloads the HTML file itself.
+      - id: basket
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/pages/basket-architecture.html
+          archive: false
+      - id: shop
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/pages/shop-architecture.html
+          archive: false
+      # One comment, updated on each push, as Bearing's report comment is.
+      - name: Link the page from the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASKET: ${{ steps.basket.outputs.artifact-url }}
+          SHOP: ${{ steps.shop.outputs.artifact-url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker="<!-- bearing:architecture-page -->"
+          body="$marker
+          ### 🧭 Explore this PR's architecture
+
+          [Download the architecture page]($BASKET) for ${SHA:0:7} and open it in a browser. It works offline.
+
+          It shows the demo basket PR from \`spikes/architecture-page/demo.sh\`, which adds basket sharing to the target and drifts from it, rather than this PR. For the layout on a bigger model, there's also [a generated shop of about 30 elements]($SHOP), with no PR around it."
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi
