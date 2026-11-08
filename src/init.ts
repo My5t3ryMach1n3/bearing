@@ -4,6 +4,7 @@ import { basename, dirname, join, posix, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, configPath, parseConfig, type Config } from "./config.js";
 import { skillPath } from "./skill.js";
+import { integrationScript } from "./test.js";
 import { version } from "./version.js";
 
 // The files `bearing init` writes, laid out as they land in the repo. Shipped next to dist/ in the package.
@@ -101,7 +102,7 @@ function detectConfig(root: string): Record<string, string> {
   } catch {
     // No package.json, or not JSON: leave the test command for the team to fill in.
   }
-  const integration = "integration: npm run test:integration";
+  const integration = `integration: npm run ${integrationScript}`;
   const terraform = ["infra", "terraform"].find((dir) => {
     try {
       return readdirSync(join(root, dir)).some((file) => file.endsWith(".tf"));
@@ -127,7 +128,7 @@ function detectConfig(root: string): Record<string, string> {
       ? `iac:\n  kubernetes: ${kubernetes}/`
       : "# iac:\n#   terraform: infra/\n#   kubernetes: k8s/  # in place of terraform, for one Kubernetes cluster";
   return {
-    integration: "test:integration" in scripts ? integration : `# ${integration}`,
+    integration: integrationScript in scripts ? integration : `# ${integration}`,
     iac,
   };
 }

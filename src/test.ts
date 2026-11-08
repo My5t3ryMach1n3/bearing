@@ -180,21 +180,51 @@ interface OtlpRequest {
   }>;
 }
 
+// The package.json script `bearing init` sets `tests.integration` to when the repo has it.
+export const integrationScript = "test:integration";
+
+// The command `bearing test` runs: the one given after --, else `tests.integration`, else the root package.json's
+// `test:integration` script, which a repo often only adds after `bearing init` left `tests.integration` commented out.
+// `fallback` says when it's the script, so the caller can say so. Undefined when there's none of them.
+export function resolveTestCommand(
+  config: Config,
+  given: string[] = [],
+): { command: string[]; fallback: boolean } | undefined {
+  if (given.length > 0) return { command: given, fallback: false };
+  if (config.tests.integration !== undefined) return { command: [config.tests.integration], fallback: false };
+  let scripts: Record<string, unknown> = {};
+  try {
+    scripts =
+      (JSON.parse(readFileSync(join(config.root, "package.json"), "utf8")) as { scripts?: typeof scripts }).scripts ??
+      {};
+  } catch {
+    // No package.json, or not JSON: no script to fall back to.
+  }
+  return integrationScript in scripts ? { command: [`npm run ${integrationScript}`], fallback: true } : undefined;
+}
+
 export function testCommand(): Command {
   return new Command("test")
     .description(
-      "run the tests with tracing on, writing a span to .bearing/traces/ for each call into a component; runs tests.integration from the config unless given a command after --",
+      "run the tests with tracing on, writing a span to .bearing/traces/ for each call into a component; runs tests.integration from the config, or else package.json's test:integration script, unless given a command after --",
     )
     .argument("[command...]", "the test command, e.g. -- npm run test:integration")
     .action(async function (this: Command, command: string[]) {
       try {
         const config = loadConfig();
-        const toRun = command.length > 0 ? command : config.tests.integration;
+        const toRun = resolveTestCommand(config, command);
         if (toRun === undefined) {
-          this.error('error: no test command; pass one after --, or set "tests.integration" in .bearing/config.yaml');
+          this.error(
+            `error: no test command; pass one after --, set "tests.integration" in .bearing/config.yaml, or add a "${integrationScript}" script to package.json`,
+          );
+        }
+        if (toRun.fallback) {
+          process.stderr.write(
+            `bearing: "tests.integration" isn't set in .bearing/config.yaml, so running ${toRun.command[0]}; set it to say which command to run\n`,
+          );
         }
         const target = await loadModel(join(config.root, config.model), () => config);
-        const result = await runTraced(config, componentPaths(target), typeof toRun === "string" ? [toRun] : toRun);
+        const result = await runTraced(config, componentPaths(target), toRun.command);
         for (const warning of result.warnings) process.stderr.write(`bearing: warning: ${warning}\n`);
         process.stderr.write(`${summary(result)}\n`);
         process.exitCode = result.exitCode;
