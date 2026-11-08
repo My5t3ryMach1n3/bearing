@@ -383,6 +383,7 @@ Reading Python code needs Python 3.11 or later as `python3` on `PATH`, or the in
 | `bearing derive` | CI, anyone | Builds the as-built model from each language's imports, and from Terraform (deployment nodes, and relationships through queues) or Kubernetes manifests (deployment nodes) |
 | `bearing check` | Agent, CI | Runs every check; exits non-zero on a blocking failure |
 | `bearing report` | CI | Writes the PR comment with Mermaid overlays |
+| `bearing page` | CI | Writes the PR's architecture page: one self-contained HTML file with Target, Code, Build and Behaviour tabs over a map of the architecture |
 | `bearing guard` | CI | Flags a target change from the base branch: label, the changed files' diffs atop the comment, and `bearing/target` |
 | `bearing post <dir>` | CI | Posts the comment the conformance job uploaded and sets `bearing/advisory`, from the report workflow |
 

@@ -6,6 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebStream } from "node:stream/web";
 import type { Config } from "./config.js";
 
 // Bearing calls Structurizr once, to turn the DSL into workspace JSON; everything after that is TypeScript.
@@ -165,7 +166,7 @@ async function ensureWar(cacheDir: string, fetchWar: typeof fetch, log: (message
     },
   });
   try {
-    await pipeline(Readable.fromWeb(response.body), hasher, createWriteStream(partial));
+    await pipeline(Readable.fromWeb(response.body as WebStream), hasher, createWriteStream(partial));
     const actual = hash.digest("hex");
     if (actual !== war.sha256) {
       throw new StructurizrError(`${war.url} has checksum ${actual}, expected ${war.sha256}`);

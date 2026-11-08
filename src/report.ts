@@ -328,11 +328,12 @@ export class ReportError extends Error {
   }
 }
 
-// Reads what the report needs beyond the check results from the repo and its git history.
+// Reads what the report needs beyond the check results from the repo and its git history, and the commit the branch
+// forked from.
 export async function gatherReport(
   config: Config,
   base?: string,
-): Promise<Pick<ReportInputs, "target" | "forked" | "targetFiles" | "adrs" | "files">> {
+): Promise<Pick<ReportInputs, "target" | "forked" | "targetFiles" | "adrs" | "files"> & { fork: string }> {
   const { target, forked, fork, proposed } = await checkedTarget(config, base);
   // Claims files are in .bearing/ too, but a claim describes a change rather than making one.
   const targetFiles = await changedPaths(config.root, fork, [
@@ -354,7 +355,7 @@ export async function gatherReport(
     if (!existsSync(join(config.root, path))) continue;
     adrs.push({ path, text: await readFile(join(config.root, path), "utf8") });
   }
-  return { target, forked, targetFiles, adrs, files };
+  return { target, forked, targetFiles, adrs, files, fork };
 }
 
 export interface PostOptions {
