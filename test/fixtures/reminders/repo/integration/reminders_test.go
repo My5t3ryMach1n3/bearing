@@ -17,7 +17,9 @@ import (
 type fakeQueue struct {
 	mu       sync.Mutex
 	messages []consumer.Message
-	drained  chan struct{}
+	// Signalled once the queue is empty. It holds one signal, so the first isn't lost when the consumer drains the
+	// queue before start waits for it.
+	drained chan struct{}
 }
 
 func (q *fakeQueue) Receive(ctx context.Context) ([]consumer.Message, error) {
@@ -66,7 +68,7 @@ type worker struct {
 func start(t *testing.T, now time.Time, messages ...consumer.Message) worker {
 	twilio := &fakeTwilio{}
 	scheduler := schedule.New(func() time.Time { return now }, sms.NewSender(twilio), store.New())
-	queue := &fakeQueue{messages: messages, drained: make(chan struct{})}
+	queue := &fakeQueue{messages: messages, drained: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := consumer.New(queue, scheduler).Run(ctx)
 	<-queue.drained
