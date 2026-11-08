@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option B, the chart</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --sea: #0e1822;
+        --rail: #12202c;
+        --grid: #1d2d3b;
+        --text: #dce6ee;
+        --muted: #8da1b3;
+        --faint: #5d7284;
+        --line: #26394a;
+        --node: #13222f;
+        --node-line: #3d5468;
+        --edge: #6d8498;
+        --added: #5ed3c3;
+        --drift: #ff6b81;
+        --heat: #ffb25b;
+        --untested: #ffb25b;
+        --font: "Atkinson Hyperlegible", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--sea);
+        color: var(--text);
+        font: 15px/1.5 var(--font);
+        display: grid;
+        grid-template-columns: 360px 1fr;
+      }
+      aside {
+        background: var(--rail);
+        border-right: 1px solid var(--line);
+        overflow: auto;
+        padding: 24px 22px 40px;
+      }
+      .pr {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0;
+      }
+      h1 {
+        font-size: 22px;
+        line-height: 1.25;
+        margin: 4px 0 14px;
+      }
+      .tally {
+        display: flex;
+        gap: 14px;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .tally b {
+        color: var(--text);
+      }
+      .tally .bad b {
+        color: var(--drift);
+      }
+      details.checks {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 6px 0 22px;
+      }
+      details.checks summary {
+        cursor: pointer;
+      }
+      details.checks ul {
+        list-style: none;
+        padding: 0;
+        margin: 8px 0 0;
+      }
+      details.checks li {
+        padding: 2px 0;
+      }
+      details.checks .failed {
+        color: var(--drift);
+      }
+
+      ol.route {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        position: relative;
+      }
+      ol.route::before {
+        content: "";
+        position: absolute;
+        left: 13px;
+        top: 14px;
+        bottom: 14px;
+        border-left: 1px dashed var(--line);
+      }
+      .stop {
+        position: relative;
+        padding-left: 40px;
+        margin-bottom: 6px;
+      }
+      .stop button.head {
+        all: unset;
+        cursor: pointer;
+        display: block;
+        padding: 8px 0;
+        width: 100%;
+      }
+      .stop button.head:focus-visible {
+        outline: 2px solid var(--added);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      .marker {
+        position: absolute;
+        left: 0;
+        top: 8px;
+        width: 27px;
+        height: 27px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 13px;
+        background: var(--rail);
+        border: 1.5px solid var(--node-line);
+        color: var(--muted);
+      }
+      .stop.ok .marker {
+        border-color: var(--added);
+        color: var(--added);
+      }
+      .stop.warn .marker {
+        border-color: var(--drift);
+        color: var(--drift);
+      }
+      .stop.active .marker {
+        background: var(--text);
+        border-color: var(--text);
+        color: var(--sea);
+      }
+      .q {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .a {
+        display: block;
+        font-weight: 700;
+        font-size: 15.5px;
+        line-height: 1.3;
+      }
+      .body {
+        display: none;
+        font-size: 14px;
+        color: var(--muted);
+        padding: 2px 0 12px;
+      }
+      .stop.active .body {
+        display: block;
+      }
+      .body p {
+        margin: 6px 0;
+      }
+      .body b {
+        color: var(--text);
+        font-weight: 700;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 8px 0;
+      }
+      .seg button {
+        all: unset;
+        cursor: pointer;
+        padding: 3px 10px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--line);
+        color: var(--text);
+      }
+      .files {
+        list-style: none;
+        padding: 0;
+        margin: 6px 0;
+      }
+      .files li {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 2px 0;
+      }
+      .files .n {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .files .out {
+        color: var(--heat);
+      }
+      ol.steps {
+        list-style: none;
+        padding: 0;
+        margin: 6px 0;
+      }
+      ol.steps li {
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+        display: grid;
+        grid-template-columns: 1.8em 1fr;
+      }
+      ol.steps li:hover,
+      ol.steps li.on {
+        background: var(--line);
+        color: var(--text);
+      }
+      ol.steps li.untested {
+        color: var(--untested);
+      }
+
+      .map {
+        position: relative;
+        overflow: auto;
+        background-color: var(--sea);
+        background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+        background-size: 18px 18px;
+      }
+      .crumbs {
+        position: sticky;
+        top: 0;
+        left: 0;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 14px 20px;
+        font-size: 14px;
+        color: var(--muted);
+        z-index: 2;
+      }
+      .crumbs button {
+        all: unset;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .crumbs button:hover {
+        color: var(--text);
+        text-decoration: underline;
+      }
+      .crumbs .here {
+        color: var(--text);
+        font-weight: 700;
+      }
+      .canvas {
+        padding: 8px 28px 40px;
+      }
+      .canvas svg {
+        display: block;
+        width: 100%;
+        max-width: calc(var(--natural-width) * 1.15);
+        max-height: calc(100vh - 70px);
+        height: auto;
+        margin: 0 auto;
+      }
+      .map {
+        height: 100vh;
+      }
+      aside {
+        height: 100vh;
+      }
+
+      .diagram {
+        font-family: var(--font);
+      }
+      .shape {
+        fill: var(--node);
+        stroke: var(--node-line);
+        stroke-width: 1.2;
+        transition: opacity 0.25s;
+      }
+      .shape-line {
+        fill: none;
+        stroke: var(--node-line);
+      }
+      .shape-dot {
+        fill: var(--node-line);
+      }
+      .node-kind,
+      .node-tech {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .node-name {
+        fill: var(--text);
+        font-size: 13.5px;
+        font-weight: 700;
+      }
+      .external .shape {
+        stroke-dasharray: 2 3;
+        fill: var(--sea);
+      }
+      .boundary-box {
+        fill: none;
+        stroke: var(--node-line);
+        stroke-dasharray: 1 5;
+        stroke-linecap: round;
+        stroke-width: 1.5;
+      }
+      .boundary-name {
+        fill: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .edge-line {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.2;
+      }
+      .edge-head {
+        fill: var(--edge);
+      }
+      .edge-label text {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .node.has-children {
+        cursor: zoom-in;
+      }
+      .dim {
+        opacity: 0.22;
+      }
+      .node.added .shape {
+        stroke: var(--added);
+        stroke-width: 2;
+      }
+      .node.added .node-kind {
+        fill: var(--added);
+      }
+      .node.inside-added .shape {
+        stroke: var(--added);
+        stroke-dasharray: 5 3;
+      }
+      .edge.added .edge-line {
+        stroke: var(--added);
+        stroke-width: 2;
+      }
+      .edge.added .edge-head {
+        fill: var(--added);
+      }
+      .edge-label.added text {
+        fill: var(--added);
+      }
+      .edge.changed .edge-line {
+        stroke: var(--added);
+        stroke-width: 2;
+        stroke-dasharray: 2 3;
+      }
+      .edge.changed .edge-head {
+        fill: var(--added);
+      }
+      .edge.drift .edge-line {
+        stroke: var(--drift);
+        stroke-width: 2.4;
+      }
+      .edge.drift .edge-head {
+        fill: var(--drift);
+      }
+      .edge-label.drift text {
+        fill: var(--drift);
+        font-weight: 700;
+        font-size: 12px;
+      }
+      .node.unbuilt .shape {
+        fill: none;
+        stroke-dasharray: 4 4;
+      }
+      .node.unbuilt text {
+        opacity: 0.5;
+      }
+      .glow {
+        filter: blur(14px);
+        fill: var(--heat);
+      }
+      .heat-figure {
+        fill: var(--heat);
+        font-size: 12px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .edge.step .edge-line {
+        stroke: var(--text);
+        stroke-width: 1.8;
+      }
+      .edge.step .edge-head {
+        fill: var(--text);
+      }
+      .edge.step.untested .edge-line {
+        stroke: var(--untested);
+        stroke-dasharray: 4 4;
+      }
+      .edge.step.untested .edge-head {
+        fill: var(--untested);
+      }
+      .edge.step.on .edge-line {
+        stroke-width: 3.5;
+      }
+      .badge circle {
+        fill: var(--sea);
+        stroke: var(--text);
+        stroke-width: 1.3;
+      }
+      .badge text {
+        fill: var(--text);
+        font-size: 10.5px;
+        font-weight: 700;
+      }
+      .badge.untested circle {
+        stroke: var(--untested);
+      }
+      .badge.untested text {
+        fill: var(--untested);
+      }
+
+      @media (max-width: 760px) {
+        body {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto auto;
+        }
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .canvas {
+          padding: 4px 8px 24px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .shape {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <p class="pr">#42, share-a-basket at 3f9c2e1</p>
+      <h1>Share a basket by email</h1>
+      <div class="tally">
+        <span class="bad"><b>3</b> fail</span><span><b>4</b> pass</span><span><b>1</b> flagged</span>
+      </div>
+      <details class="checks">
+        <summary>All checks</summary>
+        <ul id="checks"></ul>
+      </details>
+      <ol class="route" id="route"></ol>
+    </aside>
+    <div class="map">
+      <nav class="crumbs" id="crumbs"></nav>
+      <div class="canvas" id="canvas"></div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="diagram.js"></script>
+    <script>
+      const P = window.PAGE,
+        M = P.mock;
+      const $ = (id) => document.getElementById(id);
+      const add = (parent, tag, text, cls) => {
+        const n = document.createElement(tag);
+        if (text !== undefined) n.textContent = text;
+        if (cls) n.className = cls;
+        parent.appendChild(n);
+        return n;
+      };
+      const chain = (id) => {
+        const out = [];
+        for (let e = P.elements[id]; e; e = P.elements[e.parent]) out.unshift(e);
+        return out;
+      };
+      const below = (id) =>
+        Object.keys(P.elements).filter((x) => x !== id && chain(x).some((e) => e === P.elements[id]));
+      const hasLevel = (id) => P.levels.some((l) => l.id === id);
+      const total =
+        Object.values(M.code).reduce((s, c) => s + c.added + c.removed, 0) +
+        M.outside.reduce((s, f) => s + f[1] + f[2], 0);
+      const linesIn = (id) =>
+        [id, ...below(id)].reduce((s, x) => s + (M.code[x] ? M.code[x].added + M.code[x].removed : 0), 0);
+      const view = P.views.find((v) => v.id === "req-5");
+      const trace = M.traces["req-5"];
+
+      for (const c of M.checks)
+        add(
+          $("checks"),
+          "li",
+          `${c.status === "passed" ? "Pass" : c.status === "failed" ? "Fail" : "Flag"}: ${c.name}${c.note && c.status !== "passed" ? `. ${c.note}` : ""}`,
+          c.status,
+        );
+
+      const state = { stop: 1, level: "basketApi", side: "change", step: null };
+
+      const stops = [
+        {
+          n: 1,
+          q: "Did the target change?",
+          a: "Yes: basket sharing, sent through an outbox",
+          tone: "ok",
+          body: (b) => {
+            add(
+              b,
+              "p",
+              "The design adds Basket sharing and Email outbox to the Basket API, and the Email provider beside Basket. Merging approves it.",
+            );
+            const seg = add(b, "div", undefined, "seg");
+            for (const [k, label] of [
+              ["before", "Before"],
+              ["change", "Change"],
+              ["after", "After"],
+            ]) {
+              const btn = add(seg, "button", label);
+              btn.setAttribute("aria-pressed", String(state.side === k));
+              btn.onclick = (e) => {
+                e.stopPropagation();
+                state.side = k;
+                draw();
+              };
+            }
+            const p = add(b, "p");
+            add(p, "b", M.adr.title);
+            add(p, "span", `. ${M.adr.reason}`);
+          },
+        },
+        {
+          n: 2,
+          q: "Where did the code change?",
+          a: "Mostly in Basket sharing",
+          tone: "ok",
+          body: (b) => {
+            add(b, "p", "292 lines in 8 files. The brighter the glow, the more of the PR's code is there.");
+            const ul = add(b, "ul", undefined, "files");
+            const rows = [
+              ...Object.entries(M.code).map(([id, c]) => [P.elements[id].name, c.added, c.removed, ""]),
+              ...M.outside.map((f) => ["Outside the model: " + f[0].split("/").pop(), f[1], f[2], "out"]),
+            ].sort((x, y) => y[1] + y[2] - x[1] - x[2]);
+            for (const [name, a, r, cls] of rows) {
+              const li = add(ul, "li", undefined, cls);
+              add(li, "span", name);
+              add(li, "span", `+${a} −${r}`, "n");
+            }
+            add(b, "p", "Email outbox has no code yet.");
+          },
+        },
+        {
+          n: 3,
+          q: "Does the as-built match the target?",
+          a: "No: the controller reaches the repository",
+          tone: "warn",
+          body: (b) => add(b, "p", M.driftAdvice.d0),
+        },
+        {
+          n: 4,
+          q: "Do the tests take the dynamic views?",
+          a: "Partly: #5 stops before the outbox",
+          tone: "warn",
+          body: (b) => {
+            add(b, "p", trace.note);
+            const ol = add(b, "ol", undefined, "steps");
+            for (const s of view.steps) {
+              const li = add(
+                ol,
+                "li",
+                undefined,
+                `${trace.untested.includes(s.order) ? "untested" : ""} ${state.step === s.order ? "on" : ""}`,
+              );
+              add(li, "span", s.order);
+              add(li, "span", s.description);
+              li.onclick = (e) => {
+                e.stopPropagation();
+                state.step = state.step === s.order ? null : s.order;
+                draw();
+              };
+            }
+            add(b, "p", "The six other views don't change, and their tests take every step.");
+          },
+        },
+      ];
+
+      function drawRail() {
+        const route = $("route");
+        route.replaceChildren();
+        for (const s of stops) {
+          const li = add(route, "li", undefined, `stop ${s.tone} ${state.stop === s.n ? "active" : ""}`);
+          add(li, "span", String(s.n), "marker");
+          const head = add(li, "button", undefined, "head");
+          add(head, "span", s.q, "q");
+          add(head, "span", s.a, "a");
+          head.onclick = () => {
+            state.stop = s.n;
+            state.step = null;
+            if (s.n >= 3) state.level = "basketApi";
+            draw();
+          };
+          const body = add(li, "div", undefined, "body");
+          if (state.stop === s.n) s.body(body);
+        }
+      }
+
+      function drawCrumbs() {
+        const c = $("crumbs");
+        c.replaceChildren();
+        const path = state.level === "context" ? [] : chain(state.level);
+        const items = [["context", "System context"], ...path.map((e) => [e.id, e.name])];
+        items.forEach(([id, name], i) => {
+          if (i > 0) add(c, "span", "›");
+          if (i === items.length - 1) add(c, "span", name, "here");
+          else {
+            const b = add(c, "button", name);
+            b.onclick = () => {
+              state.level = id;
+              draw();
+            };
+          }
+        });
+      }
+
+      function drawMap() {
+        const level = P.levels.find((l) => l.id === state.level);
+        const lens = state.stop;
+        const addedish = (id) => P.elements[id].mark === "added";
+        const containsAdded = (id) => below(id).some(addedish);
+        const viewEdges = new Map();
+        if (lens === 4 && state.level === "basketApi")
+          for (const s of view.steps) {
+            const e = Diagram.stepEdge("basketApi", s);
+            if (e) viewEdges.set(e.id, [...(viewEdges.get(e.id) ?? []), s]);
+          }
+        const inView = new Set(view.steps.flatMap((s) => [s.source, s.destination]));
+        const opts = {
+          drift: lens === 3,
+          nodeClass: (id) => {
+            const cls = [hasLevel(id) ? "has-children" : ""];
+            if (M.unbuilt.includes(id)) cls.push("unbuilt");
+            if (lens === 1) {
+              if (addedish(id)) cls.push(state.side === "before" ? "dim" : "added");
+              else if (containsAdded(id) && state.side !== "before") cls.push("inside-added");
+              else if (state.side === "change") cls.push("dim");
+            }
+            if (lens === 2 && linesIn(id) === 0) cls.push("dim");
+            if (lens === 3 && !["basketController", "basketRepository", "basketService"].includes(id)) cls.push("dim");
+            if (lens === 4 && state.level === "basketApi" && !inView.has(id)) cls.push("dim");
+            return cls.join(" ");
+          },
+          edgeClass: (e) => {
+            if (lens === 1) {
+              if (e.mark && state.side !== "before") return e.mark;
+              if (e.mark === "added" && state.side === "before") return "dim";
+              return state.side === "change" ? "dim" : "";
+            }
+            if (lens === 3) return e.drift ? "" : "dim";
+            if (lens === 4 && state.level === "basketApi") {
+              const steps = viewEdges.get(e.id);
+              if (!steps) return "dim";
+              return `step ${steps.every((s) => trace.untested.includes(s.order)) ? "untested" : ""} ${steps.some((s) => s.order === state.step) ? "on" : ""}`;
+            }
+            return "dim";
+          },
+          label: (e) => (lens === 4 || /dim/.test(opts.edgeClass(e)) ? null : e.label),
+          decorate: (id, g, box) => {
+            if (hasLevel(id))
+              g.addEventListener("click", () => {
+                state.level = id;
+                draw();
+              });
+            if (lens !== 2) return;
+            const lines = linesIn(id);
+            if (lines === 0) return;
+            const r = 20 + 70 * Math.sqrt(lines / total);
+            const glow = Diagram.el("ellipse", {
+              cx: box.x + box.width / 2,
+              cy: box.y + box.height / 2,
+              rx: r + box.width / 3,
+              ry: r,
+              class: "glow",
+              opacity: 0.25 + 0.6 * (lines / total),
+            });
+            g.insertBefore(glow, g.firstChild);
+            const own = M.code[id];
+            const fig = own ? `+${own.added} −${own.removed}` : `${lines} lines inside`;
+            Diagram.text(g, fig, {
+              x: box.x + box.width - 8,
+              y: box.y + 15,
+              class: "heat-figure",
+              "text-anchor": "end",
+            });
+          },
+        };
+        const svg = Diagram.render(state.level, opts);
+        if (lens === 4 && state.level === "basketApi") {
+          for (const [id, steps] of viewEdges) {
+            const { mid } = svg.edges[id];
+            steps.forEach((s, i) => {
+              const g = Diagram.el(
+                "g",
+                { class: `badge ${trace.untested.includes(s.order) ? "untested" : ""}` },
+                svg.querySelector(".labels"),
+              );
+              Diagram.el("circle", { cx: mid[0] + i * 22, cy: mid[1], r: 9 }, g);
+              Diagram.text(g, s.order, { x: mid[0] + i * 22, y: mid[1] + 3.5, "text-anchor": "middle" });
+            });
+          }
+        }
+        $("canvas").replaceChildren(svg);
+      }
+
+      const fromHash = /stop=(\d)/.exec(location.hash);
+      if (fromHash) state.stop = Number(fromHash[1]);
+      function draw() {
+        drawRail();
+        drawCrumbs();
+        drawMap();
+      }
+      draw();
+    </script>
+  </body>
+</html>

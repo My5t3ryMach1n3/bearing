@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Option A, the briefing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #161a22;
+        --raise: #1d222c;
+        --text: #e8eaef;
+        --muted: #9aa3b2;
+        --faint: #6b7385;
+        --line: #2e3542;
+        --node: #1f2530;
+        --node-line: #4a5366;
+        --edge: #7d8698;
+        --added: #74b9ff;
+        --added-bg: #172a40;
+        --changed: #e6c36a;
+        --drift: #ff8a80;
+        --drift-bg: #3a1f22;
+        --pass: #8fd3a8;
+        --untested: #e6c36a;
+        --serif: "Newsreader", Georgia, serif;
+        --sans: "Public Sans", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.55 var(--sans);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 48px 20px 96px;
+      }
+      a {
+        color: var(--added);
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+      h1 {
+        font: 500 34px/1.15 var(--serif);
+        margin: 6px 0 20px;
+        letter-spacing: -0.01em;
+      }
+      .verdict {
+        font: 400 21px/1.4 var(--serif);
+        margin: 0 0 18px;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 4px 24px;
+        padding: 0;
+        margin: 0 0 8px;
+        list-style: none;
+        font-size: 14px;
+      }
+      .checks li {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+      }
+      .checks .status {
+        width: 54px;
+        flex: none;
+        color: var(--muted);
+      }
+      .checks .failed .status {
+        color: var(--drift);
+      }
+      .checks .flagged .status {
+        color: var(--changed);
+      }
+      .checks .passed .status {
+        color: var(--pass);
+      }
+      .checks .note {
+        color: var(--muted);
+      }
+
+      section {
+        border-top: 1px solid var(--line);
+        padding: 36px 0 8px;
+        margin-top: 36px;
+      }
+      .question {
+        display: flex;
+        gap: 12px;
+        align-items: baseline;
+        color: var(--muted);
+        margin: 0;
+        font-size: 14px;
+      }
+      .question b {
+        font-weight: 600;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      h2 {
+        font: 500 25px/1.3 var(--serif);
+        margin: 8px 0 14px;
+      }
+      section > p {
+        max-width: 64ch;
+        margin: 0 0 14px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .figure {
+        margin: 22px 0 10px;
+        background: var(--raise);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .figure svg {
+        display: block;
+        width: 100%;
+        max-width: var(--natural-width);
+        height: auto;
+        margin: 0 auto;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 20px;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 10px 4px 0;
+      }
+      .legend i {
+        display: inline-block;
+        width: 18px;
+        height: 0;
+        border-top: 2px solid;
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      .files {
+        font-size: 14px;
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 8px;
+      }
+      .files td {
+        padding: 4px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .files td.n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        width: 9ch;
+      }
+      .files .out td:first-child {
+        color: var(--changed);
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .adr {
+        border-left: 2px solid var(--line);
+        padding: 2px 0 2px 16px;
+        margin: 16px 0;
+      }
+      .adr p {
+        margin: 4px 0;
+      }
+      ol.steps {
+        padding-left: 0;
+        list-style: none;
+        font-size: 14px;
+        margin: 6px 0;
+      }
+      ol.steps li {
+        display: grid;
+        grid-template-columns: 2.2em 1fr;
+        padding: 3px 0;
+      }
+      ol.steps li span:first-child {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      ol.steps li.untested {
+        color: var(--untested);
+      }
+      ol.steps li.untested span:first-child {
+        color: var(--untested);
+      }
+      .quiet {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      /* Diagram */
+      .diagram {
+        font-family: var(--sans);
+      }
+      .shape {
+        fill: var(--node);
+        stroke: var(--node-line);
+        stroke-width: 1.2;
+      }
+      .shape-line {
+        fill: none;
+        stroke: var(--node-line);
+      }
+      .shape-dot {
+        fill: var(--node-line);
+      }
+      .node-kind,
+      .node-tech {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .node-name {
+        fill: var(--text);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .external .shape {
+        fill: transparent;
+        stroke-dasharray: 3 3;
+      }
+      .external .node-name {
+        fill: var(--muted);
+      }
+      .boundary-box {
+        fill: none;
+        stroke: var(--line);
+        stroke-width: 1.2;
+      }
+      .boundary-name {
+        fill: var(--faint);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .edge-line {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.2;
+      }
+      .edge-head {
+        fill: var(--edge);
+      }
+      .edge-label text {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .node.added .shape {
+        stroke: var(--added);
+        fill: var(--added-bg);
+        stroke-width: 1.6;
+      }
+      .edge.added .edge-line {
+        stroke: var(--added);
+        stroke-width: 1.8;
+      }
+      .edge.added .edge-head {
+        fill: var(--added);
+      }
+      .edge-label.added text {
+        fill: var(--added);
+      }
+      .edge.changed .edge-line {
+        stroke: var(--changed);
+        stroke-width: 1.8;
+      }
+      .edge.changed .edge-head {
+        fill: var(--changed);
+      }
+      .edge.drift .edge-line {
+        stroke: var(--drift);
+        stroke-width: 2;
+        stroke-dasharray: 6 4;
+      }
+      .edge.drift .edge-head {
+        fill: var(--drift);
+      }
+      .edge-label.drift text {
+        fill: var(--drift);
+        font-weight: 600;
+      }
+      .node.unbuilt .shape {
+        fill: transparent;
+        stroke-dasharray: 4 4;
+        opacity: 0.7;
+      }
+      .node.unbuilt text {
+        opacity: 0.55;
+      }
+      .edge.context .edge-line {
+        stroke: var(--line);
+      }
+      .edge.context .edge-head {
+        fill: var(--line);
+      }
+      .edge.untested .edge-line {
+        stroke: var(--untested);
+        stroke-dasharray: 3 4;
+      }
+      .edge.untested .edge-head {
+        fill: var(--untested);
+      }
+      .edge.taken .edge-line {
+        stroke: var(--text);
+        stroke-width: 1.6;
+      }
+      .edge.taken .edge-head {
+        fill: var(--text);
+      }
+      .step-badge circle {
+        fill: var(--bg);
+        stroke: var(--text);
+        stroke-width: 1.2;
+      }
+      .step-badge text {
+        fill: var(--text);
+        font-size: 10.5px;
+        font-weight: 600;
+      }
+      .step-badge.untested circle {
+        stroke: var(--untested);
+      }
+      .step-badge.untested text {
+        fill: var(--untested);
+      }
+      .heat-figure {
+        fill: var(--text);
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .heat-none {
+        fill: var(--faint);
+        font-size: 11px;
+      }
+
+      @media (max-width: 560px) {
+        h1 {
+          font-size: 28px;
+        }
+        h2 {
+          font-size: 21px;
+        }
+        .verdict {
+          font-size: 18px;
+        }
+        .figure {
+          padding: 4px;
+          margin-left: -12px;
+          margin-right: -12px;
+          border-radius: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p>Pull request #42, share-a-basket at 3f9c2e1</p>
+        <h1>Share a basket by email</h1>
+        <p class="verdict" id="verdict"></p>
+        <ul class="checks" id="checks"></ul>
+      </header>
+
+      <section id="target">
+        <p class="question"><b>1</b> Did the target change?</p>
+        <h2>Yes. Basket gains basket sharing, sent by email through an outbox.</h2>
+        <p>
+          The design adds two components to the Basket API and a new external system, the Email provider. Merging this
+          PR approves the change.
+        </p>
+        <div class="figure" id="fig-target"></div>
+        <div class="legend">
+          <span><i style="color: var(--added)"></i>Added</span><span><i style="color: var(--changed)"></i>Changed</span>
+        </div>
+        <div class="adr" id="adr"></div>
+      </section>
+
+      <section id="code">
+        <p class="question"><b>2</b> Where did the code change?</p>
+        <h2>Mostly in basket sharing, as the design says it should be.</h2>
+        <p>
+          246 lines in four components of the Basket API, and 46 lines in one file no component holds. Email outbox has
+          no code yet.
+        </p>
+        <div class="figure" id="fig-code"></div>
+        <table class="files" id="files"></table>
+      </section>
+
+      <section id="drift">
+        <p class="question"><b>3</b> Does the as-built architecture match the target?</p>
+        <h2>Not quite. The controller reaches the repository directly.</h2>
+        <p id="advice"></p>
+        <div class="figure" id="fig-drift"></div>
+        <div class="legend">
+          <span><i style="color: var(--drift); border-top-style: dashed"></i>In the code, not in the target</span>
+        </div>
+      </section>
+
+      <section id="behaviour">
+        <p class="question"><b>4</b> Is there evidence the code works as the dynamic views say?</p>
+        <h2>Partly. Sharing is tested as far as queuing the email.</h2>
+        <p>
+          #5/AC1 takes steps 1 to 8 of the view for #5, then stops: Email outbox has no code yet, so nothing queues or
+          sends the email.
+        </p>
+        <div class="figure" id="fig-view"></div>
+        <ol class="steps" id="steps"></ol>
+        <p class="quiet">The six other dynamic views don't change, and their tests still take every step.</p>
+      </section>
+
+      <section id="explore">
+        <p class="question"><b>5</b> Explore</p>
+        <p class="muted">The whole architecture, level by level, with every mode. Not mocked in this round.</p>
+      </section>
+    </main>
+
+    <script src="data.js"></script>
+    <script src="diagram.js"></script>
+    <script>
+      const P = window.PAGE;
+      const M = P.mock;
+      const $ = (id) => document.getElementById(id);
+      const add = (parent, tag, text, cls) => {
+        const node = document.createElement(tag);
+        if (text !== undefined) node.textContent = text;
+        if (cls) node.className = cls;
+        parent.appendChild(node);
+        return node;
+      };
+
+      const failed = M.checks.filter((c) => c.status === "failed").length;
+      $("verdict").textContent = `${failed} checks fail. Read sections 3 and 4 before merging.`;
+      for (const c of M.checks) {
+        const li = add($("checks"), "li", undefined, c.status);
+        add(li, "span", c.status === "passed" ? "Pass" : c.status === "failed" ? "Fail" : "Flag", "status");
+        const t = add(li, "span");
+        add(t, "span", c.name);
+        if (c.note && c.status !== "passed") {
+          t.appendChild(document.createElement("br"));
+          add(t, "span", c.note, "note");
+        }
+      }
+
+      // 1. The change, at the level where it happens, with only what it touches and their neighbours.
+      const changed = [
+        "basketController",
+        "basketSharing",
+        "emailOutbox",
+        "basketService",
+        "database",
+        "emailProvider",
+      ];
+      $("fig-target").appendChild(
+        Diagram.render("basketApi", {
+          include: changed,
+          nodeClass: (id) => P.elements[id].mark ?? "",
+          edgeClass: (e) => e.mark ?? "context",
+          label: (e) => (e.mark ? e.label : null),
+        }),
+      );
+      const adr = $("adr");
+      add(adr, "p", M.adr.title).style.fontWeight = 600;
+      add(adr, "p", M.adr.reason);
+      const alt = add(adr, "details");
+      add(alt, "summary", "Alternatives considered");
+      add(alt, "p", M.adr.alternatives);
+
+      // 2. Heat: each component tinted by its share of the lines changed.
+      const total =
+        Object.values(M.code).reduce((s, c) => s + c.added + c.removed, 0) +
+        M.outside.reduce((s, f) => s + f[1] + f[2], 0);
+      const components = P.levels
+        .find((l) => l.id === "basketApi")
+        .nodes.filter((id) => P.elements[id].parent === "basketApi");
+      $("fig-code").appendChild(
+        Diagram.render("basketApi", {
+          include: components,
+          technology: false,
+          kind: false,
+          edgeClass: () => "context",
+          label: () => null,
+          nodeClass: (id) => (M.unbuilt.includes(id) ? "unbuilt" : ""),
+          decorate: (id, g, box) => {
+            const c = M.code[id];
+            const share = c ? (c.added + c.removed) / total : 0;
+            const shape = g.querySelector(".shape");
+            if (c) shape.style.fill = `color-mix(in oklch, #b48cff ${Math.round(12 + share * 120)}%, var(--node))`;
+            if (c)
+              shape.style.stroke = `color-mix(in oklch, #b48cff ${Math.round(30 + share * 100)}%, var(--node-line))`;
+            const y = box.y + box.height - 14;
+            if (c)
+              Diagram.text(g, `+${c.added} −${c.removed}`, {
+                x: box.x + box.width / 2,
+                y,
+                class: "heat-figure",
+                "text-anchor": "middle",
+              });
+            else if (M.unbuilt.includes(id))
+              Diagram.text(g, "no code yet", {
+                x: box.x + box.width / 2,
+                y,
+                class: "heat-none",
+                "text-anchor": "middle",
+              });
+            // Re-centre the name a touch higher to make room.
+            g.querySelector(".node-name").setAttribute("y", box.y + box.height / 2 + 1);
+          },
+        }),
+      );
+      const rows = [
+        ...Object.entries(M.code).flatMap(([id, c]) => c.files.map((f) => [f, P.elements[id].name, ""])),
+        ...M.outside.map((f) => [f, "Outside the model", "out"]),
+      ].sort((a, b) => b[0][1] + b[0][2] - (a[0][1] + a[0][2]));
+      for (const [[path, a, r], owner, cls] of rows) {
+        const tr = add($("files"), "tr", undefined, cls);
+        const td = add(tr, "td");
+        add(td, "span", path);
+        add(td, "span", `  ${owner}`, "muted");
+        add(tr, "td", `+${a} −${r}`, "n");
+      }
+
+      // 3. Drift, with the declared path it skips.
+      $("advice").textContent = M.driftAdvice.d0;
+      $("fig-drift").appendChild(
+        Diagram.render("basketApi", {
+          include: ["basketController", "basketService", "basketRepository", "database"],
+          drift: true,
+          edgeClass: (e) => (e.drift ? "" : "context"),
+        }),
+      );
+
+      // 4. The view for #5, stepped.
+      const view = P.views.find((v) => v.id === "req-5");
+      const trace = M.traces["req-5"];
+      const involved = [...new Set(view.steps.flatMap((s) => [s.source, s.destination]))];
+      const byEdge = new Map();
+      for (const s of view.steps) {
+        const e = Diagram.stepEdge("basketApi", s);
+        if (e) byEdge.set(e.id, [...(byEdge.get(e.id) ?? []), s]);
+      }
+      const svg = Diagram.render("basketApi", {
+        include: involved,
+        edgeFilter: (e) => byEdge.has(e.id),
+        label: () => null,
+        nodeClass: (id) => (M.unbuilt.includes(id) ? "unbuilt" : ""),
+        edgeClass: (e) => (byEdge.get(e.id).every((s) => trace.untested.includes(s.order)) ? "untested" : "taken"),
+      });
+      for (const [id, steps] of byEdge) {
+        const { mid } = svg.edges[id];
+        steps.forEach((s, i) => {
+          const g = Diagram.el(
+            "g",
+            { class: `step-badge ${trace.untested.includes(s.order) ? "untested" : ""}` },
+            svg.querySelector(".labels"),
+          );
+          const x = mid[0] + i * 22,
+            y = mid[1];
+          Diagram.el("circle", { cx: x, cy: y, r: 9 }, g);
+          Diagram.text(g, s.order, { x, y: y + 3.5, "text-anchor": "middle" });
+        });
+      }
+      $("fig-view").appendChild(svg);
+      for (const s of view.steps) {
+        const li = add($("steps"), "li", undefined, trace.untested.includes(s.order) ? "untested" : "");
+        add(li, "span", s.order);
+        add(
+          li,
+          "span",
+          `${P.elements[s.source].name} to ${P.elements[s.destination].name}: ${s.description}${trace.untested.includes(s.order) ? ". No test takes it" : ""}`,
+        );
+      }
+    </script>
+  </body>
+</html>
