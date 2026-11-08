@@ -206,6 +206,10 @@ describe("deriveImports", () => {
     expect(() => deriveImports(missing, components)).toThrow(
       new DeriveError("missing.json not found; check the TypeScript project file in .bearing/config.yaml"),
     );
+    // With no code yet, as on a new repo's first design PR, there's nothing to read.
+    const empty = repo({ "README.md": "# New\n", "src/a/index.test.ts": "", "node_modules/x/index.js": "" });
+    const noCode = { ...empty, languages: [{ name: "typescript" as const, root: ".", project: "missing.json" }] };
+    expect(deriveImports(noCode, components)).toEqual({ components: [], relationships: [], unmapped: [] });
     writeFileSync(join(config.root, "tsconfig.json"), '{ "compilerOptions": { "module": "nope" } }');
     expect(() => deriveImports(config, components)).toThrow(/tsconfig\.json: .*--module/);
   });

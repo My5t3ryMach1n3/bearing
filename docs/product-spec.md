@@ -446,7 +446,7 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
 
 ### How imports map to relationships
 
-`bearing derive` maps every file in each configured language's project, the tsconfig for TypeScript, to the component whose `bearing.path` holds it. Each import from one component's file to code another component declares is an as-built relationship, `<source>-><destination>`, listed with the file and line of every import that makes it. Imports inside one component make none.
+`bearing derive` maps every file in each configured language's project, the tsconfig for TypeScript, to the component whose `bearing.path` holds it. Each import from one component's file to code another component declares is an as-built relationship, `<source>-><destination>`, listed with the file and line of every import that makes it. Imports inside one component make none. A language with no project file and no source files yet, as in a new repo whose first PR designs the target, has nothing to read and adds nothing; a project file missing beside code fails the derive.
 
 Imports are resolved the way TypeScript resolves them, `tsconfig` paths included, and followed through barrels and re-exports to the file that declares what they use, so reaching the repository's code through the service's index still reads as a dependency on the repository. Type-only imports count. `import * as` and `export * from` depend on everything the module exports; side-effect imports, `import()` and `require()` depend on the module's file. Packages are ignored.
 
