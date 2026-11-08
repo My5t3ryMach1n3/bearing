@@ -195,3 +195,18 @@ describe("formatSequence", () => {
     );
   });
 });
+
+// The levels moved into levels.ts, shared with the architecture page. The comment's sections on the walkthrough's
+// fixtures are pinned as they were before, so it can't drift from what reviewers already see.
+describe("the comment on the walkthrough's fixtures", () => {
+  it.each([
+    ["empty", "initial"],
+    ["initial", "sharing"],
+    ["before-guest", "guest"],
+    ["sharing", "initial"],
+  ])("is unchanged from %s to %s", async (before, after) => {
+    await expect(section(before, after)).toMatchFileSnapshot(
+      join(import.meta.dirname, "fixtures", "target-changes", "comments", `${before}-to-${after}.md`),
+    );
+  });
+});

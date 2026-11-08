@@ -262,7 +262,7 @@ export function formatComment(inputs: ReportInputs): string {
 const statusIcons = { passed: "✅", failed: "❌", skipped: "⏭️", flagged: "⚠️" };
 
 // One line on what a check found, for the summary table.
-function summarise(check: CheckReport["checks"][number]): string {
+export function summarise(check: CheckReport["checks"][number]): string {
   if (check.status === "skipped") return check.reason ?? "";
   const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   switch (check.check) {

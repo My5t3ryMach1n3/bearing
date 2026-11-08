@@ -1,4 +1,4 @@
-import { diffModels, type Changes, type Drift, type FieldChange, type ModelDiff } from "./diff.js";
+import { diffModels, type Changes, type Drift, type ModelDiff } from "./diff.js";
 import {
   formatMermaid,
   formatSequence,
@@ -7,6 +7,7 @@ import {
   type OverlayEdge,
   type OverlayNode,
 } from "./mermaid.js";
+import { elementsAt, levelsOf, markLevel, realChanges, type Level } from "./levels.js";
 import type { DeploymentElement, DynamicView, Element, Model, Relationship } from "./model.js";
 
 // The target-change section of the PR comment: what a PR changes about the architecture, in the order a reviewer
@@ -54,106 +55,45 @@ interface Diagram {
   leftOut: number;
 }
 
-// A change to anything but the requirements an item lists.
-const realChanges = (drift: Drift): FieldChange[] => drift.changes.filter((change) => change.field !== "requirements");
 const realDrift = (changes: Drift[]) => new Set(changes.filter((drift) => realChanges(drift).length > 0).map(idOf));
 const idOf = (item: { id: string }) => item.id;
 
-// One level of the model as a diagram sees it. `at` lifts an element to the one that stands for it at this level, or
-// gives undefined if the level doesn't draw it.
-interface Level {
+// A level of the target as the comment draws it, from levels.ts, with its headings and the box each element is drawn
+// in.
+interface CommentLevel {
+  level: Level;
   heading: string;
   firstHeading: string;
-  at: (id: string) => string | undefined;
   group: (element: Element) => string | undefined;
-  // An edge to draw must touch one of these, when given.
-  focus?: (id: string) => boolean;
 }
 
-// The target's levels: the system context, the containers, and the components of each container.
-function levels(before: Model, after: Model): Level[] {
-  const element = (id: string) => after.elements.get(id) ?? before.elements.get(id);
-  const all = [...new Map([...before.elements, ...after.elements]).values()];
-  const systemsWithContainers = new Set(all.filter((each) => each.type === "container").map((each) => each.parent));
-  const nameOf = (id: string | undefined) => (id === undefined ? undefined : element(id)?.name);
-
-  const root = (id: string): string | undefined => {
-    const found = element(id);
-    if (found === undefined) return undefined;
-    return found.parent === undefined ? id : root(found.parent);
-  };
-  const container = (id: string): string | undefined => {
-    const found = element(id);
-    if (found === undefined) return undefined;
-    if (found.type === "component") return found.parent;
-    return found.type === "softwareSystem" && systemsWithContainers.has(id) ? undefined : id;
-  };
-  const scopes = all.filter(
-    (each) => each.type === "container" && all.some((other) => other.type === "component" && other.parent === each.id),
-  );
-  return [
-    {
-      heading: "System context: what changes",
-      firstHeading: "System context",
-      at: root,
-      group: () => undefined,
-    },
-    {
-      heading: "Containers: what changes",
-      firstHeading: "Containers",
-      at: container,
-      group: (each) => (each.type === "container" ? nameOf(each.parent) : undefined),
-    },
-    ...scopes.map((scope): Level => {
-      const inScope = (id: string) => element(id)?.type === "component" && element(id)?.parent === scope.id;
-      return {
-        heading: `Components: what changes in ${scope.name}`,
-        firstHeading: `Components of ${scope.name}`,
-        at: (id) => {
-          if (inScope(id)) return id;
-          const lifted = container(id);
-          return lifted === scope.id ? undefined : lifted;
-        },
-        group: (each) => (inScope(each.id) ? scope.name : undefined),
-        focus: inScope,
-      };
-    }),
-  ];
-}
-
-interface LevelEdge {
-  source: string;
-  destination: string;
-  label: string;
-  // The relationship itself when it joins the two elements directly, rather than being lifted from below them.
-  direct?: string;
-}
-
-// The model's relationships as they read at a level, one per pair of elements.
-function edgesAt(model: Model, level: Level): Map<string, LevelEdge> {
-  const edges = new Map<string, LevelEdge>();
-  for (const relationship of model.relationships.values()) {
-    if (!model.elements.has(relationship.source) || !model.elements.has(relationship.destination)) continue;
-    const source = level.at(relationship.source);
-    const destination = level.at(relationship.destination);
-    if (source === undefined || destination === undefined || source === destination) continue;
-    if (level.focus !== undefined && !level.focus(source) && !level.focus(destination)) continue;
-    const key = `${source}->${destination}`;
-    const isDirect = source === relationship.source && destination === relationship.destination;
-    const existing = edges.get(key);
-    if (existing === undefined) {
-      edges.set(key, {
-        source,
-        destination,
-        label: relationship.description,
-        ...(isDirect ? { direct: relationship.id } : {}),
-      });
-    } else if (isDirect && existing.direct === undefined) {
-      existing.direct = relationship.id;
-      existing.label = relationship.description;
+function commentLevels(before: Model, after: Model): CommentLevel[] {
+  const all = levelsOf(before, after);
+  const systems = all.filter((level) => level.kind === "containers").length;
+  return all.map((level): CommentLevel => {
+    const scope = level.scope;
+    if (scope === undefined) {
+      return { level, heading: "System context: what changes", firstHeading: "System context", group: () => undefined };
     }
-  }
-  return edges;
+    const group = (element: Element) => (level.inside(element.id) ? scope.name : undefined);
+    // One software system's containers are just "Containers", as they were before each system had its own.
+    if (level.kind === "containers") {
+      return systems === 1
+        ? { level, heading: "Containers: what changes", firstHeading: "Containers", group }
+        : {
+            level,
+            heading: `Containers: what changes in ${scope.name}`,
+            firstHeading: `Containers of ${scope.name}`,
+            group,
+          };
+    }
+    return {
+      level,
+      heading: `Components: what changes in ${scope.name}`,
+      firstHeading: `Components of ${scope.name}`,
+      group,
+    };
+  });
 }
 
 // Keeps the marked elements, the ends of marked edges and then the neighbours with the most edges to them, up to
@@ -184,39 +124,28 @@ function trimmed(
 
 // A level's diagram: what changed there and its direct neighbours, or, for a first design, everything at that level.
 // Undefined for a level with nothing to show.
-function levelDiagram(level: Level, before: Model, after: Model, diff: ModelDiff, first: boolean): Diagram | undefined {
+function levelDiagram(
+  { level, heading, firstHeading, group: groupOf }: CommentLevel,
+  before: Model,
+  after: Model,
+  diff: ModelDiff,
+  first: boolean,
+): Diagram | undefined {
   const element = (id: string) => after.elements.get(id) ?? before.elements.get(id);
-  const changedElements = realDrift(diff.elements.drifted);
-  const changedRelationships = realDrift(diff.relationships.drifted);
-  const beforeEdges = edgesAt(before, level);
-  const afterEdges = edgesAt(after, level);
-
-  const marks = new Map<string, Mark>();
-  for (const id of new Set([...before.elements.keys(), ...after.elements.keys()])) {
-    if (level.at(id) !== id) continue;
-    if (!before.elements.has(id)) marks.set(id, "added");
-    else if (!after.elements.has(id)) marks.set(id, "removed");
-    else if (changedElements.has(id)) marks.set(id, "changed");
-  }
-  const edges: OverlayEdge[] = [];
-  for (const [key, edge] of new Map([...beforeEdges, ...afterEdges])) {
-    const mark: Mark | undefined = !beforeEdges.has(key)
-      ? "added"
-      : !afterEdges.has(key)
-        ? "removed"
-        : edge.direct !== undefined && changedRelationships.has(edge.direct)
-          ? "changed"
-          : undefined;
-    edges.push({
-      source: edge.source,
-      destination: edge.destination,
-      label: edge.label,
-      ...(mark === undefined || first ? {} : { mark }),
-    });
-  }
+  const marked = markLevel(level, before, after, diff);
+  const marks = new Map<string, Mark>(marked.elements);
+  const edges: OverlayEdge[] = [...marked.edges.values()].map((edge) => ({
+    source: edge.source,
+    destination: edge.destination,
+    label: edge.label,
+    ...(edge.mark === undefined || first ? {} : { mark: edge.mark }),
+  }));
   if (first) marks.clear();
 
-  const inFocus = (id: string) => level.focus === undefined || level.focus(id);
+  // What counts as changed here, rather than as a neighbour: what's inside a container on its components level, and
+  // anything a containers level or the system context holds.
+  const held = new Set([...elementsAt(before, level), ...elementsAt(after, level)]);
+  const inFocus = (id: string) => (level.kind === "components" ? level.inside(id) : held.has(id));
   const changes = [...marks.keys()].some(inFocus) || edges.some((edge) => edge.mark !== undefined);
   let required: string[];
   let neighbours: string[];
@@ -239,7 +168,7 @@ function levelDiagram(level: Level, before: Model, after: Model, diff: ModelDiff
   if (kept.size === 0) return undefined;
   const nodes = [...kept].map((id): OverlayNode => {
     const found = element(id)!;
-    const group = level.group(found);
+    const group = groupOf(found);
     const mark = marks.get(id);
     return {
       id,
@@ -249,7 +178,7 @@ function levelDiagram(level: Level, before: Model, after: Model, diff: ModelDiff
       ...(mark === undefined ? {} : { mark }),
     };
   });
-  return { heading: first ? level.firstHeading : level.heading, overlay: { nodes, edges: drawn }, leftOut };
+  return { heading: first ? firstHeading : heading, overlay: { nodes, edges: drawn }, leftOut };
 }
 
 // Each deployment environment with something to show. A node that only holds others is the box they're drawn in.
@@ -565,7 +494,7 @@ export function formatTargetChange(
     const summary = first ? [formatFirstSummary(after)] : formatSummary(before, after, diff);
     if (summary.length > 0) lines.push("", ...summary.map((line) => (first ? line : `- ${line}`)));
     const diagrams = [
-      ...levels(before, after).flatMap((level) => levelDiagram(level, before, after, diff, first) ?? []),
+      ...commentLevels(before, after).flatMap((level) => levelDiagram(level, before, after, diff, first) ?? []),
       ...deploymentDiagrams(before, after, diff, first),
     ];
     for (const diagram of diagrams) lines.push("", formatDiagram(diagram));
