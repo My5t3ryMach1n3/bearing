@@ -22,7 +22,7 @@ The interface is in [`src/lang/adapter.ts`](../src/lang/adapter.ts). The TypeScr
 - `components` are the target's component paths, ordered longest first. Use `componentOf` from `src/paths.ts` to find which component owns a file.
 - Return repo-relative paths with forward slashes. Leave out tests and declaration files (`testFile` and `declarationFile` in `src/paths.ts`).
 - An import counts towards the component that declares the code it uses, not the module it names. Follow re-exports and barrels where the language has them. Leave out packages, code outside the repo, and imports within one component.
-- Throw `DeriveError` with a message that names the config key to fix when the project file is missing or broken.
+- Throw `DeriveError` with a message that names the config key to fix when the project file is missing or broken. Bearing doesn't call the adapter for a language with no project file and no source files yet.
 
 Bearing merges every language's result. When two configured roots hold the same file, it counts once, for the deepest root whose adapter's `sourceFile` matches.
 

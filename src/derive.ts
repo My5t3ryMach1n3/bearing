@@ -1,6 +1,8 @@
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
-import { ConfigError, loadConfig, type Config } from "./config.js";
+import { functionalFile } from "./code-changes.js";
+import { ConfigError, loadConfig, type Config, type LanguageConfig } from "./config.js";
 import { loadModel } from "./diff.js";
 import { DeriveError } from "./lang/adapter.js";
 import { adapters, languageOf } from "./lang/index.js";
@@ -57,6 +59,7 @@ export function deriveImports(config: Config, target: Model): ImportGraph {
   const unmapped = new Set<string>();
   const relationships = new Map<string, ImportRelationship>();
   for (const language of config.languages) {
+    if (noCodeYet(config, language)) continue;
     const extracted = adapters[language.name].extractImports(config.root, language, components);
     const ours = (file: string) => languageOf(config, file) === language;
     for (const file of extracted.files.filter(ours)) {
@@ -98,6 +101,20 @@ export function deriveImports(config: Config, target: Model): ImportGraph {
 }
 
 // The as-built model the imports give: the target's components that own code, and the relationships between them.
+// A language with no project file and no source files yet, such as a new repo whose first PR designs the target:
+// there's no code to read, so it adds nothing. A project file missing beside code is still the adapter's error.
+function noCodeYet(config: Config, language: LanguageConfig): boolean {
+  if (existsSync(join(config.root, language.root, language.project))) return false;
+  const hasCode = (dir: string): boolean =>
+    readdirSync(join(config.root, dir), { withFileTypes: true }).some((entry) => {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") return false;
+      const path = dir === "." ? entry.name : `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return hasCode(path);
+      return entry.isFile() && languageOf(config, path) === language && functionalFile(config, path);
+    });
+  return !existsSync(join(config.root, language.root)) || !hasCode(language.root);
+}
+
 export function importModel(target: Model, graph: ImportGraph): Model {
   const model: Model = {
     elements: new Map(),
