@@ -1,0 +1,475 @@
+{
+  "model": {
+    "people": [
+      {
+        "id": "1",
+        "name": "Shopper",
+        "description": "",
+        "tags": "Element,Person",
+        "relationships": [
+          { "id": "30", "sourceId": "1", "destinationId": "19", "description": "Shops using", "technology": "" },
+          { "id": "31", "sourceId": "1", "destinationId": "20", "description": "Shops using", "technology": "" }
+        ]
+      },
+      {
+        "id": "2",
+        "name": "Staff",
+        "description": "",
+        "tags": "Element,Person",
+        "relationships": [
+          {
+            "id": "32",
+            "sourceId": "2",
+            "destinationId": "19",
+            "description": "Manages orders using",
+            "technology": ""
+          }
+        ]
+      }
+    ],
+    "softwareSystems": [
+      {
+        "id": "25",
+        "name": "Shop",
+        "description": "",
+        "tags": "Element,Software System",
+        "containers": [
+          {
+            "id": "19",
+            "name": "Web app",
+            "description": "",
+            "technology": "TypeScript, React",
+            "tags": "Element,Container",
+            "components": [],
+            "relationships": [
+              {
+                "id": "33",
+                "sourceId": "19",
+                "destinationId": "3",
+                "description": "Signs in using",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "id": "34",
+                "sourceId": "19",
+                "destinationId": "4",
+                "description": "Browses products using",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "id": "35",
+                "sourceId": "19",
+                "destinationId": "5",
+                "description": "Fills baskets using",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "id": "36",
+                "sourceId": "19",
+                "destinationId": "6",
+                "description": "Places orders using",
+                "technology": "JSON/HTTPS"
+              }
+            ]
+          },
+          {
+            "id": "20",
+            "name": "Mobile app",
+            "description": "",
+            "technology": "Swift, iOS",
+            "tags": "Element,Container",
+            "components": [],
+            "relationships": [
+              {
+                "id": "37",
+                "sourceId": "20",
+                "destinationId": "4",
+                "description": "Browses products using",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "id": "38",
+                "sourceId": "20",
+                "destinationId": "5",
+                "description": "Fills baskets using",
+                "technology": "JSON/HTTPS"
+              },
+              {
+                "id": "39",
+                "sourceId": "20",
+                "destinationId": "6",
+                "description": "Places orders using",
+                "technology": "JSON/HTTPS"
+              }
+            ]
+          },
+          {
+            "id": "21",
+            "name": "Shop API",
+            "description": "",
+            "technology": "TypeScript, Node.js",
+            "tags": "Element,Container",
+            "components": [
+              { "id": "3", "name": "Auth", "description": "", "tags": "Element,Component", "relationships": [] },
+              {
+                "id": "4",
+                "name": "Catalogue controller",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "40",
+                    "sourceId": "4",
+                    "destinationId": "7",
+                    "description": "Looks up products with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "5",
+                "name": "Basket controller",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "41",
+                    "sourceId": "5",
+                    "destinationId": "8",
+                    "description": "Changes baskets with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "44",
+                    "sourceId": "5",
+                    "destinationId": "3",
+                    "description": "Checks sessions with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "6",
+                "name": "Order controller",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "42",
+                    "sourceId": "6",
+                    "destinationId": "9",
+                    "description": "Places orders with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "43",
+                    "sourceId": "6",
+                    "destinationId": "3",
+                    "description": "Checks sessions with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "7",
+                "name": "Catalogue service",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "45",
+                    "sourceId": "7",
+                    "destinationId": "11",
+                    "description": "Checks stock with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "53",
+                    "sourceId": "7",
+                    "destinationId": "23",
+                    "description": "Reads products from",
+                    "technology": "SQL"
+                  }
+                ]
+              },
+              {
+                "id": "8",
+                "name": "Basket service",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "46",
+                    "sourceId": "8",
+                    "destinationId": "7",
+                    "description": "Prices items with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "51",
+                    "sourceId": "8",
+                    "destinationId": "23",
+                    "description": "Reads and writes baskets in",
+                    "technology": "SQL"
+                  }
+                ]
+              },
+              {
+                "id": "9",
+                "name": "Order service",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "47",
+                    "sourceId": "9",
+                    "destinationId": "8",
+                    "description": "Reads the basket with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "48",
+                    "sourceId": "9",
+                    "destinationId": "10",
+                    "description": "Takes payment with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "49",
+                    "sourceId": "9",
+                    "destinationId": "12",
+                    "description": "Saves orders with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "50",
+                    "sourceId": "9",
+                    "destinationId": "13",
+                    "description": "Announces orders with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "10",
+                "name": "Payment client",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "54",
+                    "sourceId": "10",
+                    "destinationId": "26",
+                    "description": "Charges cards with",
+                    "technology": "JSON/HTTPS"
+                  }
+                ]
+              },
+              {
+                "id": "11",
+                "name": "Stock client",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "55",
+                    "sourceId": "11",
+                    "destinationId": "27",
+                    "description": "Reads stock levels from",
+                    "technology": "JSON/HTTPS"
+                  }
+                ]
+              },
+              {
+                "id": "12",
+                "name": "Order repository",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "52",
+                    "sourceId": "12",
+                    "destinationId": "23",
+                    "description": "Reads and writes orders in",
+                    "technology": "SQL"
+                  }
+                ]
+              },
+              {
+                "id": "13",
+                "name": "Event publisher",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "56",
+                    "sourceId": "13",
+                    "destinationId": "24",
+                    "description": "Sends order events to",
+                    "technology": ""
+                  }
+                ]
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "id": "22",
+            "name": "Order worker",
+            "description": "",
+            "technology": "Python",
+            "tags": "Element,Container",
+            "components": [
+              {
+                "id": "14",
+                "name": "Event consumer",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "58",
+                    "sourceId": "14",
+                    "destinationId": "15",
+                    "description": "Fulfils orders with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "15",
+                "name": "Fulfilment",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "59",
+                    "sourceId": "15",
+                    "destinationId": "18",
+                    "description": "Books shipping with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "60",
+                    "sourceId": "15",
+                    "destinationId": "17",
+                    "description": "Builds invoices with",
+                    "technology": ""
+                  },
+                  {
+                    "id": "61",
+                    "sourceId": "15",
+                    "destinationId": "16",
+                    "description": "Tells the shopper with",
+                    "technology": ""
+                  }
+                ]
+              },
+              {
+                "id": "16",
+                "name": "Emailer",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "62",
+                    "sourceId": "16",
+                    "destinationId": "28",
+                    "description": "Sends email with",
+                    "technology": "SMTP"
+                  }
+                ]
+              },
+              {
+                "id": "17",
+                "name": "Invoice builder",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "64",
+                    "sourceId": "17",
+                    "destinationId": "23",
+                    "description": "Reads orders from",
+                    "technology": "SQL"
+                  }
+                ]
+              },
+              {
+                "id": "18",
+                "name": "Shipping client",
+                "description": "",
+                "tags": "Element,Component",
+                "relationships": [
+                  {
+                    "id": "63",
+                    "sourceId": "18",
+                    "destinationId": "29",
+                    "description": "Books collections with",
+                    "technology": "JSON/HTTPS"
+                  }
+                ]
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "id": "23",
+            "name": "Database",
+            "description": "",
+            "technology": "PostgreSQL",
+            "tags": "Element,Container,Database",
+            "components": [],
+            "relationships": []
+          },
+          {
+            "id": "24",
+            "name": "Order events",
+            "description": "",
+            "technology": "Amazon SQS",
+            "tags": "Element,Container,Queue",
+            "components": [],
+            "relationships": [
+              {
+                "id": "57",
+                "sourceId": "24",
+                "destinationId": "14",
+                "description": "Delivers order events to",
+                "technology": ""
+              }
+            ]
+          }
+        ],
+        "relationships": []
+      },
+      {
+        "id": "26",
+        "name": "Payment provider",
+        "description": "",
+        "tags": "Element,Software System,External",
+        "relationships": []
+      },
+      {
+        "id": "27",
+        "name": "Warehouse",
+        "description": "",
+        "tags": "Element,Software System,External",
+        "relationships": []
+      },
+      {
+        "id": "28",
+        "name": "Email provider",
+        "description": "",
+        "tags": "Element,Software System,External",
+        "relationships": []
+      },
+      {
+        "id": "29",
+        "name": "Carrier",
+        "description": "",
+        "tags": "Element,Software System,External",
+        "relationships": []
+      }
+    ]
+  },
+  "views": { "configuration": { "styles": { "elements": [{ "tag": "Database", "shape": "Cylinder" }] } } }
+}

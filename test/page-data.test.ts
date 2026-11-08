@@ -1,36 +1,19 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runChecks, type CheckReport } from "../src/check.js";
+import { runChecks } from "../src/check.js";
 import { codeChanges, functionalFile, parseNumstat, sourceFiles, type FileChange } from "../src/code-changes.js";
 import { loadConfig } from "../src/config.js";
 import { modelFromWorkspace, type Element, type Model } from "../src/model.js";
 import { appearance, buildPageData, elementStyles, type PageInputs } from "../src/page-data.js";
 import { modesOf, shown } from "../src/page-modes.js";
 import { gatherReport } from "../src/report.js";
+import { skipped } from "./checks.js";
 import { basketDir, basketRepo, git, variantRepo } from "./basket.js";
 
 const fixture = (name: string) =>
   JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "target-changes", `${name}.json`), "utf8"));
 const load = (name: string) => modelFromWorkspace(fixture(name));
-
-// Every check skipped, for a test to fill in the ones it needs.
-function skipped(): CheckReport {
-  const base = { status: "skipped" as const, blocking: true as const, reason: "not run" };
-  return {
-    passed: true,
-    checks: [
-      { ...base, check: "valid", model: "architecture/workspace.dsl", problems: [] },
-      { ...base, check: "target", base: "main", proposed: [], moved: [] },
-      { ...base, check: "claim", mismatches: [] },
-      { ...base, check: "boundaries", undeclared: [], queues: [] },
-      { ...base, check: "deployment", added: [], removed: [], drifted: [], unknown: [] },
-      { ...base, check: "coverage", issues: [], criteria: [], recorded: 0 },
-      { ...base, check: "paths", issues: [], views: [] },
-      { check: "surplus", status: "skipped", blocking: false, outside: [], closed: [], untraced: [], traced: false },
-    ],
-  };
-}
 
 const sharingFiles = (): FileChange[] => [
   { path: "src/basket-api/basket-sharing/index.ts", added: 120, removed: 0 },
