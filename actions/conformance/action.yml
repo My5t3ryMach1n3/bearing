@@ -3,7 +3,8 @@
 # re-derives everything: no as-built model, trace or test result the branch commits is used. The job fails if the
 # target is invalid or a blocking check fails, and that result is `bearing/conformance`. The comment and check results
 # are uploaded for the `workflow_run` job in actions/report to post, since this job's token can't write to a fork's PR.
-# See the GitHub Action section of docs/product-spec.md.
+# Last, for a PR from this repo that leaves Bearing's workflows and config alone, it builds the architecture page and
+# uploads it unzipped, for the report job to link. See the GitHub Action section of docs/product-spec.md.
 name: Bearing conformance
 description: Validate the target, run the traced tests, derive the as-built model, check it and write the PR comment.
 
@@ -14,6 +15,11 @@ inputs:
   token:
     description: A read-only token, for reading the requirement issues.
     default: ${{ github.token }}
+  retention-days:
+    description: >-
+      How many days to keep the architecture page, from 1 to the repository's limit. Defaults to the repository's
+      artifact retention, 90 days unless changed.
+    default: ""
 
 runs:
   using: composite
@@ -74,6 +80,36 @@ runs:
         name: bearing-site
         path: ${{ runner.temp }}/bearing/site/
         if-no-files-found: ignore
+    # The architecture page, built from the checks' results above, never failing the job. Only for a PR from this repo,
+    # and not for one that changes Bearing's workflows or config, which would build it with the workflow it changes.
+    # `bearing post` checks both again itself before it links the page, since this job runs the PR's code.
+    - id: page
+      name: bearing page
+      if: github.event.pull_request.head.repo.full_name == github.repository
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BASE: ${{ inputs.base }}
+      run: |
+        changed="$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- .github/workflows .bearing ':!.bearing/claims')"
+        if [ -n "$changed" ]; then
+          echo "No architecture page: this PR changes Bearing's workflows or config:"
+          echo "$changed"
+          exit 0
+        fi
+        page="$RUNNER_TEMP/bearing/page/bearing-architecture.html"
+        mkdir -p "$(dirname "$page")"
+        bearing page --base "origin/$BASE" --check "$RUNNER_TEMP/bearing/report/check.json" --out "$page"
+        echo "path=$page" >> "$GITHUB_OUTPUT"
+    # Unzipped, so the artifact is the HTML file itself, and its link opens the page in the browser.
+    - if: steps.page.outputs.path != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        path: ${{ steps.page.outputs.path }}
+        archive: false
+        retention-days: ${{ inputs.retention-days }}
     - name: Result
       shell: bash
       env:

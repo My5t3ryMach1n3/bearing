@@ -34,5 +34,6 @@ jobs:
       # The project's own dependencies, so its tests run.
       - run: npm ci
       # Validates the target, runs the integration tests with tracing on, derives the as-built model, runs the checks
-      # and writes the comment. Fails if the target is invalid or a blocking check fails.
+      # and writes the comment. Fails if the target is invalid or a blocking check fails. Last, it builds the architecture
+      # page the comment links, kept as long as the repository keeps artifacts unless `retention-days` says less.
       - uses: My5t3ryMach1n3/bearing/actions/conformance@v{{version}}

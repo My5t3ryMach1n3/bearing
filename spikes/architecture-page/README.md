@@ -1,6 +1,6 @@
 # Spike: an interactive architecture page for a PR
 
-Prototype for [#114](https://github.com/My5t3ryMach1n3/bearing/issues/114). This is a reference for building the page into Bearing, not part of Bearing itself. Only the spike's own workflow, `.github/workflows/architecture-page-spike.yml`, builds it.
+Prototype for [#114](https://github.com/My5t3ryMach1n3/bearing/issues/114). This is a reference for building the page into Bearing, not part of Bearing itself. `bearing page` builds the page for real now, and the conformance action uploads it for the PR comment to link; the spike's own workflow is gone.
 
 | Path | What it is |
 | --- | --- |
