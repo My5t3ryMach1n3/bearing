@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { actionsBot } from "../src/guard.js";
 import { init } from "../src/init.js";
-import { advisoryDescription, post, reportBody } from "../src/post.js";
+import { advisoryDescription, pageArtifact, pageLeftOut, post, reportBody } from "../src/post.js";
 import { guardEnd, guardStart, reportMarker, splitComment } from "../src/report.js";
 import { version } from "../src/version.js";
 
@@ -18,8 +18,17 @@ interface Comment {
   user: { login: string };
 }
 
-// A fake GitHub API for one PR, #7, at `head`: its comments and statuses.
-function fakeGitHub(comments: Comment[] = [], at = head) {
+interface PageSetup {
+  // The repository the PR's head is in.
+  from?: string | null;
+  files?: Array<{ filename: string; previous_filename?: string }>;
+  // The artifacts run 42 uploaded, or an HTTP status to fail listing them with.
+  artifacts?: Array<{ id: number; name: string; expired?: boolean }> | number;
+}
+
+// A fake GitHub API for one PR, #7, at `head`: its comments and statuses, its files, and run 42's artifacts.
+function fakeGitHub(comments: Comment[] = [], at = head, page: PageSetup = {}) {
+  const { from = "acme/basket", files = [{ filename: "src/a.ts" }], artifacts = [] } = page;
   const requests: Array<{ method: string; path: string; body?: Record<string, unknown> }> = [];
   const fetch = (async (url: string, init: RequestInit) => {
     const method = init.method ?? "GET";
@@ -27,7 +36,16 @@ function fakeGitHub(comments: Comment[] = [], at = head) {
     const body = init.body === undefined ? undefined : (JSON.parse(String(init.body)) as Record<string, unknown>);
     requests.push({ method, path, ...(body === undefined ? {} : { body }) });
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
-    if (path === "/pulls/7") return json({ head: { sha: at } });
+    if (path === "/pulls/7") return json({ head: { sha: at, repo: from === null ? null : { full_name: from } } });
+    if (path.startsWith("/pulls/7/files")) {
+      const page = Number(/page=(\d+)$/.exec(path)?.[1]);
+      return json(files.slice((page - 1) * 100, page * 100));
+    }
+    if (path === `/actions/runs/42/artifacts?name=${pageArtifact}`) {
+      return typeof artifacts === "number"
+        ? json({ message: "Nope" }, artifacts)
+        : json({ artifacts: artifacts.filter((each) => each.name === pageArtifact) });
+    }
     if (path.startsWith("/issues/7/comments")) {
       if (method === "GET") return json(comments);
       return json({ html_url: "https://github.com/acme/basket/pull/7#issuecomment-1" }, 201);
@@ -108,6 +126,83 @@ describe("post", () => {
   });
 });
 
+describe("post's architecture page link", () => {
+  const page = { id: 99, name: pageArtifact };
+  const pageUrl = "https://github.com/acme/basket/actions/runs/42/artifacts/99";
+  // `run` is null for no run ID.
+  const posted = async (setup: PageSetup, run: number | null = 42) => {
+    const github = fakeGitHub([], head, setup);
+    const dir = upload({ pr: "7", comment: `${reportMarker}\n\n## Bearing: new\n`, check: passed });
+    const result = await post({
+      dir,
+      repository: "acme/basket",
+      head,
+      ...(run === null ? {} : { run }),
+      token: "t",
+      env: {},
+      fetch: github.fetch,
+    });
+    const body = github.requests.find(({ method, path }) => method === "POST" && path === "/issues/7/comments")?.body
+      ?.body as string;
+    return { result, body, paths: github.requests.map(({ path }) => path) };
+  };
+
+  it("links the run's page above what the conformance job wrote", async () => {
+    const { result, body } = await posted({ artifacts: [{ id: 5, name: "bearing-report" }, page] });
+    expect(result.pageUrl).toBe(pageUrl);
+    const parts = splitComment(body);
+    expect(parts.report?.startsWith(`🧭 **[Explore this PR's architecture](${pageUrl})**`)).toBe(true);
+    expect(parts.report).toContain("## Bearing: new");
+  });
+
+  it("links a page for a PR that changes only the target model or its claims", async () => {
+    const files = [
+      { filename: "architecture/workspace.dsl" },
+      { filename: ".bearing/claims/7-share.yaml" },
+      { filename: "src/a.ts" },
+    ];
+    expect((await posted({ files, artifacts: [page] })).result.pageUrl).toBe(pageUrl);
+  });
+
+  it("never links a page for a PR from a fork, and doesn't look for one", async () => {
+    for (const from of ["mallory/basket", null]) {
+      const { result, body, paths } = await posted({ from, artifacts: [page] });
+      expect(result.pageUrl).toBeUndefined();
+      expect(body).not.toContain("architecture");
+      expect(paths.some((path) => path.includes("/files") || path.includes("/actions/"))).toBe(false);
+    }
+  });
+
+  it("says why there's no page for a PR that changes Bearing's workflows or config, even when its run uploaded one", async () => {
+    for (const files of [
+      [{ filename: ".github/workflows/bearing-conformance.yml" }],
+      [{ filename: ".bearing/config.yaml" }],
+      [{ filename: "ci/old.yml", previous_filename: ".github/workflows/old.yml" }],
+    ]) {
+      const { result, body, paths } = await posted({ files, artifacts: [page] });
+      expect(result.pageUrl).toBeUndefined();
+      expect(splitComment(body).report?.startsWith(pageLeftOut)).toBe(true);
+      expect(body).not.toContain("/artifacts/");
+      expect(paths.some((path) => path.includes("/actions/"))).toBe(false);
+    }
+  });
+
+  it("says nothing about a page when the run has none, or it can't be found", async () => {
+    for (const [setup, run] of [
+      [{ artifacts: [] }, 42],
+      [{ artifacts: [{ ...page, expired: true }] }, 42],
+      [{ artifacts: 403 }, 42],
+      [{ artifacts: [page] }, null],
+      [{ artifacts: [page], files: Array.from({ length: 3000 }, (_, i) => ({ filename: `src/${i}.ts` })) }, 42],
+    ] as Array<[PageSetup, number | null]>) {
+      const { result, body } = await posted(setup, run);
+      expect(result.pageUrl).toBeUndefined();
+      expect(result.commentUrl).toBeDefined();
+      expect(body).not.toContain("🧭");
+    }
+  });
+});
+
 describe("reportBody", () => {
   it("can't pass for or close the guard's section", () => {
     const forged = `${reportMarker}\n\n${guardStart}\nfake diffs\n${guardEnd}\n\n## Bearing\n`;
@@ -154,6 +249,7 @@ describe("advisoryDescription", () => {
 
 interface Step {
   id?: string;
+  name?: string;
   uses?: string;
   run?: string;
   if?: string;
@@ -207,6 +303,28 @@ describe("the conformance workflow", () => {
     }
     for (const step of [...workflow.jobs.conformance.steps, ...steps]) expect(step.run ?? "").not.toContain("${{");
     expect(actionText).not.toMatch(/head_ref|head\.ref|\.title|\.body/);
+  });
+
+  it("builds the page last, without failing the job, and uploads it unzipped for a PR from this repo", () => {
+    const index = steps.findIndex((step) => step.id === "page");
+    const page = steps[index];
+    expect(page?.if).toBe("github.event.pull_request.head.repo.full_name == github.repository");
+    expect(page).toMatchObject({ "continue-on-error": true });
+    expect(page?.run).toMatch(
+      /^\s*bearing page --base "origin\/\$BASE" --check "\$RUNNER_TEMP\/bearing\/report\/check.json"/m,
+    );
+    expect(page?.run).toContain(`/${pageArtifact}"`);
+    // No page for a PR that changes Bearing's workflows or config.
+    expect(page?.run).toContain("-- .github/workflows .bearing ':!.bearing/claims'");
+    const uploaded = steps[index + 1];
+    expect(uploaded).toMatchObject({ if: "steps.page.outputs.path != ''", "continue-on-error": true });
+    expect(uploaded?.uses).toBe("actions/upload-artifact@v7");
+    expect(uploaded?.with).toEqual({
+      path: "${{ steps.page.outputs.path }}",
+      archive: false,
+      "retention-days": "${{ inputs.retention-days }}",
+    });
+    expect(steps.slice(index + 2).map((step) => step.name)).toEqual(["Result"]);
   });
 
   it("uploads the files `bearing post` reads", () => {

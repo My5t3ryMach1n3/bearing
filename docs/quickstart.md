@@ -47,6 +47,8 @@ For each requirement, the agent works on a branch named after the issue, startin
 
 On the PR, the conformance job runs the checks again from scratch and the comment shows the result, with an overlay of anything that drifted. A failed check says what to fix. After three failed attempts within the target, the agent proposes a target change instead.
 
+At the top of the comment, **Explore this PR's architecture** opens the PR's architecture page in the browser: whether the target changed, where the code changed, where it drifts and which dynamic-view steps the tests take, over a map you can open level by level. It's a workflow artifact, kept for as long as the repository keeps artifacts, 90 days by default; the conformance action's `retention-days` input keeps it for less. If your network allow-lists hosts, it needs GitHub's Actions storage, `productionresultssa*.blob.core.windows.net`. A PR from a fork gets no page, nor does one that changes `.github/workflows/` or `.bearing/` other than claims files: its comment says why.
+
 | Check | Fails when |
 | --- | --- |
 | Target valid | The target breaks Bearing's rules, for example an open requirement with no dynamic view |

@@ -42,14 +42,37 @@ export class GuardError extends Error {
   }
 }
 
-// The paths whose changes are a target change, for a model at `model`: its folder, Bearing's config and the
-// workflows. Claims files are in .bearing/ too, but a claim describes a change rather than making one.
+function under(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(`${dir}/`);
+}
+
+// The paths that change Bearing itself in the repo: its config and the workflows. Claims files are in .bearing/ too,
+// but a claim describes a change rather than making one.
+export function isBearingPath(path: string): boolean {
+  return (under(path, ".bearing") && !under(path, claimsDir.replaceAll("\\", "/"))) || under(path, ".github/workflows");
+}
+
+// The paths whose changes are a target change, for a model at `model`: its folder, and Bearing's config and workflows.
 export function isTargetPath(path: string, model: string): boolean {
-  const under = (dir: string) => path === dir || path.startsWith(`${dir}/`);
-  const modelDir = modelPathspec({ model });
-  return (
-    under(modelDir) || (under(".bearing") && !under(claimsDir.replaceAll("\\", "/"))) || under(".github/workflows")
+  return under(path, modelPathspec({ model })) || isBearingPath(path);
+}
+
+// Whether any of the PR's files changes Bearing's config or workflows, counting a file renamed into or out of them.
+export function changesBearing(files: PullFile[]): boolean {
+  return files.some(
+    (file) =>
+      isBearingPath(file.filename) || (file.previous_filename !== undefined && isBearingPath(file.previous_filename)),
   );
+}
+
+// Every file the PR changes, through the API.
+export async function pullFiles(call: GitHubCall, repository: string, pr: number): Promise<PullFile[]> {
+  const files: PullFile[] = [];
+  for (let page = 1; ; page++) {
+    const batch = (await call("GET", `/repos/${repository}/pulls/${pr}/files?per_page=100&page=${page}`)) as PullFile[];
+    files.push(...batch);
+    if (batch.length < 100) return files;
+  }
 }
 
 // A file renamed into or out of a target path counts too.
@@ -126,13 +149,7 @@ export async function guard(options: GuardOptions): Promise<GuardResult> {
   };
   const model = await baseModel(call, repository, pull.base.sha, log);
 
-  const files: PullFile[] = [];
-  for (let page = 1; ; page++) {
-    const batch = (await call("GET", `/repos/${repository}/pulls/${pr}/files?per_page=100&page=${page}`)) as PullFile[];
-    files.push(...batch);
-    if (batch.length < 100) break;
-  }
-  const changed = targetFiles(files, model);
+  const changed = targetFiles(await pullFiles(call, repository, pr), model);
 
   if (changed.length > 0) {
     await call("POST", `/repos/${repository}/issues/${pr}/labels`, { labels: [targetLabel] });
