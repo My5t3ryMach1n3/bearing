@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runChecks, type CheckReport } from "../src/check.js";
+import { runChecks } from "../src/check.js";
 import { codeChanges, functionalFile, parseNumstat, sourceFiles, type FileChange } from "../src/code-changes.js";
 import { loadConfig } from "../src/config.js";
 import { modelFromWorkspace, type Element, type Model } from "../src/model.js";
