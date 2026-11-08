@@ -260,6 +260,8 @@ export function formatResult(root: string, result: InitResult): string {
   lines.push(
     "",
     `Once this is merged to main, turn on these repo settings${settings}:`,
+    "  Bearing relies on branch protection, which GitHub offers on public repos, and on private ones only on",
+    "  GitHub Pro, Team or Enterprise. On a free plan, make the repo public.",
     result.gated
       ? "  - [ ] Branch protection on main: require a pull request, with review from Code Owners."
       : "  - [ ] Branch protection on main: require a pull request.",

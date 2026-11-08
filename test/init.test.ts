@@ -56,6 +56,16 @@ describe("init", () => {
     });
   });
 
+  it("installs the project's dependencies only once it has a lockfile, so a design PR before any code passes", () => {
+    const root = emptyRepo();
+    init(root);
+    const { steps } = parse(read(root, ".github/workflows/bearing-conformance.yml")).jobs.conformance;
+    expect(steps).toContainEqual({
+      if: "hashFiles('package-lock.json', 'npm-shrinkwrap.json') != ''",
+      run: "npm ci",
+    });
+  });
+
   it("fills in the integration command and Terraform path when the repo has them", () => {
     const root = emptyRepo();
     writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { "test:integration": "vitest run" } }));
@@ -168,6 +178,7 @@ describe("init", () => {
     expect(result.gated).toBe(false);
     const output = formatResult(root, result);
     expect(output).toContain("https://github.com/acme/shop/settings/branches");
+    expect(output).toContain("On a free plan, make the repo public.");
     expect(output).toContain("Branch protection on main: require a pull request.\n");
     expect(output).toContain("Required status checks: bearing/target and bearing/conformance");
     expect(output).toContain("Optional, for teams that want a second reviewer");

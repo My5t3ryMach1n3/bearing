@@ -31,8 +31,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # The project's own dependencies, so its tests run.
-      - run: npm ci
+      # The project's own dependencies, so its tests run. Skipped until there's a lockfile, as on a design PR before
+      # any code.
+      - if: hashFiles('package-lock.json', 'npm-shrinkwrap.json') != ''
+        run: npm ci
       # Validates the target, runs the integration tests with tracing on, derives the as-built model, runs the checks
       # and writes the comment. Fails if the target is invalid or a blocking check fails. Last, it builds the architecture
       # page the comment links, kept as long as the repository keeps artifacts unless `retention-days` says less.
