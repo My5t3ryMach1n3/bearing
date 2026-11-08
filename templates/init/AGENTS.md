@@ -13,4 +13,7 @@
 - If a check fails, fix the code within the target. After {{attempts}} failed attempts, propose a target change in
   {{model}} on the same branch, with an ADR from {{adrs}}/template.md giving the reason and the alternatives
   you considered. If another target change merges first, rebase onto it and rework yours on top.
-- Never edit .bearing/config.yaml or anything in .github/workflows/.
+- In the first PR that adds code, check .bearing/config.yaml against the repo as the PR leaves it: set
+  `tests.integration` once there's an integration test command, and `iac` once there's Terraform or Kubernetes
+  manifests. Say why in the PR description; a code owner approves it. Otherwise never edit .bearing/config.yaml,
+  and never edit anything in .github/workflows/.

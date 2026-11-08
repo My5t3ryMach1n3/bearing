@@ -426,7 +426,7 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
 
 ### Agent instructions
 
-`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps are a skill that `bearing skill` prints: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. Init never installs it; an agent that loads skills offers to save it to `.agents/skills/bearing-design/SKILL.md` with `bearing skill --install`, and runs it only if the user agrees. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
+`bearing init` adds this section to AGENTS.md, so any agent follows the same loop. The design steps are a skill that `bearing skill` prints: how to walk each story, draft levels 1 to 3, give components paths, add one dynamic view per story and a deployment view, tag everything with issues, record ADRs and validate. Init never installs it; an agent that loads skills offers to save it to `.agents/skills/bearing-design/SKILL.md` with `bearing skill --install`, and runs it only if the user agrees. Init can only fill in the config from what the repo has when it runs, so the first PR that adds code, which often adds the test script too, is where the agent brings the config up to date; the guard makes that change, like any config change, need a code owner's approval. The self-heal limit is read from `agent.selfHealAttempts`; Bearing can't see an agent's retries, so for now it is an instruction, not a check.
 
 ```markdown
 ### Bearing
@@ -441,7 +441,10 @@ Rerunning it redrafts the model and files but keeps the issues and note. The fil
 - If a check fails, fix the code within the target. After 3 failed attempts, propose a target change in
   architecture/workspace.dsl on the same branch, with an ADR from architecture/adrs/template.md giving the reason
   and the alternatives you considered. If another target change merges first, rebase onto it and rework yours on top.
-- Never edit .bearing/config.yaml or anything in .github/workflows/.
+- In the first PR that adds code, check .bearing/config.yaml against the repo as the PR leaves it: set
+  `tests.integration` once there's an integration test command, and `iac` once there's Terraform or Kubernetes
+  manifests. Say why in the PR description; a code owner approves it. Otherwise never edit .bearing/config.yaml,
+  and never edit anything in .github/workflows/.
 ```
 
 ### How imports map to relationships
@@ -528,7 +531,7 @@ A queue is the target element whose `bearing.terraform` property names its addre
 
 `bearing test` loads a Node module hook that wraps the exported functions of every file under a component path and emits a span tagged with that component. Because Bearing already knows the paths from the model, nobody adds instrumentation by hand. Spans are written to `.bearing/traces/` locally and regenerated from scratch in CI.
 
-`bearing test -- <cmd>` clears `.bearing/traces/` and runs the command, or `tests.integration` when none is given, with the hook preloaded into every Node process it starts through `NODE_OPTIONS`. It needs Node.js 22.15 or later.
+`bearing test -- <cmd>` clears `.bearing/traces/` and runs the command, or `tests.integration` when none is given, or else `npm run test:integration` if the root `package.json` has that script, with the hook preloaded into every Node process it starts through `NODE_OPTIONS`. It needs Node.js 22.15 or later.
 
 - **ES modules and CommonJS**: Node's module hooks rewrite each component file as it loads. An ES module's exported functions are rebound to wrappers at the end of the module, so importers, which read live bindings, call the wrapper; a CommonJS module's functions on `module.exports` are replaced once it has run. Re-exports are left to the module that declares the function, and classes aren't wrapped.
 - **Vitest** runs code through Vite's module runner rather than Node's loader, so the hook adds the same rewrite as a Vite plugin to every config Vitest resolves. The project's Vitest config is left as it is.
