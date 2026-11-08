@@ -8,6 +8,7 @@ Adopt Bearing on a TypeScript service in a GitHub repo, from an empty target to 
 - Docker, or Java 21, for the Structurizr CLI that Bearing runs to read the model.
 - The [GitHub CLI](https://cli.github.com/), signed in. Locally, Bearing reads your requirement issues with `gh auth token` and the `origin` remote.
 - A TypeScript project whose integration tests run under Vitest or Jest, and a GitHub repo for it. Terraform under one folder is optional.
+- Branch protection on that repo. GitHub offers it on public repos, and on private ones only on GitHub Pro, Team or Enterprise. Without it nothing stops a PR merging past a failed check, so on a free plan, make the repo public. An agent creating the repo should create it public, or say why it can't.
 
 ## 1. Set up the repo
 
