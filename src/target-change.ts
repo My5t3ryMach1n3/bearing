@@ -12,7 +12,7 @@ import type { DeploymentElement, DynamicView, Element, Model, Relationship } fro
 
 // The target-change section of the PR comment: what a PR changes about the architecture, in the order a reviewer
 // reads it. A summary in plain words, one diagram per C4 level that changed, a sequence diagram per new or changed
-// dynamic view, the model diff, then the ADRs. A first design isn't a diff, so it's drawn as the model's own views. A
+// dynamic view, the model diff, then each ADR's decision. A first design isn't a diff, so it's drawn as the model's own views. A
 // change only to the requirements an item lists is collapsed to one line and left out of the diagrams. See the How
 // `bearing report` works section of docs/product-spec.md.
 
@@ -20,6 +20,50 @@ export interface Adr {
   path: string;
   text: string;
 }
+
+export interface AdrSections {
+  path: string;
+  title: string;
+  // The ADR's Context: what forced the choice.
+  reason: string;
+  decision: string;
+  alternatives: string;
+}
+
+// An ADR's title and the sections a reviewer reads first, from the template `bearing init` writes.
+export function readAdr(adr: Adr): AdrSections {
+  const section = (heading: RegExp) => {
+    const match = new RegExp(`^##\\s+${heading.source}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, "im").exec(adr.text);
+    return match?.[1]?.trim() ?? "";
+  };
+  return {
+    path: adr.path,
+    title: /^#\s+(.+)$/m.exec(adr.text)?.[1]?.trim() ?? adr.path,
+    reason: section(/Context/),
+    decision: section(/Decision/),
+    alternatives: section(/Alternatives(?: considered)?/),
+  };
+}
+
+// An ADR in the comment: its title and decision, with the rest folded. The ADR's own headings would be the comment's
+// largest, so they're bold lines instead. The title and decision are left out of the fold, since they're above it. The
+// guard's section has the full text as a diff.
+function formatAdr(adr: Adr): string {
+  const { title, decision } = readAdr(adr);
+  const rest = adr.text
+    .replace(/^#\s+.+$/m, "")
+    .replace(decision === "" ? /(?!)/ : /^##\s+Decision\s*$[\s\S]*?(?=^##\s|(?![\s\S]))/im, "")
+    .trim()
+    .replace(/^#{1,6}[ \t]+(.+?)[ \t#]*$/gm, "**$1**");
+  const fold =
+    rest === "" ? [] : ["", indent(`<details><summary>The rest of the ADR</summary>\n\n${rest}\n\n</details>`)];
+  return [`- **${title}** (\`${cell(adr.path)}\`)`, ...(decision === "" ? [] : ["", indent(decision)]), ...fold].join(
+    "\n",
+  );
+}
+
+// Text indented to sit inside a list item, blank lines left blank.
+const indent = (text: string) => text.replace(/^(?=.)/gm, "  ");
 
 // A diagram stops adding neighbours once it has this many elements. What the PR changes is always drawn.
 export const diagramLimit = 15;
@@ -518,13 +562,8 @@ export function formatTargetChange(
   } else {
     lines.push("", "The model itself is unchanged.");
   }
-  for (const adr of adrs) {
-    const title = /^#\s+(.+)$/m.exec(adr.text)?.[1]?.trim() ?? adr.path;
-    lines.push(
-      "",
-      `<details open><summary>${title} (<code>${adr.path}</code>)</summary>\n\n${adr.text.trim()}\n\n</details>`,
-    );
-  }
+  if (adrs.length > 0)
+    lines.push("", `#### ${adrs.length === 1 ? "Decision" : "Decisions"}`, "", adrs.map(formatAdr).join("\n\n"));
   if (modelChanged && adrs.length === 0) {
     lines.push("", "No ADR in this PR gives the reason for the change or the alternatives considered.");
   }

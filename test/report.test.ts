@@ -200,7 +200,7 @@ describe("the comment", () => {
     expect(comment).toContain("No ADR in this PR gives the reason for the change or the alternatives considered.");
   });
 
-  it("shows the ADRs that give the target change's reason, after the model diff", async () => {
+  it("shows each ADR's decision after the model diff, with the rest folded", async () => {
     const root = basketRepo();
     git(root, "checkout", "-q", "-b", "share-basket");
     changeTarget(root);
@@ -208,16 +208,39 @@ describe("the comment", () => {
     writeFileSync(join(root, "architecture", "adrs", "template.md"), "# NNNN. Decision title\n");
     writeFileSync(
       join(root, "architecture", "adrs", "0002-share-service.md"),
-      "# 0002. Share baskets from their own component\n\n## Alternatives considered\n\n- In the basket service: it would send email.\n",
+      "# 0002. Share baskets from their own component\n\n## Decision\n\nA share service sends the email.\n\n" +
+        "## Alternatives considered\n\n- In the basket service: it would send email.\n",
     );
     const { comment } = await report(root);
     expect(comment).toContain(
-      "<details open><summary>0002. Share baskets from their own component (<code>architecture/adrs/0002-share-service.md</code>)</summary>\n\n" +
-        "# 0002. Share baskets from their own component\n\n## Alternatives considered\n\n- In the basket service: it would send email.\n\n</details>",
+      "#### Decision\n\n" +
+        "- **0002. Share baskets from their own component** (`architecture/adrs/0002-share-service.md`)\n\n" +
+        "  A share service sends the email.\n\n" +
+        "  <details><summary>The rest of the ADR</summary>\n\n" +
+        "  **Alternatives considered**\n\n  - In the basket service: it would send email.\n\n  </details>",
     );
+    expect(comment).not.toContain("# 0002.");
+    expect(comment.match(/A share service sends the email/g)).toHaveLength(1);
     expect(comment).not.toContain("NNNN. Decision title");
     expect(comment).not.toContain("No ADR in this PR");
-    expect(comment.indexOf("<details open>")).toBeLessThan(comment.indexOf("### Checks"));
+    expect(comment.indexOf("#### Decision")).toBeGreaterThan(comment.indexOf("#### Model diff"));
+    expect(comment.indexOf("#### Decision")).toBeLessThan(comment.indexOf("### Checks"));
+  });
+
+  it("folds the whole of an ADR with no decision section", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "share-basket");
+    changeTarget(root);
+    mkdirSync(join(root, "architecture", "adrs"), { recursive: true });
+    writeFileSync(
+      join(root, "architecture", "adrs", "0002-share-service.md"),
+      "# 0002. Share baskets\n\nWe share them.\n",
+    );
+    const { comment } = await report(root);
+    expect(comment).toContain(
+      "- **0002. Share baskets** (`architecture/adrs/0002-share-service.md`)\n\n" +
+        "  <details><summary>The rest of the ADR</summary>\n\n  We share them.\n\n  </details>",
+    );
   });
 
   it("is in target-change mode for a workflow change, though the model is unchanged", async () => {
