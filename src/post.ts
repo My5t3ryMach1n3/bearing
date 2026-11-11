@@ -147,7 +147,12 @@ async function pageLink(options: {
     const url = `${server}/${repository}/actions/runs/${run}/artifacts/${artifact.id}`;
     return {
       url,
-      line: `🧭 **[Explore this PR's architecture](${url})**: the target's change, where the code changed, drift and the dynamic views, level by level. It opens in the browser.`,
+      line: [
+        "> [!IMPORTANT]",
+        `> ### 🧭 [Review this PR's architecture page](${url})`,
+        ">",
+        "> Start here. The page shows the target's change, where the code changed, drift and the dynamic views, level by level, and opens in the browser. The rest of this comment summarises it.",
+      ].join("\n"),
     };
   } catch (error) {
     // The page is extra: the comment and the status still go up without it.

@@ -19,7 +19,7 @@ import { componentOf, componentPaths, normalizePath, within } from "./paths.js";
 import type { QueueGrant } from "./queues.js";
 import { summarise } from "./report.js";
 import type { Workspace } from "./structurizr.js";
-import { kinds as typeKinds, type Adr } from "./target-change.js";
+import { kinds as typeKinds, readAdr, type Adr, type AdrSections } from "./target-change.js";
 
 // The architecture page's data: everything the page shows, built from the model, the PR's diff and the checks'
 // results, with no layout. The page's script reads it as `PageData`, so this file's types are the contract between
@@ -189,14 +189,7 @@ export interface TargetFindings {
   adrs: PageAdr[];
 }
 
-export interface PageAdr {
-  path: string;
-  title: string;
-  // The ADR's Context: what forced the choice.
-  reason: string;
-  decision: string;
-  alternatives: string;
-}
+export type PageAdr = AdrSections;
 
 export interface CodeFindings {
   // Everything the PR changes in functional code, outside the model included.
@@ -760,21 +753,6 @@ function expectedIndexes(steps: DynamicStep[], expected: Array<{ source: string;
     if (same(step, at + 1)) return ++at;
     return undefined;
   });
-}
-
-// An ADR's title and the sections a reviewer reads first, from the template `bearing init` writes.
-function readAdr(adr: Adr): PageAdr {
-  const section = (heading: RegExp) => {
-    const match = new RegExp(`^##\\s+${heading.source}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, "im").exec(adr.text);
-    return match?.[1]?.trim() ?? "";
-  };
-  return {
-    path: adr.path,
-    title: /^#\s+(.+)$/m.exec(adr.text)?.[1]?.trim() ?? adr.path,
-    reason: section(/Context/),
-    decision: section(/Decision/),
-    alternatives: section(/Alternatives(?: considered)?/),
-  };
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

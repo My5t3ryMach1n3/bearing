@@ -151,7 +151,11 @@ describe("post's architecture page link", () => {
     const { result, body } = await posted({ artifacts: [{ id: 5, name: "bearing-report" }, page] });
     expect(result.pageUrl).toBe(pageUrl);
     const parts = splitComment(body);
-    expect(parts.report?.startsWith(`🧭 **[Explore this PR's architecture](${pageUrl})**`)).toBe(true);
+    expect(
+      parts.report?.startsWith(
+        `> [!IMPORTANT]\n> ### 🧭 [Review this PR's architecture page](${pageUrl})\n>\n> Start here.`,
+      ),
+    ).toBe(true);
     expect(parts.report).toContain("## Bearing: new");
   });
 
