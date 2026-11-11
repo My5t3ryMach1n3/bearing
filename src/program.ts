@@ -33,7 +33,9 @@ const commands: Array<() => Command> = [
 
 export function createProgram(): Command {
   const program = new Command("bearing")
-    .description("GitOps for architecture: reconcile every PR against an approved C4 target architecture.")
+    .description(
+      "Architecture used to control agentic engineering: check every PR against an approved C4 target architecture.",
+    )
     .version(version, "-v, --version", "print the Bearing version")
     .helpOption("-h, --help", "print help")
     .showHelpAfterError()
