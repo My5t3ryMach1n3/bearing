@@ -1,6 +1,6 @@
 {
   "name": "bearing-cli",
-  "version": "0.1.0-rc.6",
+  "version": "0.1.0-rc.7",
   "description": "Architecture used to control agentic engineering: check every PR against an approved C4 target architecture.",
   "license": "MIT",
   "type": "module",
