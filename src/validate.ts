@@ -7,6 +7,7 @@ import { normalizePath, within } from "./paths.js";
 import {
   criteriaPin,
   criterionDigest,
+  isLive,
   leafStories,
   loadRequirements,
   RequirementsError,
@@ -35,8 +36,8 @@ export function validateModel(model: Model, requirements: Requirement[], tag = "
   ];
 }
 
-// Every element and relationship lists at least one open requirement, and only open requirements. What served only
-// issues closed as not planned is to be pruned, with its code.
+// Every element and relationship lists at least one live requirement, open or closed as completed, and no retired
+// one. What served only issues closed as not planned is to be pruned, with its code.
 function checkRequirements(model: Model, requirements: Requirement[]): Problem[] {
   const byId = new Map(requirements.map((requirement) => [requirement.id, requirement]));
   const problems: Problem[] = [];
@@ -56,54 +57,49 @@ function checkRequirements(model: Model, requirements: Requirement[]): Problem[]
         message: `"bearing.requirements" lists ${unknown.map((id) => `"${id}"`).join(", ")}, which ${unknown.length === 1 ? "isn't a requirement" : "aren't requirements"}; list issues as "#<n>"`,
       });
     }
-    const closed = item.requirements.filter((id) => byId.get(id)?.state === "closed");
-    const open = item.requirements.filter((id) => byId.get(id)?.state === "open");
-    const notPlanned = closed.filter((id) => byId.get(id)!.stateReason === "not_planned");
-    // Closed any other way, usually by a PR's `Closes #n`, the issue was most likely closed by mistake: the code still
-    // serves it. Telling the agent to drop it would strip it from the target, so say to reopen it instead.
-    const done = closed.filter((id) => !notPlanned.includes(id));
-    if (done.length > 0) {
+    const known = item.requirements.filter((id) => byId.has(id));
+    const live = known.filter((id) => isLive(byId.get(id)!));
+    const retired = known.filter((id) => !live.includes(id));
+    const notPlanned = retired.filter((id) => byId.get(id)!.stateReason === "not_planned");
+    // Closed as a duplicate, the work lives on under the issue it duplicates, so point at that one instead.
+    const duplicates = retired.filter((id) => !notPlanned.includes(id));
+    if (duplicates.length > 0) {
+      const them = duplicates.length === 1 ? "the issue it duplicates" : "the issues they duplicate";
       problems.push({
         rule: "requirements",
         id: item.id,
-        message: `"bearing.requirements" lists ${done.map((id) => closedAs(byId.get(id)!)).join(", ")}; ${reopenAdvice(done)}`,
+        message: `"bearing.requirements" lists ${duplicates.map((id) => closedAs(byId.get(id)!)).join(", ")}; list ${them} instead`,
       });
-    } else if (open.length === 0 && notPlanned.length > 0) {
+    } else if (live.length === 0 && notPlanned.length > 0) {
       const code = "path" in item && item.path !== undefined ? `, and delete its code under ${item.path}` : "";
       problems.push({
         rule: "requirements",
         id: item.id,
-        message: `${what} served only ${closed.join(", ")}, closed as not planned; prune it from the target${code}`,
+        message: `${what} served only ${notPlanned.join(", ")}, closed as not planned; prune it from the target${code}`,
       });
-    } else if (open.length === 0) {
+    } else if (live.length === 0) {
       problems.push({
         rule: "requirements",
         id: item.id,
-        message: `${what} serves no open requirement; set "bearing.requirements" to the open issues it serves, e.g. "#1,#2", or remove it`,
+        message: `${what} serves no requirement; set "bearing.requirements" to the open or completed issues it serves, e.g. "#1,#2", or remove it`,
       });
-    } else if (closed.length > 0) {
+    } else if (notPlanned.length > 0) {
       problems.push({
         rule: "requirements",
         id: item.id,
-        message: `"bearing.requirements" lists ${closed.join(", ")}, closed; drop ${closed.length === 1 ? "it" : "them"} and keep ${open.join(", ")}`,
+        message: `"bearing.requirements" lists ${notPlanned.join(", ")}, closed as not planned; drop ${notPlanned.length === 1 ? "it" : "them"} and keep ${live.join(", ")}`,
       });
     }
   }
   return problems;
 }
 
-// "#2, closed as completed": a closed issue and why, as GitHub gives it.
+// "#2, closed as a duplicate": a closed issue and why, as GitHub gives it.
 function closedAs(requirement: Requirement): string {
-  const reason = { completed: "closed as completed", duplicate: "closed as a duplicate" }[
+  const reason = { not_planned: "closed as not planned", duplicate: "closed as a duplicate" }[
     requirement.stateReason ?? ""
   ];
   return `${requirement.id}, ${reason ?? "closed"}`;
-}
-
-// A requirement stays open for as long as the code serves it, so the fix for one closed as done is to reopen it.
-function reopenAdvice(ids: string[]): string {
-  const them = ids.length === 1 ? "it" : "them";
-  return `a requirement stays open while the code serves it, so reopen ${them}, or close ${them} as not planned to prune what serves only ${them}`;
 }
 
 // Every component owns a folder, and no folder is owned twice: one path can't sit inside another.
@@ -141,7 +137,7 @@ function checkPaths(model: Model): Problem[] {
   return problems;
 }
 
-// Every open story has exactly one dynamic view, keyed "req-<n>", and every dynamic view belongs to a story.
+// Every live story has exactly one dynamic view, keyed "req-<n>", and every dynamic view belongs to a story.
 function checkDynamicViews(model: Model, requirements: Requirement[]): Problem[] {
   const problems: Problem[] = [];
   for (const story of leafStories(requirements)) {
@@ -150,7 +146,7 @@ function checkDynamicViews(model: Model, requirements: Requirement[]): Problem[]
       problems.push({
         rule: "dynamic-view",
         id: story.id,
-        message: `open story has no dynamic view; add one keyed "${key}" and titled "${story.id} ${story.title}"`,
+        message: `story has no dynamic view; add one keyed "${key}" and titled "${story.id} ${story.title}"`,
       });
     }
   }
@@ -165,18 +161,15 @@ function checkDynamicViews(model: Model, requirements: Requirement[]): Problem[]
       message = `dynamic view is for #${number}, which isn't a requirement`;
     } else if (requirement.epic) {
       message = `dynamic view is for ${requirement.id}, an epic; epics get none, their stories each get one`;
-    } else if (requirement.state === "closed") {
-      message =
-        requirement.stateReason === "not_planned"
-          ? `dynamic view is for ${requirement.id}, closed as not planned; prune it from the target`
-          : `dynamic view is for ${closedAs(requirement)}; ${reopenAdvice([requirement.id])}`;
+    } else if (!isLive(requirement)) {
+      message = `dynamic view is for ${closedAs(requirement)}; prune it from the target`;
     }
     if (message !== undefined) problems.push({ rule: "dynamic-view", id: view.id, message });
   }
   return problems;
 }
 
-// Every open story's view pins its criteria as they stood when the view and its tests were last checked against them.
+// Every live story's view pins its criteria as they stood when the view and its tests were last checked against them.
 // An edit to the criteria unpins it: the view, and the tests tagged with what changed, are stale until re-checked.
 function checkCriteria(model: Model, requirements: Requirement[], tag: string): Problem[] {
   const problems: Problem[] = [];
@@ -274,7 +267,7 @@ export function validateCommand(): Command {
         if (options.json !== true) {
           const stories = leafStories(requirements).length;
           process.stdout.write(
-            `${config.model} is valid: ${model.elements.size} elements and ${stories} open ${stories === 1 ? "story" : "stories"}, each with its dynamic view\n`,
+            `${config.model} is valid: ${model.elements.size} elements and ${stories} ${stories === 1 ? "story" : "stories"}, each with its dynamic view\n`,
           );
         }
       } catch (error) {

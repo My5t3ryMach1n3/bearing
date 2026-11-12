@@ -57,8 +57,8 @@ export interface LoadRequirementsOptions {
   fetch?: typeof fetch;
 }
 
-// Loads every requirement, open and closed, sorted by number. Throws a RequirementsError listing every open issue
-// whose body doesn't parse; closed issues are returned as far as they parse, since nothing is built from them.
+// Loads every requirement, open and closed, sorted by number. Throws a RequirementsError listing every live issue
+// whose body doesn't parse; retired issues are returned as far as they parse, since nothing is built from them.
 export async function loadRequirements(config: Config, options: LoadRequirementsOptions = {}): Promise<Requirement[]> {
   const { env = process.env } = options;
   const issuesFile = options.issuesFile ?? (env.BEARING_ISSUES_FILE || undefined);
@@ -73,7 +73,7 @@ export async function loadRequirements(config: Config, options: LoadRequirements
   const requirements = issues
     .map((issue) => {
       const parsed = parseIssue(issue);
-      if (issue.state === "open") problems.push(...parsed.problems);
+      if (isLive(parsed.requirement)) problems.push(...parsed.problems);
       return parsed.requirement;
     })
     .sort((a, b) => a.number - b.number);
@@ -81,9 +81,15 @@ export async function loadRequirements(config: Config, options: LoadRequirements
   return requirements;
 }
 
-// The open stories that each need exactly one dynamic view: everything open except epics.
+// Live: open, or closed as completed, which means delivered: the code still serves it, so it stays in the target.
+// Closed as not planned or as a duplicate, it's retired, and nothing in the target may list it.
+export function isLive(requirement: Pick<Requirement, "state" | "stateReason">): boolean {
+  return requirement.state === "open" || requirement.stateReason === null || requirement.stateReason === "completed";
+}
+
+// The live stories that each need exactly one dynamic view: everything live except epics.
 export function leafStories(requirements: Requirement[]): Requirement[] {
-  return requirements.filter((requirement) => requirement.state === "open" && !requirement.epic);
+  return requirements.filter((requirement) => isLive(requirement) && !requirement.epic);
 }
 
 // What a story's dynamic view pins as "bearing.criteria": a short digest of each criterion's text, e.g.

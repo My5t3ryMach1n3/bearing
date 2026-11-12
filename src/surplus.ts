@@ -4,10 +4,10 @@ import type { Config } from "./config.js";
 import type { ImportGraph } from "./derive.js";
 import { adapters, languageOf } from "./lang/index.js";
 import type { Model } from "./model.js";
-import type { Requirement } from "./requirements.js";
+import { isLive, type Requirement } from "./requirements.js";
 import type { SpanRecord } from "./test.js";
 
-// Surplus: code outside every component's path, code in components that serve only closed requirements, and exported
+// Surplus: code outside every component's path, code in components that serve only retired requirements, and exported
 // functions no criterion's trace reaches. Advisory only, since a helper nothing traces may
 // still be needed. See the Checks section of docs/product-spec.md.
 //
@@ -19,7 +19,7 @@ import type { SpanRecord } from "./test.js";
 export interface SurplusResult {
   // Source files under no component path.
   outside: string[];
-  // Components that serve only closed requirements, such as one closed as not planned, with their files: the target
+  // Components that serve only retired requirements, closed as not planned or as a duplicate, with their files: the target
   // is to prune them, and their code goes with them.
   closed: ClosedComponent[];
   // Files in components whose exported functions no tagged test called, with those functions.
@@ -43,7 +43,7 @@ export interface UntracedFile {
   functions: string[];
 }
 
-// `closed` maps each component that serves only closed requirements to those requirements.
+// `closed` maps each component that serves only retired requirements to those requirements.
 export function checkSurplus(
   config: Pick<Config, "root" | "languages">,
   graph: ImportGraph,
@@ -75,14 +75,15 @@ export function checkSurplus(
   return { outside: graph.unmapped, closed: closedComponents, untraced, traced: reached.size > 0 };
 }
 
-// The target's components that list closed requirements and no open one, each with the closed ones it lists.
+// The target's components that list retired requirements, closed as not planned or as a duplicate, and no live one,
+// each with the retired ones it lists. One closed as completed is live: the code still serves it.
 export function closedComponents(target: Model, requirements: Requirement[]): Map<string, string[]> {
-  const state = new Map(requirements.map((requirement) => [requirement.id, requirement.state]));
+  const live = new Map(requirements.map((requirement) => [requirement.id, isLive(requirement)]));
   const closed = new Map<string, string[]>();
   for (const element of target.elements.values()) {
     if (element.type !== "component") continue;
-    const issues = element.requirements.filter((id) => state.get(id) === "closed");
-    if (issues.length > 0 && !element.requirements.some((id) => state.get(id) === "open")) {
+    const issues = element.requirements.filter((id) => live.get(id) === false);
+    if (issues.length > 0 && !element.requirements.some((id) => live.get(id) === true)) {
       closed.set(element.id, issues);
     }
   }
@@ -102,7 +103,7 @@ export function formatSurplus(result: SurplusResult): string {
     lines.push("  Outside every component's path:", ...result.outside.map((file) => `    ${file}`));
   }
   if (result.closed.length > 0) {
-    lines.push("  In components that serve only closed requirements, to prune with them:");
+    lines.push("  In components that serve only requirements closed as not planned or duplicate, to prune with them:");
     for (const { component, issues, files } of result.closed) {
       lines.push(`    ${component} (${issues.join(", ")}): ${files.length === 0 ? "no files" : files.join(", ")}`);
     }

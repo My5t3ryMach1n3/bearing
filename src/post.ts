@@ -202,7 +202,9 @@ export function advisoryDescription(text: string | undefined): string {
   const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   const found = [
     ...(outside > 0 ? [`${count(outside, "file")} outside every component`] : []),
-    ...(closed > 0 ? [`${count(closed, "component")} serving only closed requirements`] : []),
+    ...(closed > 0
+      ? [`${count(closed, "component")} serving only requirements closed as not planned or duplicate`]
+      : []),
     ...(untraced > 0 ? [`${count(untraced, "exported function")} no tagged test calls`] : []),
   ];
   const description = `Surplus flagged${found.length > 0 ? `: ${found.join(", ")}` : ""}. Advisory only`;

@@ -28,7 +28,7 @@ If the repo wasn't cloned, for example if you created it with `gh repo create --
 
 Each requirement is an issue made with the **Requirement** form: a user story and numbered Given/When/Then acceptance criteria. The issue number is its ID; criteria are `#4/AC1`, `#4/AC2` and so on.
 
-A requirement issue stays open for as long as the code serves it. Link PRs to one with `Refs #4`, never `Closes #4` or `Fixes #4`, which would close it on merge. To drop a requirement, close it as **not planned**: Bearing then lists what served only that issue for pruning.
+Link a PR to the requirement it delivers with `Closes #4`, so GitHub closes the issue on merge and tracks progress as usual. An issue closed as completed stays in the target, since the code still serves it. To drop a requirement, close it as **not planned**: Bearing then lists what served only that issue for pruning.
 
 ## 3. Design the target
 
