@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig, parseConfig } from "../src/config.js";
-import { CoverageError, criteriaCoverage, formatCoverage, readTestRecords } from "../src/coverage.js";
+import {
+  CoverageError,
+  criteriaCoverage,
+  failedRun,
+  formatCoverage,
+  otherFailures,
+  readExitCode,
+  readTestRecords,
+} from "../src/coverage.js";
 import { loadRequirements } from "../src/requirements.js";
 import type { TestRecord } from "../src/trace/runtime.js";
 import { basketDir } from "./basket.js";
@@ -99,10 +107,62 @@ describe("formatCoverage", () => {
     );
   });
 
+  it("lists the other tests that failed, and a test command that failed with none to show", () => {
+    const tests = [passed("#7/AC1")];
+    const coverage = criteriaCoverage(config, requirements, [7], tests);
+    const unit = { name: "parses a price", file: "test/unit/price.test.ts" };
+    expect(formatCoverage(coverage, 2, [unit, { name: "#3/AC1 breaks" }])).toContain(
+      "  2 other tests failed:\n    failed: parses a price (test/unit/price.test.ts)\n    failed: #3/AC1 breaks\n",
+    );
+    expect(formatCoverage([], 1, [unit])).toBe(
+      "Criteria coverage: failed, tests failed\n  Another test failed:\n    failed: parses a price (test/unit/price.test.ts)\n",
+    );
+    expect(formatCoverage(coverage, 1, [], 1)).toContain(
+      "  The test command exited with code 1, with no failed test to show for it; see its output.\n",
+    );
+  });
+
   it("points to `bearing test` when there are no results at all", () => {
     expect(formatCoverage(criteriaCoverage(config, requirements, [7], []), 0)).toContain(
       "No test results in .bearing/traces/; run the tests with `bearing test` first.",
     );
+  });
+});
+
+describe("otherFailures", () => {
+  it("lists every failed test the criteria don't: untagged ones and other issues'", () => {
+    const unit: TestRecord = { name: "parses a price", file: "test/unit/price.test.ts", status: "failed" };
+    const tests = [passed("#2/AC1"), failed("#2/AC2"), failed("#3/AC1"), unit, { ...unit, status: "passed" as const }];
+    const criteria = criteriaCoverage(config, requirements, [2], tests);
+    expect(otherFailures(tests, criteria)).toEqual([
+      { name: "#3/AC1 breaks", file: "test/integration/basket.test.ts" },
+      { name: "parses a price", file: "test/unit/price.test.ts" },
+    ]);
+    expect(otherFailures(tests, criteriaCoverage(config, requirements, [2, 3], tests))).toEqual([
+      { name: "parses a price", file: "test/unit/price.test.ts" },
+    ]);
+  });
+});
+
+describe("failedRun", () => {
+  it("is the exit code of a command that failed with no failed test to show for it", () => {
+    expect(failedRun(1, [passed("#2/AC1")])).toBe(1);
+  });
+
+  it("is nothing when the run passed, a failed test explains it, or no test ran at all", () => {
+    expect(failedRun(0, [passed("#2/AC1")])).toBeUndefined();
+    expect(failedRun(1, [failed("#2/AC1")])).toBeUndefined();
+    expect(failedRun(1, [])).toBeUndefined();
+    expect(failedRun(undefined, [passed("#2/AC1")])).toBeUndefined();
+  });
+});
+
+describe("readExitCode", () => {
+  it("reads the exit code `bearing test` recorded, or nothing if it didn't run", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bearing-coverage-"));
+    expect(readExitCode(dir)).toBeUndefined();
+    writeFileSync(join(dir, "run.json"), '{"exitCode":2}\n');
+    expect(readExitCode(dir)).toBe(2);
   });
 });
 

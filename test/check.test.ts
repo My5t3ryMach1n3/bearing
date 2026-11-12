@@ -225,6 +225,40 @@ describe("runChecks on the basket fixture", () => {
     expect(report.checks[5]).toMatchObject({ status: "failed", issues: ["#7"], criteria: [{ status: "missing" }] });
   });
 
+  it("fails Criteria coverage on any failed test, not only the issue's", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "issue-7-session-expiry");
+    const unit = { name: "parses a price", file: "test/unit/price.test.ts", status: "failed" as const };
+    record(root, passed("#7/AC1"), unit);
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[5]).toMatchObject({
+      status: "failed",
+      criteria: [{ id: "#7/AC1", status: "covered" }],
+      failed: [{ name: "parses a price", file: "test/unit/price.test.ts" }],
+    });
+    expect(formatReport(report)).toContain(
+      "  Another test failed:\n    failed: parses a price (test/unit/price.test.ts)\n",
+    );
+  });
+
+  it("fails Criteria coverage on a failed test even with no issues to check", async () => {
+    const root = basketRepo();
+    record(root, { ...passed("#2/AC1"), status: "failed" });
+    const report = await runChecks(loadConfig(root));
+    expect(report.passed).toBe(false);
+    expect(report.checks[5]).toMatchObject({ status: "failed", criteria: [], failed: [{ name: "#2/AC1 works" }] });
+    expect(formatReport(report)).toContain("Criteria coverage: failed, tests failed\n");
+  });
+
+  it("fails Criteria coverage when the test command failed with no failed test to show", async () => {
+    const root = basketRepo();
+    git(root, "checkout", "-q", "-b", "issue-7-session-expiry");
+    record(root, passed("#7/AC1"));
+    writeFileSync(join(root, ".bearing", "traces", "run.json"), '{"exitCode":1}\n');
+    const report = await runChecks(loadConfig(root));
+    expect(report.checks[5]).toMatchObject({ status: "failed", exitCode: 1 });
+  });
+
   it("takes the issues from the branch name when there's no claims file", async () => {
     const root = basketRepo();
     git(root, "checkout", "-q", "-b", "issue-7-session-expiry");

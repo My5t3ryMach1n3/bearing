@@ -19,9 +19,13 @@ import { ConfigError, loadConfig, type Config } from "./config.js";
 import {
   CoverageError,
   criteriaCoverage,
+  failedRun,
   formatCoverage,
+  otherFailures,
+  readExitCode,
   readTestRecords,
   type CriterionCoverage,
+  type FailedTest,
 } from "./coverage.js";
 import { deriveImports, DeriveError, type ImportGraph, type ImportRelationship, type ImportSite } from "./derive.js";
 import { diffModels, loadModel, type Drift } from "./diff.js";
@@ -151,6 +155,10 @@ export interface CoverageCheck extends CheckBase {
   recorded: number;
   // Components the branch changes code in with no issue known, from the claim or the branch's name.
   unlinked?: string[];
+  // Failed tests the criteria don't list: untagged ones, unit tests and other issues'. Any fails the check.
+  failed?: FailedTest[];
+  // The test command's exit code, when it failed with no failed test recorded, e.g. on a file that doesn't compile.
+  exitCode?: number;
 }
 
 export interface PathsCheck extends CheckBase {
@@ -402,6 +410,17 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
   const issues = options.issues?.map((issue) => `#${issue}`) ?? claimed ?? issuesInBranch(branch);
   let coverage: CoverageCheck;
   let paths: PathsCheck;
+  const tests = readTestRecords(join(config.root, tracesDir));
+  const exitCode = failedRun(readExitCode(join(config.root, tracesDir)), tests);
+  // Whatever the issues, every test has to pass.
+  const failures = (criteria: CriterionCoverage[]) => {
+    const failed = otherFailures(tests, criteria);
+    return {
+      ...(failed.length > 0 ? { failed } : {}),
+      ...(exitCode === undefined ? {} : { exitCode }),
+      failing: failed.length > 0 || exitCode !== undefined,
+    };
+  };
   if (issues.length === 0) {
     const reason =
       claim === undefined
@@ -412,22 +431,34 @@ export async function runChecks(config: Config, options: CheckOptions = {}): Pro
     const owners = componentPaths(target);
     const changed = await changedSourceFiles(config, fork);
     const unlinked = [...new Set(changed.flatMap((path) => componentOf(path, owners) ?? []))].sort();
+    const { failing, ...failed } = failures([]);
     coverage =
       unlinked.length > 0
         ? { check: "coverage", status: "failed", blocking: true, issues, criteria: [], recorded: 0, unlinked }
-        : { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
+        : failing
+          ? {
+              check: "coverage",
+              status: "failed",
+              blocking: true,
+              issues,
+              criteria: [],
+              recorded: tests.length,
+              ...failed,
+            }
+          : { check: "coverage", status: "skipped", blocking: true, reason, issues, criteria: [], recorded: 0 };
     paths = { check: "paths", status: "skipped", blocking: true, reason, issues, views: [] };
   } else {
-    const tests = readTestRecords(join(config.root, tracesDir));
     const numbers = issues.map((issue) => Number(issue.slice(1)));
     const criteria = criteriaCoverage(config, await requirements(), numbers, tests);
+    const { failing, ...failed } = failures(criteria);
     coverage = {
       check: "coverage",
-      status: criteria.every((criterion) => criterion.status === "covered") ? "passed" : "failed",
+      status: !failing && criteria.every((criterion) => criterion.status === "covered") ? "passed" : "failed",
       blocking: true,
       issues,
       criteria,
       recorded: tests.length,
+      ...failed,
     };
     const spans = readSpanRecords(join(config.root, tracesDir));
     const views = checkTracePaths(config, {
@@ -527,7 +558,7 @@ export function formatCheck(check: CheckReport["checks"][number]): string {
       return formatDeployment(check);
     case "coverage":
       return check.unlinked === undefined
-        ? formatCoverage(check.criteria, check.recorded)
+        ? formatCoverage(check.criteria, check.recorded, check.failed, check.exitCode)
         : formatUnlinked(check.unlinked);
     case "paths":
       return formatTracePaths(check.views);

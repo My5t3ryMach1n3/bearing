@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, parseConfig } from "../src/config.js";
-import { readTestRecords } from "../src/coverage.js";
+import { readExitCode, readTestRecords } from "../src/coverage.js";
 import { modelFromWorkspace } from "../src/model.js";
 import { deriveImports } from "../src/derive.js";
 import { componentPaths } from "../src/paths.js";
@@ -148,6 +148,7 @@ describe("bearing test", () => {
     const config = loadConfig(root);
     const result = await runTraced(config, basketComponents, [`${config.tests.integration!} test/unit`], quiet);
     expect(result.exitCode).toBe(1);
+    expect(readExitCode(join(root, tracesDir))).toBe(1);
     const records = readTestRecords(join(root, tracesDir));
     expect(records).toHaveLength(14);
     expect(records).toContainEqual({
@@ -254,7 +255,7 @@ describe("bearing test", () => {
     writeFileSync(join(root, tracesDir, "spans-1-0.jsonl"), "stale\n");
     const result = await runTraced(loadConfig(root), basketComponents, ["node", "-e", ""], quiet);
     expect(result.spans).toBe(0);
-    expect(readdirSync(join(root, tracesDir))).toEqual([]);
+    expect(readdirSync(join(root, tracesDir))).toEqual(["run.json"]);
   });
 
   it("traces ES modules and CommonJS under plain Node", { timeout: 60_000 }, async () => {
