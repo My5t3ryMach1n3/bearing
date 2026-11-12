@@ -3,7 +3,7 @@
 # re-derives everything: no as-built model, trace or test result the branch commits is used. The job fails if the
 # target is invalid or a blocking check fails, and that result is `bearing/conformance`. The comment and check results
 # are uploaded for the `workflow_run` job in actions/report to post, since this job's token can't write to a fork's PR.
-# Last, for a PR from this repo that leaves Bearing's workflows and config alone, it builds the architecture page and
+# Last, for a PR from this repo that leaves the workflows alone, it builds the architecture page and
 # uploads it unzipped, for the report job to link. See the GitHub Action section of docs/product-spec.md.
 name: Bearing conformance
 description: Validate the target, run the traced tests, derive the as-built model, check it and write the PR comment.
@@ -81,7 +81,8 @@ runs:
         path: ${{ runner.temp }}/bearing/site/
         if-no-files-found: ignore
     # The architecture page, built from the checks' results above, never failing the job. Only for a PR from this repo,
-    # and not for one that changes Bearing's workflows or config, which would build it with the workflow it changes.
+    # and not for one that changes the workflows, which would build it with the workflow it changes. A PR that changes
+    # .bearing/config.yaml still gets one: the config is an input to the page, like the model, and the guard flags it.
     # `bearing post` checks both again itself before it links the page, since this job runs the PR's code.
     - id: page
       name: bearing page
@@ -92,9 +93,9 @@ runs:
         GH_TOKEN: ${{ inputs.token }}
         BASE: ${{ inputs.base }}
       run: |
-        changed="$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- .github/workflows .bearing ':!.bearing/claims')"
+        changed="$(git diff --name-only --no-renames "origin/$BASE...HEAD" -- .github/workflows)"
         if [ -n "$changed" ]; then
-          echo "No architecture page: this PR changes Bearing's workflows or config:"
+          echo "No architecture page: this PR changes the workflows:"
           echo "$changed"
           exit 0
         fi

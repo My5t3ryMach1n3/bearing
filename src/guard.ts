@@ -57,11 +57,12 @@ export function isTargetPath(path: string, model: string): boolean {
   return under(path, modelPathspec({ model })) || isBearingPath(path);
 }
 
-// Whether any of the PR's files changes Bearing's config or workflows, counting a file renamed into or out of them.
-export function changesBearing(files: PullFile[]): boolean {
+// Whether any of the PR's files changes the workflows, counting a file renamed into or out of them. Such a PR's
+// conformance run comes from the workflow it changes, so nothing the run uploads can be trusted.
+export function changesWorkflows(files: PullFile[]): boolean {
+  const workflow = (path: string) => under(path, ".github/workflows");
   return files.some(
-    (file) =>
-      isBearingPath(file.filename) || (file.previous_filename !== undefined && isBearingPath(file.previous_filename)),
+    (file) => workflow(file.filename) || (file.previous_filename !== undefined && workflow(file.previous_filename)),
   );
 }
 

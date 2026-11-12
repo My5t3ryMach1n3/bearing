@@ -177,10 +177,15 @@ describe("post's architecture page link", () => {
     }
   });
 
-  it("says why there's no page for a PR that changes Bearing's workflows or config, even when its run uploaded one", async () => {
+  it("links a page for a PR that changes Bearing's config, as the first PR that adds code does", async () => {
+    const files = [{ filename: ".bearing/config.yaml" }, { filename: "src/a.ts" }];
+    expect((await posted({ files, artifacts: [page] })).result.pageUrl).toBe(pageUrl);
+  });
+
+  it("says why there's no page for a PR that changes the workflows, even when its run uploaded one", async () => {
     for (const files of [
       [{ filename: ".github/workflows/bearing-conformance.yml" }],
-      [{ filename: ".bearing/config.yaml" }],
+      [{ filename: ".github/workflows/bearing-conformance.yml" }, { filename: ".bearing/config.yaml" }],
       [{ filename: "ci/old.yml", previous_filename: ".github/workflows/old.yml" }],
     ]) {
       const { result, body, paths } = await posted({ files, artifacts: [page] });
@@ -318,8 +323,9 @@ describe("the conformance workflow", () => {
       /^\s*bearing page --base "origin\/\$BASE" --check "\$RUNNER_TEMP\/bearing\/report\/check.json"/m,
     );
     expect(page?.run).toContain(`/${pageArtifact}"`);
-    // No page for a PR that changes Bearing's workflows or config.
-    expect(page?.run).toContain("-- .github/workflows .bearing ':!.bearing/claims'");
+    // No page for a PR that changes the workflows; one that changes only the config still gets one.
+    expect(page?.run).toContain("-- .github/workflows)");
+    expect(page?.run).not.toContain(".bearing");
     const uploaded = steps[index + 1];
     expect(uploaded).toMatchObject({ if: "steps.page.outputs.path != ''", "continue-on-error": true });
     expect(uploaded?.uses).toBe("actions/upload-artifact@v7");
