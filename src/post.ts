@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import type { CheckReport } from "./check.js";
 import { GitHubError, githubApi, githubRepository, githubToken, type GitHubCall } from "./github.js";
-import { actionsBot, changesBearing, pullFiles } from "./guard.js";
+import { actionsBot, changesWorkflows, pullFiles } from "./guard.js";
 import { guardEnd, guardLimit, guardStart, postComment, reportMarker } from "./report.js";
 
 // `bearing post`: the report job, which puts the conformance job's results on the PR. The conformance job runs the
@@ -12,8 +12,8 @@ import { guardEnd, guardLimit, guardStart, postComment, reportMarker } from "./r
 // runs on `workflow_run`, from the default branch, to post it. The PR's code wrote every file it reads, so they're
 // untrusted: the PR number is only believed when that PR's head is the commit the conformance run checked, the comment
 // can't take over the guard's section, and `bearing/advisory` is always a success. The architecture page the run
-// uploaded is linked only for a PR from this repo that leaves Bearing's workflows and config alone, which it checks
-// from the PR's files through the API, as the guard does. See the GitHub Action section of docs/product-spec.md.
+// uploaded is linked only for a PR from this repo that leaves the workflows alone, which it checks from the PR's files
+// through the API, as the guard does. See the GitHub Action section of docs/product-spec.md.
 
 export const advisoryContext = "bearing/advisory";
 
@@ -23,9 +23,9 @@ export const uploads = { pr: "pr", comment: "comment.md", check: "check.json" };
 // The architecture page, which the conformance job uploads unzipped, so the artifact takes the file's name.
 export const pageArtifact = "bearing-architecture.html";
 
-// What the comment says instead of linking the page for a PR that changes Bearing's workflows or config.
+// What the comment says instead of linking the page for a PR that changes the workflows.
 export const pageLeftOut =
-  "🧭 No architecture page: this PR changes Bearing's workflows or config, so the page would come from the very workflow it changes. The guard's diffs above are the authoritative view.";
+  "🧭 No architecture page: this PR changes the workflows, so the page would come from the very workflow it changes. The guard's diffs above are the authoritative view.";
 
 // The most files GitHub lists for a PR.
 const filesListed = 3000;
@@ -114,7 +114,7 @@ interface PullHead {
 }
 
 // The line the comment gives the architecture page: a link to the run's page artifact, or why there's none for a PR
-// that changes Bearing's workflows or config. Nothing for a PR from a fork, or when the run uploaded no page.
+// that changes the workflows. Nothing for a PR from a fork, or when the run uploaded no page.
 async function pageLink(options: {
   call: GitHubCall;
   repository: string;
@@ -129,7 +129,7 @@ async function pageLink(options: {
   try {
     // Checked here, not trusted from the run: a PR that changes the workflows could have uploaded any page.
     const files = await pullFiles(call, repository, pr);
-    if (changesBearing(files)) return { line: pageLeftOut };
+    if (changesWorkflows(files)) return { line: pageLeftOut };
     // GitHub lists no more than this many of a PR's files, so a bigger PR might hide a change to the workflows.
     if (files.length >= filesListed) {
       log(`warning: no architecture page linked: #${pr} changes more files than GitHub lists`);
