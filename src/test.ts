@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { ConfigError, loadConfig, type Config } from "./config.js";
@@ -76,9 +76,15 @@ export async function runTraced(
     child.on("error", (error) => fail(new TestError(`couldn't run ${command.join(" ")}: ${error.message}`)));
     child.on("exit", (code) => done(code ?? 1));
   });
+  // For Criteria coverage: a command that fails without a failed test to show for it, such as a file that doesn't
+  // compile, still fails the check.
+  writeFileSync(join(dir, runFile), `${JSON.stringify({ exitCode })}\n`);
   const warnings = adapters.flatMap((adapter) => adapter.traceHook.warnings?.(settings) ?? []);
   return { exitCode, ...readSpans(dir), warnings };
 }
+
+// What `runTraced` records about the run as a whole, next to the spans and test results.
+export const runFile = "run.json";
 
 // Counts the spans in a traces directory and the criteria they carry.
 export function readSpans(dir: string): { spans: number; criteria: string[] } {

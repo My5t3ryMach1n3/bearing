@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runChecks, type CheckReport } from "../src/check.js";
+import { runChecks, type CheckReport, type CoverageCheck } from "../src/check.js";
 import { loadConfig } from "../src/config.js";
 import { formatMermaid, type Overlay } from "../src/mermaid.js";
 import { createProgram } from "../src/program.js";
@@ -17,6 +17,7 @@ import {
   postComment,
   pullRequestNumber,
   reportMarker,
+  summarise,
 } from "../src/report.js";
 import { basketDir, basketRepo, basketVariants, git, variantRepo } from "./basket.js";
 
@@ -147,6 +148,32 @@ describe("the overlay on the basket fixture", () => {
     expect(overlay.nodes.map((node) => node.id)).not.toContain("shareService");
     expect(marked(overlay)).toEqual({});
     expect(comment).toContain("#### Components: what changes in Basket API");
+  });
+});
+
+describe("summarise", () => {
+  const coverage = (fields: Partial<CoverageCheck>): CoverageCheck => ({
+    check: "coverage",
+    status: "failed",
+    blocking: true,
+    issues: [],
+    criteria: [],
+    recorded: 1,
+    ...fields,
+  });
+
+  it("counts the other tests that failed next to the criteria", () => {
+    const criteria: CoverageCheck["criteria"] = [
+      { id: "#2/AC1", tag: "#2/AC1", where: "", text: "", status: "covered", tests: [] },
+    ];
+    expect(summarise(coverage({ criteria, failed: [{ name: "a" }, { name: "b" }] }))).toBe(
+      "1 of 1 criterion covered, 2 other tests failed",
+    );
+  });
+
+  it("says what failed with no issues to check", () => {
+    expect(summarise(coverage({ failed: [{ name: "a" }] }))).toBe("1 test failed");
+    expect(summarise(coverage({ exitCode: 2 }))).toBe("the test command exited with code 2");
   });
 });
 

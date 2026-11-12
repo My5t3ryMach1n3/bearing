@@ -292,7 +292,13 @@ export function summarise(check: CheckReport["checks"][number]): string {
     case "coverage": {
       if (check.unlinked !== undefined) return `${count(check.unlinked.length, "component")} changed with no issue`;
       const covered = check.criteria.filter((criterion) => criterion.status === "covered").length;
-      return `${covered} of ${count(check.criteria.length, "criterion", "criteria")} covered`;
+      const others = check.failed?.length ?? 0;
+      const failures = [
+        ...(others > 0 ? [`${count(others, check.criteria.length === 0 ? "test" : "other test")} failed`] : []),
+        ...(check.exitCode !== undefined ? [`the test command exited with code ${check.exitCode}`] : []),
+      ];
+      if (check.criteria.length === 0) return failures.join(", ");
+      return [`${covered} of ${count(check.criteria.length, "criterion", "criteria")} covered`, ...failures].join(", ");
     }
     case "paths": {
       const tests = check.views.flatMap((view) => view.tests);

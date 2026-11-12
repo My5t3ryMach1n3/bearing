@@ -3,12 +3,12 @@ import { join } from "node:path";
 import type { Config } from "./config.js";
 import { tagWhere } from "./lang/index.js";
 import type { Requirement } from "./requirements.js";
-import { tracesDir } from "./test.js";
+import { runFile, tracesDir } from "./test.js";
 import { criterionTag, testsFile, type TestRecord } from "./trace/runtime.js";
 
-// Criteria coverage: each criterion of the issues a PR touches needs a test tagged with it that ran and passed.
-// `bearing test` records every test's outcome in `.bearing/traces/`, and only tests whose names carry a criterion's
-// tag count. See the Criteria coverage section of docs/product-spec.md.
+// Criteria coverage: each criterion of the issues a PR touches needs a test tagged with it that ran and passed, and no
+// other test may fail. `bearing test` records every test's outcome in `.bearing/traces/`, and only tests whose names
+// carry a criterion's tag count towards a criterion. See the Criteria coverage section of docs/product-spec.md.
 
 export interface CriterionCoverage {
   // "#2/AC1"
@@ -44,6 +44,32 @@ export function readTestRecords(dir: string): TestRecord[] {
     );
 }
 
+// The test command's exit code from the last `bearing test`, or undefined if it never ran.
+export function readExitCode(dir: string): number | undefined {
+  const file = join(dir, runFile);
+  if (!existsSync(file)) return undefined;
+  const { exitCode } = JSON.parse(readFileSync(file, "utf8")) as { exitCode?: unknown };
+  return typeof exitCode === "number" ? exitCode : undefined;
+}
+
+export type FailedTest = Pick<TestRecord, "name" | "file">;
+
+// Every failed test the criteria don't already list: untagged ones, unit tests, and those of other issues. A failing
+// test fails the check whatever it's tagged with, so a change can't break an earlier requirement unseen.
+export function otherFailures(tests: TestRecord[], criteria: CriterionCoverage[]): FailedTest[] {
+  const listed = new Set(criteria.flatMap((criterion) => criterion.tests.map((test) => `${test.file}\0${test.name}`)));
+  return tests
+    .filter((test) => test.status === "failed" && !listed.has(`${test.file}\0${test.name}`))
+    .map(({ name, file }) => (file === undefined ? { name } : { name, file }));
+}
+
+// A test command that exited non-zero with no failed test recorded, such as one whose test file doesn't compile. Only
+// once it recorded some result, so a command with no tests to run yet, as on a design PR, doesn't fail.
+export function failedRun(exitCode: number | undefined, tests: TestRecord[]): number | undefined {
+  if (exitCode === undefined || exitCode === 0 || tests.length === 0) return undefined;
+  return tests.some((test) => test.status === "failed") ? undefined : exitCode;
+}
+
 // The coverage of every criterion of the given issues, in issue then criterion order.
 export function criteriaCoverage(
   config: Config,
@@ -75,11 +101,20 @@ export function criteriaCoverage(
     });
 }
 
-// `recorded` is how many test results the last `bearing test` recorded, so none at all can say to run it.
-export function formatCoverage(coverage: CriterionCoverage[], recorded: number): string {
+// `recorded` is how many test results the last `bearing test` recorded, so none at all can say to run it. `failed`
+// lists the other tests that failed, and `exitCode` the test command's when it failed with none to show.
+export function formatCoverage(
+  coverage: CriterionCoverage[],
+  recorded: number,
+  failed: FailedTest[] = [],
+  exitCode?: number,
+): string {
   const covered = coverage.filter((criterion) => criterion.status === "covered").length;
   const lines = [
-    `Criteria coverage: ${covered} of ${coverage.length} ${coverage.length === 1 ? "criterion" : "criteria"} covered`,
+    // With no issues to check, it's run only for the failures.
+    coverage.length === 0 && (failed.length > 0 || exitCode !== undefined)
+      ? "Criteria coverage: failed, tests failed"
+      : `Criteria coverage: ${covered} of ${coverage.length} ${coverage.length === 1 ? "criterion" : "criteria"} covered`,
   ];
   const width = Math.max(0, ...coverage.map((criterion) => criterion.id.length));
   for (const criterion of coverage) {
@@ -95,6 +130,14 @@ export function formatCoverage(coverage: CriterionCoverage[], recorded: number):
     for (const test of criterion.tests.filter((each) => each.status === "failed")) {
       lines.push(`    failed: ${test.name}${test.file === undefined ? "" : ` (${test.file})`}`);
     }
+  }
+  if (failed.length > 0) {
+    lines.push(`  ${failed.length === 1 ? "Another test" : `${failed.length} other tests`} failed:`);
+    for (const test of failed)
+      lines.push(`    failed: ${test.name}${test.file === undefined ? "" : ` (${test.file})`}`);
+  }
+  if (exitCode !== undefined) {
+    lines.push(`  The test command exited with code ${exitCode}, with no failed test to show for it; see its output.`);
   }
   if (recorded === 0) {
     lines.push("", `No test results in ${tracesDir}/; run the tests with \`bearing test\` first.`);

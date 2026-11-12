@@ -845,16 +845,22 @@ function tabsOf(
     coverage !== undefined && coverage.check === "coverage"
       ? coverage.criteria.filter((each) => each.status !== "covered").length
       : 0;
+  const otherFailed =
+    coverage !== undefined && coverage.check === "coverage"
+      ? (coverage.failed?.length ?? 0) + (coverage.exitCode === undefined ? 0 : 1)
+      : 0;
   const behaviourCounter =
-    offPath > 0
-      ? `${offPath} off path`
-      : untested > 0
-        ? `${untested} untested`
-        : uncovered > 0
-          ? plural(uncovered, "criterion", "criteria") + " uncovered"
-          : traced.length > 0 || (coverage?.status ?? "skipped") !== "skipped"
-            ? "covered"
-            : "not checked";
+    otherFailed > 0
+      ? "tests failing"
+      : offPath > 0
+        ? `${offPath} off path`
+        : untested > 0
+          ? `${untested} untested`
+          : uncovered > 0
+            ? plural(uncovered, "criterion", "criteria") + " uncovered"
+            : traced.length > 0 || (coverage?.status ?? "skipped") !== "skipped"
+              ? "covered"
+              : "not checked";
 
   return {
     target: tab("target", targetCounter),
