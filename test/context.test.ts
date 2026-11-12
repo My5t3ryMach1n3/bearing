@@ -43,9 +43,9 @@ describe("designContext", () => {
     expect(context.requirements.map((each) => each.id)).toEqual(["#1", "#2", "#3", "#4", "#6", "#7"]);
   });
 
-  it("prints every open story with its criteria, then the rules", () => {
+  it("prints every live story with its criteria, then the rules", () => {
     const text = formatDesignContext(designContext(config, requirements));
-    expect(text).toMatch(/^Open requirements: 6 stories, each needing one dynamic view\n/);
+    expect(text).toMatch(/^Requirements: 6 stories, each needing one dynamic view\n/);
     expect(text).toContain(
       "#4 Restore the basket after the session expires\n" +
         "  As a shopper, I want my basket restored after my session expires, so that I don't lose it.\n" +
@@ -67,7 +67,7 @@ describe("designContext", () => {
         requirement(12, { parent: 10 }),
       ]),
     );
-    expect(text).toMatch(/^Open requirements: 2 stories/);
+    expect(text).toMatch(/^Requirements: 2 stories/);
     expect(text).toContain("#10 Checkout (epic of #11, #12)\n\n#11 Story 11 (in epic #10)\n");
   });
 
@@ -140,14 +140,15 @@ describe("issueContext", () => {
     expect(text).toContain("Components (keep #9's code inside these paths)\n  None.\n");
   });
 
-  it("points an epic at its open stories", () => {
+  it("points an epic at its live stories, open or completed", () => {
     const epic = [
       requirement(10, { title: "Checkout", epic: true, story: "", criteria: [] }),
       requirement(11, { parent: 10 }),
       requirement(12, { parent: 10, state: "closed", stateReason: "completed" }),
+      requirement(13, { parent: 10, state: "closed", stateReason: "not_planned" }),
     ];
     const text = formatIssueContext(issueContext(config, model(), epic, 10));
-    expect(text).toContain("Open stories: #11. Run `bearing context #<n>` for each.");
+    expect(text).toContain("Stories: #11, #12. Run `bearing context #<n>` for each.");
     expect(text).not.toContain("Components");
   });
 

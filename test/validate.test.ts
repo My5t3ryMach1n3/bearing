@@ -37,7 +37,7 @@ function requirement(number: number, fields: Partial<Requirement> = {}): Require
   };
 }
 
-function close(number: number, stateReason: string): Requirement[] {
+function close(number: number, stateReason: string | null): Requirement[] {
   return requirements.map((each) =>
     each.number === number ? { ...each, state: "closed" as const, stateReason } : each,
   );
@@ -60,7 +60,9 @@ describe("validateModel", () => {
         {
           rule: "requirements",
           id: "sessionRestore",
-          message: expect.stringContaining('component serves no open requirement; set "bearing.requirements"'),
+          message: expect.stringContaining(
+            'component serves no requirement; set "bearing.requirements" to the open or completed',
+          ),
         },
       ]);
     });
@@ -105,7 +107,7 @@ describe("validateModel", () => {
       ]);
     });
 
-    it("fails an element that lists a closed issue next to open ones", () => {
+    it("fails an element that lists an issue closed as not planned next to live ones", () => {
       const found = problems(model(), close(4, "not_planned")).filter(
         (problem) => !problem.message.includes("prune it"),
       );
@@ -113,38 +115,44 @@ describe("validateModel", () => {
       expect(found).toContainEqual({
         rule: "requirements",
         id: "basketController",
-        message: '"bearing.requirements" lists #4, closed; drop it and keep #1, #2, #3, #6, #7',
+        message: '"bearing.requirements" lists #4, closed as not planned; drop it and keep #1, #2, #3, #6, #7',
       });
-      for (const problem of found) expect(problem.message).toMatch(/lists #4, closed; drop it and keep #/);
+      for (const problem of found)
+        expect(problem.message).toMatch(/lists #4, closed as not planned; drop it and keep #/);
     });
 
-    it("says to reopen an issue closed as completed rather than drop it", () => {
+    it("keeps an issue closed as completed in the target, since the code still serves it", () => {
       const target = model();
       target.elements.get("basketService")!.requirements = ["#9"];
-      const issues = [...requirements, requirement(9, { state: "closed", stateReason: "completed" })];
-      expect(problems(target, issues)).toEqual([
+      const issues = [...requirements, requirement(9, { state: "closed", stateReason: "completed", epic: true })];
+      expect(problems(target, issues)).toEqual([]);
+    });
+
+    it("keeps a story closed as completed, with no reason, or alongside open ones, and still needs its view", () => {
+      expect(problems(model(), close(2, "completed"))).toEqual([]);
+      const target = model();
+      target.dynamicViews.delete("req-2");
+      expect(problems(target, close(2, null))).toEqual([
         {
-          rule: "requirements",
-          id: "basketService",
-          message:
-            '"bearing.requirements" lists #9, closed as completed; a requirement stays open while the code serves it, so reopen it, or close it as not planned to prune what serves only it',
+          rule: "dynamic-view",
+          id: "#2",
+          message: expect.stringContaining('story has no dynamic view; add one keyed "req-2"'),
         },
       ]);
     });
 
-    it("says to reopen a story closed as completed, next to open ones and on its view", () => {
-      const found = problems(model(), close(2, "completed"));
-      expect(found.length).toBeGreaterThan(0);
-      for (const problem of found) {
-        expect(problem.message).toContain("#2, closed as completed; a requirement stays open while the code serves it");
-      }
+    it("says to list the original in place of an issue closed as a duplicate", () => {
+      const found = problems(model(), close(4, "duplicate"));
+      expect(found).toContainEqual({
+        rule: "requirements",
+        id: "sessionRestore",
+        message: '"bearing.requirements" lists #4, closed as a duplicate; list the issue it duplicates instead',
+      });
       expect(found).toContainEqual({
         rule: "dynamic-view",
-        id: "req-2",
-        message:
-          "dynamic view is for #2, closed as completed; a requirement stays open while the code serves it, so reopen it, or close it as not planned to prune what serves only it",
+        id: "req-4",
+        message: "dynamic view is for #4, closed as a duplicate; prune it from the target",
       });
-      expect(found.map((problem) => problem.message).join("\n")).not.toContain("drop it");
     });
 
     it("fails an issue that isn't a requirement, even next to one that is", () => {
@@ -217,19 +225,19 @@ describe("validateModel", () => {
   });
 
   describe("dynamic views", () => {
-    it("fails an open story with no dynamic view", () => {
+    it("fails a story with no dynamic view", () => {
       expect(problems(model(), [...requirements, requirement(9, { title: "Keep a guest basket" })])).toEqual([
         {
           rule: "dynamic-view",
           id: "#9",
-          message: 'open story has no dynamic view; add one keyed "req-9" and titled "#9 Keep a guest basket"',
+          message: 'story has no dynamic view; add one keyed "req-9" and titled "#9 Keep a guest basket"',
         },
       ]);
     });
 
-    it("needs no view for an epic or a closed story, but fails a view for an epic", () => {
+    it("needs no view for an epic or a story closed as not planned, but fails a view for an epic", () => {
       const issues = requirements.map((each) => (each.number === 4 ? { ...each, epic: true } : each));
-      issues.push(requirement(9, { state: "closed", stateReason: "completed" }));
+      issues.push(requirement(9, { state: "closed", stateReason: "not_planned" }));
       expect(problems(model(), issues)).toEqual([
         { rule: "dynamic-view", id: "req-4", message: expect.stringContaining("#4, an epic; epics get none") },
       ]);
@@ -377,7 +385,7 @@ describe("bearing validate", () => {
   it("passes the basket target", async () => {
     const result = await run();
     expect(result).toEqual({
-      stdout: "architecture/workspace.dsl is valid: 12 elements and 6 open stories, each with its dynamic view\n",
+      stdout: "architecture/workspace.dsl is valid: 12 elements and 6 stories, each with its dynamic view\n",
       stderr: "",
       exitCode: 0,
     });
@@ -390,7 +398,7 @@ describe("bearing validate", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toMatch(/^error: architecture\/workspace.dsl breaks 2 Bearing rules:\n/);
-    expect(result.stderr).toContain("  - sessionRestore: component serves no open requirement");
+    expect(result.stderr).toContain("  - sessionRestore: component serves no requirement");
     expect(result.stderr).toContain('  - authMiddleware: component has no "bearing.path"');
   });
 

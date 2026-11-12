@@ -47,14 +47,14 @@ describe("formatSurplus", () => {
     );
   });
 
-  it("lists the code of components that serve only closed requirements, to prune with them", () => {
+  it("lists the code of components that serve only retired requirements, to prune with them", () => {
     const closed = [
       { component: "sessionRestore", issues: ["#4"], files: ["src/basket-api/session-restore/index.ts"] },
     ];
     expect(formatSurplus({ outside: [], closed, untraced: [], traced: true })).toBe(
       [
         "Surplus: flagged (advisory, doesn't block merge), code that may not be needed",
-        "  In components that serve only closed requirements, to prune with them:",
+        "  In components that serve only requirements closed as not planned or duplicate, to prune with them:",
         "    sessionRestore (#4): src/basket-api/session-restore/index.ts",
         "  Remove the code if no requirement needs it, or tag a test that exercises it with the criterion it serves.",
         "",
@@ -68,25 +68,32 @@ describe("closedComponents", () => {
     id,
     { id, type: "component", name: id, description: "", technology: "", tags: [], requirements, properties: {} },
   ];
-  const issue = (number: number, state: "open" | "closed"): Requirement => ({
+  const issue = (number: number, stateReason: string | null = null): Requirement => ({
     id: `#${number}`,
     number,
     title: "",
-    state,
-    stateReason: state === "open" ? null : "not_planned",
+    state: stateReason === null ? "open" : "closed",
+    stateReason,
     story: "",
     criteria: [],
     parent: null,
     epic: false,
   });
 
-  it("finds components that list closed requirements and no open one", () => {
+  it("finds components that list retired requirements and no live one", () => {
     const target: Model = {
-      elements: new Map([component("search", ["#5"]), component("loans", ["#2", "#5"]), component("stray", ["#99"])]),
+      elements: new Map([
+        component("search", ["#5"]),
+        component("loans", ["#2", "#5"]),
+        component("returns", ["#3", "#5"]),
+        component("stray", ["#99"]),
+      ]),
       relationships: new Map(),
       dynamicViews: new Map(),
       deployment: new Map(),
     };
-    expect(closedComponents(target, [issue(2, "open"), issue(5, "closed")])).toEqual(new Map([["search", ["#5"]]]));
+    expect(closedComponents(target, [issue(2), issue(3, "completed"), issue(5, "not_planned")])).toEqual(
+      new Map([["search", ["#5"]]]),
+    );
   });
 });

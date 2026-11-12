@@ -163,16 +163,19 @@ describe("loadRequirements", () => {
 });
 
 describe("leafStories", () => {
-  it("returns open stories, not epics or closed issues", async () => {
+  it("returns live stories, open or completed, not epics or retired issues", async () => {
     const issuesFile = writeIssues([
       issue("Basket epic", { number: 1, sub_issues_summary: { total: 2 } }),
       issue(spec, { number: 2, parent: 1 }),
       issue(spec, { number: 3, parent: 1, state: "closed", state_reason: "completed" }),
       issue(spec, { number: 4 }),
+      issue(spec, { number: 5, state: "closed", state_reason: "not_planned" }),
+      issue(spec, { number: 6, state: "closed", state_reason: "duplicate" }),
     ]);
     const requirements = await loadRequirements(config, { issuesFile });
     expect(leafStories(requirements).map((requirement) => [requirement.id, requirement.parent])).toEqual([
       ["#2", 1],
+      ["#3", 1],
       ["#4", null],
     ]);
   });

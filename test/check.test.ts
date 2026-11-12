@@ -149,7 +149,7 @@ describe("runChecks on the basket fixture", () => {
       problems: [{ rule: "dynamic-view", id: "#5" }],
     });
     expect(formatReport(report)).toMatch(
-      /^Target valid: failed, architecture\/workspace\.(dsl|json) breaks 1 Bearing rule\n {2}#5: open story has no dynamic view;/,
+      /^Target valid: failed, architecture\/workspace\.(dsl|json) breaks 1 Bearing rule\n {2}#5: story has no dynamic view;/,
     );
     expect(formatReport(report)).toMatch(/1 blocking check failed: Target valid\.\n$/);
   });

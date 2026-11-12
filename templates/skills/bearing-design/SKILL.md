@@ -1,6 +1,6 @@
 ---
 name: bearing-design
-description: Design the target architecture from the open requirements, revise it after review, or change it for a new requirement. Use when asked to design, draft, revise or change the C4 model in {{model}}, before any code is written for those requirements.
+description: Design the target architecture from the requirements, revise it after review, or change it for a new requirement. Use when asked to design, draft, revise or change the C4 model in {{model}}, before any code is written for those requirements.
 ---
 
 # Design the target from requirements
@@ -11,7 +11,7 @@ The deliverable is one pull request that changes only {{model}} and {{adrs}}/. N
 
 ## 1. Read the requirements and rules
 
-Run `bearing context --issues`. It prints every open requirement with its acceptance criteria, then the C4 rules, Bearing's rules and the DSL conventions. Those rules are what `bearing validate` checks, so treat them as hard constraints. Read the repo too: existing code, IaC and the language in use decide where component paths go.
+Run `bearing context --issues`. It prints every requirement, open or completed, with its acceptance criteria, then the C4 rules, Bearing's rules and the DSL conventions. Those rules are what `bearing validate` checks, so treat them as hard constraints. Read the repo too: existing code, IaC and the language in use decide where component paths go.
 
 Each issue number is a stable ID. Epics are parent issues: their stories get dynamic views, they don't.
 
@@ -31,7 +31,7 @@ Use C4's vocabulary only. If a choice needs explaining, such as a datastore, a s
 
 ## 4. One dynamic view per story
 
-For every open story that isn't an epic, add `dynamic <container> "req-<n>" "#<n> <issue title>"`, scoped to the container its components are in. List the steps in call order, from whatever starts the request to the last datastore or external system it reaches. Label each step with the call it stands for, e.g. `"addItem()"` or `"POST /basket/items"`.
+For every story that isn't an epic, add `dynamic <container> "req-<n>" "#<n> <issue title>"`, scoped to the container its components are in. List the steps in call order, from whatever starts the request to the last datastore or external system it reaches. Label each step with the call it stands for, e.g. `"addItem()"` or `"POST /basket/items"`.
 
 These views are the contract: integration tests tagged with each criterion are traced, and the trace must follow the view. Draw the path you expect the code to take, not a simplified one.
 
@@ -43,7 +43,7 @@ Add a `deploymentEnvironment` with nodes for where each container runs and a `co
 
 ## 6. Tag everything with requirements
 
-Set `"bearing.requirements"` on every person, system, container, component and relationship. Derive it from the dynamic views: an element or relationship serves an issue when that issue's view passes through it. Parents list the union of their children, so the system lists every issue its containers serve. If something serves no open issue, remove it.
+Set `"bearing.requirements"` on every person, system, container, component and relationship. Derive it from the dynamic views: an element or relationship serves an issue when that issue's view passes through it. Parents list the union of their children, so the system lists every issue its containers serve. If something serves no open or completed issue, remove it.
 
 ## 7. Record key choices as ADRs
 

@@ -455,14 +455,14 @@ describe("bearing report", () => {
       status: "failed",
       blocking: true,
       model: "architecture/workspace.dsl",
-      problems: [{ rule: "dynamic-view", id: "#5", message: 'open story has no dynamic view; add one keyed "req-5"' }],
+      problems: [{ rule: "dynamic-view", id: "#5", message: 'story has no dynamic view; add one keyed "req-5"' }],
     };
     const file = join(root, "check.json");
     writeFileSync(file, JSON.stringify(check));
     const { stdout } = await run("--check", file);
     expect(stdout).toContain("## Bearing: ❌ 3 blocking checks failed: Target valid, Claim, Boundaries");
     expect(stdout).toContain("| Target valid | ❌ failed | 1 broken rule in `architecture/workspace.dsl` |");
-    expect(stdout).toContain("#5: open story has no dynamic view");
+    expect(stdout).toContain("#5: story has no dynamic view");
   });
 
   it("posts the comment on the event's pull request", async () => {

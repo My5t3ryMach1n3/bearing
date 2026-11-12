@@ -4,13 +4,13 @@ import { Command } from "commander";
 import { ConfigError, loadConfig, type Config } from "./config.js";
 import { loadModel } from "./diff.js";
 import { dynamicViewKey, type DynamicView, type Element, type Model, type Relationship } from "./model.js";
-import { criteriaPin, loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
+import { criteriaPin, isLive, loadRequirements, RequirementsError, type Requirement } from "./requirements.js";
 import { StructurizrError } from "./structurizr.js";
 import { criterionTag } from "./trace/runtime.js";
 
 // What `bearing context --issues` gives an agent to design the target from.
 export interface DesignContext {
-  // Open requirements, epics included so stories can be grouped under them.
+  // Live requirements, open or closed as completed, epics included so stories can be grouped under them.
   requirements: Requirement[];
   rules: { c4: string[]; bearing: string[]; dsl: string[] };
   // A DSL snippet showing the conventions in use.
@@ -29,14 +29,14 @@ export interface IssueContext {
   // Relationships it lists or its dynamic view takes: the only dependencies its code may add between components.
   relationships: Relationship[];
   dynamicView: DynamicView | null;
-  // Open stories under it, when it is an epic.
+  // Live stories under it, when it is an epic.
   stories: number[];
 }
 
 export function designContext(config: Config, requirements: Requirement[]): DesignContext {
   const tag = criterionTag(config.tests.tag, 2, 1);
   return {
-    requirements: requirements.filter((requirement) => requirement.state === "open"),
+    requirements: requirements.filter(isLive),
     rules: {
       c4: [
         "Model levels 1 to 3 only: people and software systems, the containers of the system being built, and the components inside its containers. Code (level 4) is tied to components by path, not modelled.",
@@ -46,9 +46,9 @@ export function designContext(config: Config, requirements: Requirement[]): Desi
         "Deployment views place container instances on deployment nodes, matching the infrastructure the IaC will declare.",
       ],
       bearing: [
-        'Every element and relationship sets "bearing.requirements" to the open issues it serves, e.g. "#1,#2", and no closed ones. Nothing is added just in case, and what served only an issue closed as not planned is pruned, with its code.',
+        'Every element and relationship sets "bearing.requirements" to the issues it serves, e.g. "#1,#2": open ones, and ones closed as completed, which the code still serves. None closed as not planned or as a duplicate. Nothing is added just in case, and what served only an issue closed as not planned is pruned, with its code.',
         'Every component sets "bearing.path" to the folder it owns, relative to the repo root. No two paths overlap, and every source file belongs under one.',
-        `Every open story that isn't an epic has exactly one dynamic view, keyed "${dynamicViewKey(2)}" for #2 and titled with the issue: "#2 <title>". Epics get none.`,
+        `Every story that isn't an epic has exactly one dynamic view, keyed "${dynamicViewKey(2)}" for #2 and titled with the issue: "#2 <title>". Epics get none.`,
         'Every dynamic view sets "bearing.criteria" to its issue\'s criteria pin, which this context prints. When the criteria are edited, the pin stops matching and the view and its tests are stale until checked against them and re-pinned.',
         "Every dynamic view step follows a relationship declared in the model.",
         "Code in one component may only depend on another along a declared relationship; anything goes inside a component.",
@@ -113,14 +113,14 @@ export function issueContext(config: Config, model: Model, requirements: Require
     elements: elements.filter((element) => element.type !== "component"),
     relationships,
     dynamicView,
-    stories: requirements.filter((each) => each.parent === number && each.state === "open").map((each) => each.number),
+    stories: requirements.filter((each) => each.parent === number && isLive(each)).map((each) => each.number),
   };
 }
 
 export function formatDesignContext(context: DesignContext): string {
   const stories = context.requirements.filter((requirement) => !requirement.epic);
   const lines = [
-    `Open requirements: ${stories.length} ${stories.length === 1 ? "story" : "stories"}, each needing one dynamic view`,
+    `Requirements: ${stories.length} ${stories.length === 1 ? "story" : "stories"}, each needing one dynamic view`,
     "",
   ];
   for (const requirement of context.requirements) {
@@ -163,7 +163,7 @@ export function formatIssueContext(context: IssueContext): string {
   if (requirement.epic) {
     lines.push(
       `An epic: it gets no dynamic view, and its code is written under its stories.`,
-      `Open stories: ${context.stories.map((n) => `#${n}`).join(", ") || "none"}. Run \`bearing context #<n>\` for each.`,
+      `Stories: ${context.stories.map((n) => `#${n}`).join(", ") || "none"}. Run \`bearing context #<n>\` for each.`,
     );
     return `${lines.join("\n")}\n`;
   }
@@ -232,9 +232,9 @@ function indent(text: string): string {
 
 export function contextCommand(): Command {
   return new Command("context")
-    .description("print what an agent needs: the open requirements and rules to design from, or one issue's slice")
+    .description("print what an agent needs: the requirements and rules to design from, or one issue's slice")
     .argument("[issue]", 'the issue to print the slice of the model for, e.g. "#2"')
-    .option("--issues", "print the open requirements, the C4 rules and the DSL conventions, for designing the target")
+    .option("--issues", "print the requirements, the C4 rules and the DSL conventions, for designing the target")
     .option("--json", "print JSON instead of text")
     .action(async function (this: Command, issue: string | undefined, options: { issues?: boolean; json?: boolean }) {
       if ((issue === undefined) === (options.issues !== true)) {

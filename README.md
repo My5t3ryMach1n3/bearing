@@ -32,7 +32,7 @@ Whoever merges a PR approves any target change it makes; Bearing labels those PR
 
 Bearing puts a human in charge of the design and an agent in charge of the code, with CI holding the line between them. The [quickstart](docs/quickstart.md) has the full steps; the loop is:
 
-1. **File requirements.** Each requirement is a GitHub issue with a user story and numbered Given/When/Then acceptance criteria. The issues stay open for as long as the code serves them.
+1. **File requirements.** Each requirement is a GitHub issue with a user story and numbered Given/When/Then acceptance criteria. Close each one as completed once it's delivered, and as not planned to drop it.
 2. **Have the agent design the target.** It reads the open requirements and writes a C4 model, `architecture/workspace.dsl`, with one dynamic view per story and an ADR for each choice it makes.
 3. **Review and merge the design.** The PR comment shows the design as diagrams. Merging it makes it the target that every later PR is checked against. This is where your judgement goes in.
 4. **Let the agent build against it.** For each requirement it works on a branch named after the issue, keeps its code inside the target's components, tags its tests with the criteria they cover and runs `bearing check` before pushing.

@@ -313,7 +313,9 @@ export function summarise(check: CheckReport["checks"][number]): string {
         : [
             ...(check.outside.length > 0 ? [`${count(check.outside.length, "file")} outside every component`] : []),
             ...(check.closed.length > 0
-              ? [`${count(check.closed.length, "component")} serving only closed requirements`]
+              ? [
+                  `${count(check.closed.length, "component")} serving only requirements closed as not planned or duplicate`,
+                ]
               : []),
             ...(functions > 0 ? [`${count(functions, "exported function")} no tagged test calls`] : []),
           ].join(", ");
